@@ -24,6 +24,7 @@ implementation, pinned by golden vectors.
 | `adp` | AgentCard — capability self-description, typed CID mounts | adp-spec |
 | `agenturi` | `agent://` URI scheme — parsing & canonical form | agent-uri-spec |
 | `golden` | Conformance vectors — byte-for-byte oracle shared with `design3/tools/vectors.py` | `_CONVENTIONS §8` |
+| `ael` | Agent Event Ledger — per-DID append-only anti-fork hash chain (P6) | evidence-spec |
 
 ## Use
 
@@ -57,4 +58,6 @@ Extracted from the AgentNetwork v3 reference implementation
 (`internal/v3/*`, verbatim, imports rewritten). 71 tests green.
 Module design rationale: `anet/docs/K207` (anet4 module architecture).
 
-License: Apache-2.0.
+License: ANet Community License 1.0 (free non-commercial; commercial up to
+1,000 nodes; larger deployments: hi@anet0.com). Versions ≤ v0.2.x were
+published under Apache-2.0 and remain so.
