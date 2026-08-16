@@ -1,6 +1,6 @@
 // Package coredet implements CoreDet-CBOR, the Agent Network suite's deterministic
 // CBOR profile. It is the single encoder for every CID preimage and signature
-// preimage in the v3 stack.
+// preimage in the stack.
 //
 // Normative source: design3/spec/_CONVENTIONS §2 = RFC 8949 §4.2 Core Deterministic
 // Encoding (shortest-form integers/lengths, definite-length items, map keys sorted by
@@ -40,8 +40,8 @@ func init() {
 }
 
 // Marshal encodes v as CoreDet-CBOR. It returns an error if v contains NaN or
-// ±Infinity (C-R1). The result is the canonical preimage for CID (see internal/v3/anetcid)
-// and for AObj signatures (see internal/v3/aobj).
+// ±Infinity (C-R1). The result is the canonical preimage for CID (see anetcid)
+// and for AObj signatures (see aobj).
 func Marshal(v any) ([]byte, error) {
 	return encMode.Marshal(v)
 }

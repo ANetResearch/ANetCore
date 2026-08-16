@@ -35,3 +35,15 @@ func MustSum(preimage []byte) string {
 	}
 	return s
 }
+
+// SumRaw returns a CID over ARBITRARY (non-CBOR) bytes — used to content-address binary attachments
+// (images, media, archives). Same sha2-256 multihash as Sum, but the CIDv1 codec is 0x55 (raw) rather
+// than dag-cbor, so the identifier correctly advertises that the preimage is opaque bytes, not a CBOR
+// object. Integrity check on receipt is: SumRaw(data) == advertised CID.
+func SumRaw(data []byte) (string, error) {
+	h, err := mh.Sum(data, mh.SHA2_256, -1)
+	if err != nil {
+		return "", err
+	}
+	return cid.NewCidV1(cid.Raw, h).String(), nil
+}

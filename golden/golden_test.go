@@ -84,3 +84,17 @@ func TestAObjSignVerify(t *testing.T) {
 		t.Fatal("verify short sig: want error, got nil")
 	}
 }
+
+// VEC-CID-RAW-1: SumRaw content-addresses opaque attachment bytes with CIDv1
+// codec 0x55 (raw) + sha2-256. Pinned so the attachment CID form can never
+// silently drift from the dag-cbor object form (Sum).
+func TestVEC_CID_RAW_1(t *testing.T) {
+	got, err := anetcid.SumRaw([]byte("anet-attachment-vector-1"))
+	if err != nil {
+		t.Fatalf("SumRaw: %v", err)
+	}
+	const want = "bafkreif2oxdrzwsd6eevltslywywuu3o4sgj2vkyvhkfjqyj2vycd3sbqm"
+	if got != want {
+		t.Fatalf("raw CID\n got  %s\n want %s", got, want)
+	}
+}
