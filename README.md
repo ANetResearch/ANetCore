@@ -57,4 +57,4 @@ Extracted from the AgentNetwork v3 reference implementation
 (`internal/v3/*`, verbatim, imports rewritten). 71 tests green.
 Module design rationale: `anet/docs/K207` (anet4 module architecture).
 
-License: TBD (tracked as D47).
+License: Apache-2.0.

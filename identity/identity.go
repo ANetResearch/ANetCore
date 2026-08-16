@@ -254,11 +254,11 @@ func (c *Controller) Delegate(hostPub ed25519.PublicKey, ts uint64) error {
 		return errors.New("identity: cannot delegate from a deactivated AID")
 	}
 	drt := KeyEvent{
-		AID:       c.aid,
-		Seq:       last.Event.Seq + 1,
-		Prev:      last.EventID,
-		Type:      Delegation,
-		Keys:      [][]byte{append([]byte(nil), hostPub...)},
+		AID:  c.aid,
+		Seq:  last.Event.Seq + 1,
+		Prev: last.EventID,
+		Type: Delegation,
+		Keys: [][]byte{append([]byte(nil), hostPub...)},
 		// Carry the pre-rotation commitment forward: a delegation does NOT change the signing keys, so it
 		// re-commits the SAME next key. The KEL head must always advertise the live commitment, else
 		// Restore (which validates head.NextDigest) and a later Rotate (whose pre-rotation gate reads the
