@@ -104,10 +104,6 @@ func isUcschar(r rune) bool {
 	return false
 }
 
-// literalAllowed reports whether a literal (non-percent, non-structural) octet/rune is
-// allowed in a label/capability/query position pre-decode: unreserved or ucschar.
-func literalAllowed(r rune) bool { return isUnreserved(r) || isUcschar(r) }
-
 // ---- S1 percent-decode (exactly once) ----
 
 func hexVal(b byte) (int, bool) {

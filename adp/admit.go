@@ -35,10 +35,6 @@ type GenomeResolver interface {
 	FetchInstance(cid string) (ok bool, conformant bool)
 }
 
-// supportedMajors is a set membership test over the card_schema.major values a node supports
-// (§5.1 step 1). A node subscribes to exactly the MAJORs it supports (§4.2).
-type supportedMajors map[uint16]bool
-
 // SupportedMajors builds the supported-MAJOR set for AdmitCard (§5.1 step 1 / §2.4).
 func SupportedMajors(majors ...uint16) map[uint16]bool {
 	s := make(map[uint16]bool, len(majors))

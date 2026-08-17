@@ -1,6 +1,6 @@
 module github.com/ANetResearch/ANetCore
 
-go 1.26.1
+go 1.26.6
 
 require (
 	filippo.io/edwards25519 v1.2.0

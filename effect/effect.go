@@ -33,13 +33,13 @@ const (
 // long it took. This is what lets an agent know the device REALLY executed —
 // the difference between "I sent a command" and "I verified the effect".
 type Evidence struct {
-	Requested     string  `cbor:"1,keyasint,omitempty"` // e.g. "light.onoff=on"
-	Protocol      string  `cbor:"2,keyasint,omitempty"` // "zigbee" | "modbus" | "opcua" | ...
-	NativeAck     bool    `cbor:"3,keyasint,omitempty"` // the protocol itself acknowledged
-	ObservedState string  `cbor:"4,keyasint,omitempty"` // what a readback actually reported
-	LatencyMS     int64   `cbor:"5,keyasint,omitempty"` // invoke → effect, milliseconds
-	VerifyTrust   uint8   `cbor:"6,keyasint,omitempty"` // effect-verification level (V0-V4)
-	AuthTrust     uint8   `cbor:"7,keyasint,omitempty"` // identity-authentication level (A0-A4)
+	Requested     string `cbor:"1,keyasint,omitempty"` // e.g. "light.onoff=on"
+	Protocol      string `cbor:"2,keyasint,omitempty"` // "zigbee" | "modbus" | "opcua" | ...
+	NativeAck     bool   `cbor:"3,keyasint,omitempty"` // the protocol itself acknowledged
+	ObservedState string `cbor:"4,keyasint,omitempty"` // what a readback actually reported
+	LatencyMS     int64  `cbor:"5,keyasint,omitempty"` // invoke → effect, milliseconds
+	VerifyTrust   uint8  `cbor:"6,keyasint,omitempty"` // effect-verification level (V0-V4)
+	AuthTrust     uint8  `cbor:"7,keyasint,omitempty"` // identity-authentication level (A0-A4)
 }
 
 // Effect is the envelope every capability invocation returns.

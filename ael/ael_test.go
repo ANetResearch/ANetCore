@@ -89,8 +89,13 @@ func TestLedgerAppendChain(t *testing.T) {
 		t.Fatalf("state = %s", l.State(c.AID()))
 	}
 	headID, headSeq, _ := l.Head(c.AID())
+	if headSeq != 0 {
+		t.Fatalf("head seq after genesis = %d, want 0", headSeq)
+	}
 	next := &EventRecord{
-		ChainDID: c.AID(), Seq: 1, PrevID: headID, EventType: "commitment.update",
+		// chain from the reported head rather than a hard-coded 1, so a
+		// wrong head advance fails here instead of passing silently
+		ChainDID: c.AID(), Seq: headSeq + 1, PrevID: headID, EventType: "commitment.update",
 		VersionMajor: VersionMajor2, Payload: map[uint64]any{1: "step"}, Timestamp: 1700000000001,
 	}
 	if err := next.Sign(c); err != nil {
