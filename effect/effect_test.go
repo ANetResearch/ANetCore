@@ -23,3 +23,18 @@ func TestVerifiable(t *testing.T) {
 		}
 	}
 }
+
+func TestEvidenceOptional(t *testing.T) {
+	// Evidence is additive: an effect without it behaves exactly as before.
+	e := Effect{Status: OK, Record: &tsir.EffectRecord{Metrics: map[string]float64{"x": 1}}}
+	if !e.Verifiable() {
+		t.Fatal("verifiability must not depend on Evidence")
+	}
+	e.Evidence = &Evidence{
+		Requested: "light.onoff=on", Protocol: "zigbee", NativeAck: true,
+		ObservedState: "on", LatencyMS: 83, VerifyTrust: 2, AuthTrust: 1,
+	}
+	if !e.Verifiable() || e.Evidence.LatencyMS != 83 {
+		t.Fatalf("evidence round-trip: %+v", e.Evidence)
+	}
+}

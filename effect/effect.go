@@ -27,11 +27,27 @@ const (
 	Unavailable Status = "UNAVAILABLE"
 )
 
+// Evidence carries the structured provenance of an execution: not just
+// "status ok", but what was requested, over which protocol, whether the
+// device acknowledged natively, what state was actually observed, and how
+// long it took. This is what lets an agent know the device REALLY executed —
+// the difference between "I sent a command" and "I verified the effect".
+type Evidence struct {
+	Requested     string  `cbor:"1,keyasint,omitempty"` // e.g. "light.onoff=on"
+	Protocol      string  `cbor:"2,keyasint,omitempty"` // "zigbee" | "modbus" | "opcua" | ...
+	NativeAck     bool    `cbor:"3,keyasint,omitempty"` // the protocol itself acknowledged
+	ObservedState string  `cbor:"4,keyasint,omitempty"` // what a readback actually reported
+	LatencyMS     int64   `cbor:"5,keyasint,omitempty"` // invoke → effect, milliseconds
+	VerifyTrust   uint8   `cbor:"6,keyasint,omitempty"` // effect-verification level (V0-V4)
+	AuthTrust     uint8   `cbor:"7,keyasint,omitempty"` // identity-authentication level (A0-A4)
+}
+
 // Effect is the envelope every capability invocation returns.
 type Effect struct {
-	Status  Status             `cbor:"1,keyasint"`
-	Record  *tsir.EffectRecord `cbor:"2,keyasint,omitempty"` // nil when no metrics
-	Message string             `cbor:"3,keyasint,omitempty"` // human-readable detail
+	Status   Status             `cbor:"1,keyasint"`
+	Record   *tsir.EffectRecord `cbor:"2,keyasint,omitempty"` // nil when no metrics
+	Message  string             `cbor:"3,keyasint,omitempty"` // human-readable detail
+	Evidence *Evidence          `cbor:"4,keyasint,omitempty"` // structured provenance
 }
 
 // Verifiable reports whether the effect can back an acceptance-predicate
