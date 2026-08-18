@@ -40,6 +40,11 @@ type Evidence struct {
 	LatencyMS     int64  `cbor:"5,keyasint,omitempty"` // invoke → effect, milliseconds
 	VerifyTrust   uint8  `cbor:"6,keyasint,omitempty"` // effect-verification level (V0-V4)
 	AuthTrust     uint8  `cbor:"7,keyasint,omitempty"` // identity-authentication level (A0-A4)
+	// Quirk names the vendor-deviation correction applied to this reading,
+	// when one was. A corrected value is not the value the device put on the
+	// wire, and a consumer that cannot tell the two apart cannot audit the
+	// correction — which is exactly what Evidence exists to prevent.
+	Quirk string `cbor:"8,keyasint,omitempty"`
 }
 
 // Effect is the envelope every capability invocation returns.
