@@ -1,11 +1,14 @@
 package delegation
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/coredet"
+	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/ANetResearch/ANetCore/tsir"
 )
@@ -290,4 +293,176 @@ func keysOf(m map[uint64]any) []uint64 {
 		out = append(out, k)
 	}
 	return out
+}
+
+// A signature proves less than it looks like it proves.
+//
+// It says some provider signed some receipt. It does not say the receipt
+// belongs to this interaction, names us as the requester, or covers the
+// bytes that actually arrived. The daemon checked none of this — it called
+// Receipt.Verify nowhere at all, and could not have: a completion carried
+// no provider KEL, so the requester held a signed object and no key.
+//
+// Each case below is a lie a provider can tell while holding a perfectly
+// valid signature.
+func TestAResultMustBeTheAnswerToTheRequestItClaims(t *testing.T) {
+	provider, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		ix   = "ix-1"
+		reqA = "did:anet:requester"
+	)
+	deliverable := []byte(`{"answer":42}`)
+	cid, err := anetcid.Sum(deliverable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kelOf := func(c *identity.Controller) []byte {
+		b, err := identity.MarshalKEL(c.KEL())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	sign := func(c *identity.Controller, rc *evidence.Receipt) []byte {
+		if err := rc.Sign(c); err != nil {
+			t.Fatal(err)
+		}
+		b, err := rc.Marshal()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	good := func() *evidence.Receipt {
+		return &evidence.Receipt{
+			InteractionID: ix, RequesterAID: reqA, ProviderAID: provider.AID(),
+			RequestCID: "bafyrequest", ResultCID: cid, CompletedAt: 1767225600000,
+		}
+	}
+
+	t.Run("a genuine completion verifies", func(t *testing.T) {
+		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable,
+			Receipt: sign(provider, good()), KEL: kelOf(provider)}
+		rc, err := VerifyResult(rr, ix, reqA, provider.AID(), 1767225600000)
+		if err != nil {
+			t.Fatalf("a genuine completion must verify: %v", err)
+		}
+		if rc.ResultCID != cid {
+			t.Errorf("result cid = %s", rc.ResultCID)
+		}
+	})
+
+	cases := []struct {
+		lie  string
+		make func() *ResultResp
+		want string
+	}{
+		{
+			// The one that matters most: a valid receipt for content that
+			// is not what arrived.
+			lie: "sign a receipt for different content",
+			make: func() *ResultResp {
+				rc := good()
+				rc.ResultCID = "bafysomethingelse"
+				return &ResultResp{Status: StatusDone, Deliverable: deliverable,
+					Receipt: sign(provider, rc), KEL: kelOf(provider)}
+			},
+			want: "receipt covers",
+		},
+		{
+			lie: "swap the deliverable after signing",
+			make: func() *ResultResp {
+				return &ResultResp{Status: StatusDone, Deliverable: []byte(`{"answer":0}`),
+					Receipt: sign(provider, good()), KEL: kelOf(provider)}
+			},
+			want: "receipt covers",
+		},
+		{
+			lie: "answer with someone else's receipt",
+			make: func() *ResultResp {
+				rc := good()
+				rc.ProviderAID = other.AID()
+				return &ResultResp{Status: StatusDone, Deliverable: deliverable,
+					Receipt: sign(other, rc), KEL: kelOf(other)}
+			},
+			want: "the task went to",
+		},
+		{
+			lie: "recycle a receipt from another interaction",
+			make: func() *ResultResp {
+				rc := good()
+				rc.InteractionID = "ix-99"
+				return &ResultResp{Status: StatusDone, Deliverable: deliverable,
+					Receipt: sign(provider, rc), KEL: kelOf(provider)}
+			},
+			want: "is for interaction",
+		},
+		{
+			lie: "issue the receipt to a different requester",
+			make: func() *ResultResp {
+				rc := good()
+				rc.RequesterAID = "did:anet:someone-else"
+				return &ResultResp{Status: StatusDone, Deliverable: deliverable,
+					Receipt: sign(provider, rc), KEL: kelOf(provider)}
+			},
+			want: "as requester, not us",
+		},
+		{
+			lie: "sign with a key the KEL does not contain",
+			make: func() *ResultResp {
+				return &ResultResp{Status: StatusDone, Deliverable: deliverable,
+					Receipt: sign(provider, good()), KEL: kelOf(other)}
+			},
+			want: "signature invalid",
+		},
+		{
+			lie: "send no receipt at all",
+			make: func() *ResultResp {
+				return &ResultResp{Status: StatusDone, Deliverable: deliverable, KEL: kelOf(provider)}
+			},
+			want: "no receipt",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.lie, func(t *testing.T) {
+			_, err := VerifyResult(tc.make(), ix, reqA, provider.AID(), 1767225600000)
+			if err == nil {
+				t.Fatalf("accepted a completion that would %s", tc.lie)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("refused for the wrong reason: %v (want %q)", err, tc.want)
+			}
+		})
+	}
+}
+
+// An older provider sends no KEL. That is not a lie and must not read like
+// one: not knowing and knowing-it-is-fine are different states, and the
+// caller needs to tell them apart to record the difference honestly.
+func TestAMissingKELIsUnverifiableNotInvalid(t *testing.T) {
+	provider, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc := &evidence.Receipt{InteractionID: "ix-1", RequesterAID: "did:anet:r",
+		ProviderAID: provider.AID(), ResultCID: "bafy", CompletedAt: 1}
+	if err := rc.Sign(provider); err != nil {
+		t.Fatal(err)
+	}
+	b, err := rc.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = VerifyResult(&ResultResp{Status: StatusDone, Deliverable: []byte("x"), Receipt: b},
+		"ix-1", "did:anet:r", provider.AID(), 1)
+	if !errors.Is(err, ErrUnverifiable) {
+		t.Fatalf("a completion with no KEL must be unverifiable, distinctly: %v", err)
+	}
 }

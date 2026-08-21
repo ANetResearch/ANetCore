@@ -12,11 +12,14 @@
 package delegation
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/aobj"
 	"github.com/ANetResearch/ANetCore/coredet"
+	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/ANetResearch/ANetCore/tsir"
 )
@@ -73,6 +76,20 @@ type ResultResp struct {
 	Status      string `cbor:"1,keyasint"`
 	Deliverable []byte `cbor:"2,keyasint,omitempty"`
 	Receipt     []byte `cbor:"3,keyasint,omitempty"`
+	// KEL is the provider's key history, so the requester can verify the
+	// receipt without asking anyone.
+	//
+	// A delegation has carried the requester's KEL inline since v0.1 — that
+	// is how a provider verifies a stranger self-contained. The answer did
+	// not carry the provider's, so the requester held a signed receipt and
+	// no key to check it against. It could not verify what it was accepting
+	// even in principle, and did not try.
+	//
+	// Absent from an older provider. A receipt that cannot be verified is
+	// then recorded as unverified rather than treated as good: not knowing
+	// and knowing-it-is-fine are different states, and a completion is
+	// exactly where collapsing them is worst.
+	KEL []byte `cbor:"4,keyasint,omitempty"`
 }
 
 // Marshal encodes a ResultResp for the relay.
@@ -192,4 +209,65 @@ func TaskGoal(td *tsir.TaskDoc) string {
 		return b
 	}
 	return td.Tasks[0].Intent.Summary
+}
+
+// ErrUnverifiable is returned when a completion carries no key history, so
+// its receipt cannot be checked at all. Distinct from a failed check: an
+// older provider produces this, a lying one produces an error.
+var ErrUnverifiable = errors.New("delegation: completion carries no provider KEL")
+
+// VerifyResult checks that a completion is the signed answer to the request
+// it claims to answer.
+//
+// The signature alone proves far less than it looks like it proves. It says
+// some provider signed some receipt — not that the receipt belongs to this
+// interaction, that it names us as the requester, or that it covers the
+// bytes actually delivered. A provider could return one result and a valid
+// receipt for a different one, and a caller checking only the signature
+// would accept it. So every field the receipt asserts is bound here to
+// something the caller already knows, and ResultCID is bound to the
+// deliverable's own hash.
+//
+// now is the time the receipt is judged against for key revocation; pass 0
+// to fall back to the conservative rule in identity.VerifyObject.
+func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string, now uint64) (*evidence.Receipt, error) {
+	if r == nil || len(r.Receipt) == 0 {
+		return nil, fmt.Errorf("delegation: completion carries no receipt")
+	}
+	if len(r.KEL) == 0 {
+		return nil, ErrUnverifiable
+	}
+	rc, err := evidence.UnmarshalReceipt(r.Receipt)
+	if err != nil {
+		return nil, fmt.Errorf("delegation: undecodable receipt: %w", err)
+	}
+	kel, err := identity.UnmarshalKEL(r.KEL)
+	if err != nil {
+		return nil, fmt.Errorf("delegation: bad provider KEL: %w", err)
+	}
+	if err := rc.Verify(kel, now); err != nil {
+		return nil, fmt.Errorf("delegation: receipt signature invalid: %w", err)
+	}
+	if providerAID != "" && rc.ProviderAID != providerAID {
+		return nil, fmt.Errorf("delegation: receipt signed by %s, but the task went to %s",
+			rc.ProviderAID, providerAID)
+	}
+	if requesterAID != "" && rc.RequesterAID != requesterAID {
+		return nil, fmt.Errorf("delegation: receipt names %s as requester, not us", rc.RequesterAID)
+	}
+	if interactionID != "" && rc.InteractionID != interactionID {
+		return nil, fmt.Errorf("delegation: receipt is for interaction %s, not %s",
+			rc.InteractionID, interactionID)
+	}
+	// The binding that makes the rest worth having: the signature must cover
+	// the bytes that actually arrived.
+	cid, err := anetcid.Sum(r.Deliverable)
+	if err != nil {
+		return nil, err
+	}
+	if rc.ResultCID != cid {
+		return nil, fmt.Errorf("delegation: receipt covers %s but the deliverable hashes to %s",
+			rc.ResultCID, cid)
+	}
+	return rc, nil
 }
