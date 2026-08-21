@@ -114,15 +114,20 @@ type ChatMsg struct {
 	// These are why this package is here. There were two copies of this
 	// struct — one in the daemon, one in the hub — and the hub's grew these
 	// four fields and the stream_preview kind while the daemon's stayed at
-	// three. The daemon then decoded a hub-sent preview, silently dropped
-	// the reasoning and the sequence number, and dropped the message itself
-	// on an unrecognised kind. Nothing failed: the hub streamed, the daemon
-	// showed nothing until the final message, and no log said why.
+	// three.
+	//
+	// Nothing had gone wrong yet: the fields were declared on the hub's copy
+	// and wired to nothing, so no preview was ever sent. What existed was a
+	// loaded gun. The first hub to actually stream would have reached a
+	// daemon that decodes keys 1-3, finds keys 4-7 simply absent — CBOR
+	// keyasint drops an unknown key without a word — and then discards the
+	// whole message on an unrecognised kind. The sender would see a
+	// successful send, the receiver would show nothing until the reply
+	// finished, and no log on either side would say why.
 	//
 	// A wire type that lives in two repositories is a wire type that will
-	// diverge, and CBOR keyasint makes the divergence silent by design —
-	// an unknown key is simply not there. One copy, in the module both
-	// sides already depend on.
+	// diverge, and this one already had. One copy, in the module both sides
+	// already depend on.
 	StreamSeq           uint64 `cbor:"4,keyasint,omitempty"`
 	StreamAtMS          int64  `cbor:"5,keyasint,omitempty"`
 	ReasoningBody       string `cbor:"6,keyasint,omitempty"`
