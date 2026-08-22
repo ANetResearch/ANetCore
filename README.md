@@ -28,6 +28,7 @@ implementation, pinned by golden vectors.
 | `evidence` | Receipt + Review — the interaction-anchored trust pair anyone can verify | evidence-spec |
 | `delegation` | The relayed delegation wire: signed request, completion, chat; `VerifyDelegateReq`, `VerifyResult` | arch-03 |
 | `relayauth` | The canonical challenge a client signs to authenticate a relay mailbox operation | arch-03 |
+| `payment` | x402 wire objects + the `anet-credit` scheme: signed authorizations and settlement receipts | x402 v2 |
 
 The last three arrived by the rule below rather than by design: each was a
 wire between the daemon and the Hub, duplicated in both repositories, and

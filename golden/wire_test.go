@@ -23,6 +23,7 @@ import (
 	"github.com/ANetResearch/ANetCore/delegation"
 	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/payment"
 	"github.com/ANetResearch/ANetCore/relayauth"
 )
 
@@ -198,5 +199,98 @@ func TestVEC_RELAYAUTH_1(t *testing.T) {
 	const want = "anet-relay/poll/" + suiteAID + "/1767225600000"
 	if got != want {
 		t.Fatalf("relay challenge\n got  %s\n want %s", got, want)
+	}
+}
+
+// VEC-PAYMENT-AUTH-1: what a payer signs when they agree to pay.
+//
+// The newest wire and the one that decides who owes whom, so it is pinned
+// hardest. A capability id that drifts costs a lookup; an authorization
+// preimage that drifts means one implementation charging an amount
+// another implementation did not agree to.
+func TestVEC_PAYMENT_AUTH_1(t *testing.T) {
+	a := goldenAuthorization()
+	pre, err := a.CanonicalPreimage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantPre = "a801600278186469643a616e65743a676f6c64656e2d70726f7669646572031904e204776875623a6469643a616e65743a676f6c64656e2d687562056c676f6c64656e2d6e6f6e6365061b0000019b76daa800071b0000019b76df3be0086b69782d676f6c64656e2d31"
+	if got := hex.EncodeToString(pre); got != wantPre {
+		t.Errorf("authorization preimage\n got  %s\n want %s", got, wantPre)
+	}
+	// The id is the facilitator's idempotency key: two implementations
+	// that disagree about it will settle the same payment twice.
+	const wantID = "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4"
+	id, err := a.ID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != wantID {
+		t.Errorf("authorization id\n got  %s\n want %s", id, wantID)
+	}
+}
+
+// VEC-PAYMENT-AUTH-WIRE-1: the authorization as it travels, signature
+// included — the envelope is detached, so the preimage vector above is
+// blind to whether the signature ships at all.
+func TestVEC_PAYMENT_AUTH_WIRE_1(t *testing.T) {
+	a := goldenAuthorization()
+	c := identity.SuiteController()
+	if err := a.Sign(c); err != nil {
+		t.Fatal(err)
+	}
+	b, err := a.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantCID = "bafyreib4i3wlycc7bxgvgmt67ealkdhyjyc76xo6n7neu56kdlreknwms4"
+	if got := anetcid.MustSum(b); got != wantCID {
+		t.Errorf("authorization wire CID\n got  %s\n want %s", got, wantCID)
+	}
+	back, err := payment.UnmarshalAuthorization(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Envelope == nil {
+		t.Fatal("the signature did not travel — every authorization would arrive unsigned")
+	}
+	if err := back.Verify(c.KEL(), a.IssuedAt+1000); err != nil {
+		t.Errorf("the round-tripped authorization must verify: %v", err)
+	}
+}
+
+// VEC-PAYMENT-RECEIPT-1: what a hub signs when it settles. Two hubs
+// clearing against each other read this from one another, so a drift here
+// is one hub crediting its users against a statement the other did not
+// make.
+func TestVEC_PAYMENT_RECEIPT_1(t *testing.T) {
+	r := &payment.Receipt{
+		AuthID:   "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4",
+		Payer:    suiteAID,
+		PayTo:    "did:anet:golden-provider",
+		Amount:   1250,
+		Network:  payment.CreditNetwork("did:anet:golden-hub"),
+		SettleAt: 1767225700000,
+	}
+	pre, err := r.CanonicalPreimage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantCID = "bafyreideclcgxvtpf3vjkeljp2ewkkejo5hmvuz6xpg7pyz7y3j3l6zoma"
+	if got := anetcid.MustSum(pre); got != wantCID {
+		t.Errorf("settlement receipt CID\n got  %s\n want %s", got, wantCID)
+	}
+}
+
+func goldenAuthorization() *payment.Authorization {
+	return &payment.Authorization{
+		Payer:         "",
+		PayTo:         "did:anet:golden-provider",
+		Amount:        1250,
+		Network:       payment.CreditNetwork("did:anet:golden-hub"),
+		Nonce:         "golden-nonce",
+		IssuedAt:      1767225600000,
+		NotAfter:      1767225900000,
+		InteractionID: "ix-golden-1",
 	}
 }
