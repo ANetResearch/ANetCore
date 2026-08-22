@@ -231,7 +231,7 @@ func (a *Authorization) Verify(kel []identity.SignedEvent, now int64) error {
 	if a.IssuedAt <= 0 || a.NotAfter <= a.IssuedAt {
 		return ErrBadWindow
 	}
-	if now < a.IssuedAt || now > a.NotAfter {
+	if now < a.IssuedAt-ClockSkew || now > a.NotAfter+ClockSkew {
 		return fmt.Errorf("%w: valid %d..%d, now %d", ErrExpired, a.IssuedAt, a.NotAfter, now)
 	}
 	pre, err := a.CanonicalPreimage()
@@ -381,6 +381,26 @@ func UnmarshalReceipt(b []byte) (*Receipt, error) {
 // ExtReceipt is the extensions key a settlement receipt rides under.
 const ExtReceipt = "anet.settlement.receipt"
 
+// ClockSkew is how far apart two machines' clocks may be before this
+// implementation calls a payment invalid.
+//
+// Zero tolerance is what shipped, and it broke a real payment by 129
+// milliseconds: the payer signed at T, the hub's clock was a tenth of a
+// second behind, and an authorization issued in the hub's future was
+// refused as not-yet-valid. Nothing was wrong except that two computers
+// disagree about the time, which two computers always do.
+//
+// Two minutes, which is the ordinary leeway for a not-before check and
+// the same order as everyone else's. It is not a security hole worth
+// closing tighter: the nonce is what makes an authorization spendable
+// once, and the window exists to stop a kept authorization being useful
+// later — an attacker two minutes early has gained nothing they did not
+// already have.
+//
+// Applied to both ends, because a payer whose clock runs fast hits the
+// far edge and the failure is just as arbitrary.
+const ClockSkew = 2 * 60 * 1000 // milliseconds
+
 // ---- error reasons ----
 //
 // x402 leaves errorReason open. These are the strings this implementation
@@ -523,7 +543,7 @@ func (v *Voucher) Verify(kel []identity.SignedEvent, expectSigner, expectPayTo,
 	if expectNetwork != "" && v.Network != expectNetwork {
 		return fmt.Errorf("payment: voucher settles on %s, not on %s", v.Network, expectNetwork)
 	}
-	if v.NotAfter != 0 && now > v.NotAfter {
+	if v.NotAfter != 0 && now > v.NotAfter+ClockSkew {
 		return errors.New("payment: voucher expired")
 	}
 	if v.Nonce == "" {

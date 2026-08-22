@@ -111,14 +111,18 @@ func TestEveryWayOfPayingWithoutPermission(t *testing.T) {
 			kel: payer.KEL(), want: "not the payer",
 		},
 		{
+			// Well past the skew allowance on each side. A minute out is
+			// two computers disagreeing about the time; an hour out is a
+			// kept authorization or a forged clock, and the difference is
+			// what ClockSkew draws the line at.
 			fraud: "present it after it expired",
 			make:  func() *payment.Authorization { return auth(t, payer, "did:anet:provider", 100) },
-			kel:   payer.KEL(), atOffset: 2 * time.Minute, want: "validity window",
+			kel:   payer.KEL(), atOffset: time.Hour, want: "validity window",
 		},
 		{
 			fraud: "present it before it was issued",
 			make:  func() *payment.Authorization { return auth(t, payer, "did:anet:provider", 100) },
-			kel:   payer.KEL(), atOffset: -2 * time.Minute, want: "validity window",
+			kel:   payer.KEL(), atOffset: -time.Hour, want: "validity window",
 		},
 		{
 			fraud: "hand over no signature at all",
@@ -360,7 +364,9 @@ func TestEveryWayOfRedeemingAVoucherYouShouldNot(t *testing.T) {
 				v := &payment.Voucher{
 					AuthID: "auth-1", Payer: "did:anet:buyer", PayTo: "did:anet:provider",
 					Capability: "image.caption", Amount: 100, Network: net,
-					NotAfter: now - 1, Nonce: "v-1",
+					// Past the skew allowance: expired, not merely a clock
+					// that disagrees by a moment.
+					NotAfter: now - payment.ClockSkew - 60_000, Nonce: "v-1",
 				}
 				if err := v.Sign(hub); err != nil {
 					t.Fatal(err)
@@ -470,5 +476,67 @@ func TestAVoucherSurvivesTheWire(t *testing.T) {
 	id2, _ := back.ID()
 	if id1 != id2 || id1 == "" {
 		t.Errorf("voucher id changed across the wire: %q vs %q", id1, id2)
+	}
+}
+
+// Two computers never agree about the time, and a payment must survive
+// that.
+//
+// Zero tolerance is what shipped and it cost a real payment: the payer
+// signed at T, the settling hub's clock was 129 milliseconds behind, and
+// an authorization issued in the hub's own future was refused as
+// not-yet-valid. Nothing was wrong with the payment. Found on live
+// machines; no single-process test could have produced the skew.
+func TestAPaymentSurvivesOrdinaryClockSkew(t *testing.T) {
+	payer, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := auth(t, payer, "did:anet:provider", 100)
+
+	// The settling hub's clock is a little behind the payer's.
+	behind := a.IssuedAt - 129
+	if err := a.Verify(payer.KEL(), behind); err != nil {
+		t.Errorf("a hub 129ms behind refused a good payment: %v", err)
+	}
+	// And a little ahead, at the far edge.
+	ahead := a.NotAfter + 129
+	if err := a.Verify(payer.KEL(), ahead); err != nil {
+		t.Errorf("a hub 129ms ahead refused a good payment: %v", err)
+	}
+
+	// The window still means something. A day early or a day late is not
+	// skew, it is a kept authorization or a forged timestamp.
+	if err := a.Verify(payer.KEL(), a.IssuedAt-24*60*60*1000); err == nil {
+		t.Error("an authorization from a day in the future was accepted")
+	}
+	if err := a.Verify(payer.KEL(), a.NotAfter+24*60*60*1000); err == nil {
+		t.Error("an authorization a day expired was accepted")
+	}
+	// Just past the leeway on each side is refused, so the tolerance is a
+	// bounded allowance and not a hole.
+	if err := a.Verify(payer.KEL(), a.IssuedAt-payment.ClockSkew-1000); err == nil {
+		t.Error("beyond the skew allowance was still accepted")
+	}
+	if err := a.Verify(payer.KEL(), a.NotAfter+payment.ClockSkew+1000); err == nil {
+		t.Error("beyond the skew allowance was still accepted")
+	}
+}
+
+// The voucher travels between two machines too.
+func TestAVoucherSurvivesOrdinaryClockSkew(t *testing.T) {
+	hub, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := voucher(t, hub, "did:anet:provider", "image.caption")
+	net := payment.CreditNetwork("did:anet:hub")
+	if err := v.Verify(hub.KEL(), hub.AID(), "did:anet:provider", "image.caption",
+		net, v.NotAfter+129); err != nil {
+		t.Errorf("a provider 129ms ahead refused a good voucher: %v", err)
+	}
+	if err := v.Verify(hub.KEL(), hub.AID(), "did:anet:provider", "image.caption",
+		net, v.NotAfter+payment.ClockSkew+1000); err == nil {
+		t.Error("a long-expired voucher was accepted")
 	}
 }
