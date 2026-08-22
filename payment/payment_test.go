@@ -272,3 +272,203 @@ func TestASettlementReceiptIsAttributable(t *testing.T) {
 		t.Errorf("a round-tripped receipt must verify: %v", err)
 	}
 }
+
+func voucher(t *testing.T, hub *identity.Controller, payTo, capID string) *payment.Voucher {
+	t.Helper()
+	v := &payment.Voucher{
+		AuthID: "auth-1", Payer: "did:anet:buyer", PayTo: payTo, Capability: capID,
+		Amount: 100, Network: payment.CreditNetwork("did:anet:hub"),
+		NotAfter: time.Now().Add(time.Minute).UnixMilli(), Nonce: "v-1",
+	}
+	if err := v.Sign(hub); err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestAGenuineVoucherVerifies(t *testing.T) {
+	hub, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := voucher(t, hub, "did:anet:provider", "image.caption")
+	err = v.Verify(hub.KEL(), hub.AID(), "did:anet:provider", "image.caption",
+		payment.CreditNetwork("did:anet:hub"), time.Now().UnixMilli())
+	if err != nil {
+		t.Fatalf("a genuine voucher must verify: %v", err)
+	}
+}
+
+// Each of these is a real signature over a real statement that does not
+// authorise the work about to be done. The voucher travels through the
+// buyer's hands, so every one of them is something the buyer can attempt.
+func TestEveryWayOfRedeemingAVoucherYouShouldNot(t *testing.T) {
+	hub, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	net := payment.CreditNetwork("did:anet:hub")
+
+	cases := []struct {
+		name string
+		make func() (*payment.Voucher, []identity.SignedEvent)
+		// what the redeeming provider believes it is doing
+		payTo, capID, network string
+		want                  string
+	}{
+		{
+			name: "bought somebody else's capability and presented here",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				return voucher(t, hub, "did:anet:elsewhere", "image.caption"), hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "payable to",
+		},
+		{
+			name: "paid for the cheap capability, redeemed against the expensive one",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				return voucher(t, hub, "did:anet:provider", "image.thumbnail"), hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "bought",
+		},
+		{
+			// The right hub signing the wrong ledger. Defence in depth
+			// rather than paranoia: a hub that federates settles on more
+			// than one network, and an off-by-one there would have a
+			// provider doing paid work against credit it cannot draw on.
+			name: "settled on a ledger this provider has no account on",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				v := &payment.Voucher{
+					AuthID: "auth-1", Payer: "did:anet:buyer", PayTo: "did:anet:provider",
+					Capability: "image.caption", Amount: 100,
+					Network:  payment.CreditNetwork("did:anet:other-hub"),
+					NotAfter: now + 60_000, Nonce: "v-1",
+				}
+				if err := v.Sign(hub); err != nil {
+					t.Fatal(err)
+				}
+				return v, hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "settles on",
+		},
+		{
+			name: "expired, kept, presented later",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				v := &payment.Voucher{
+					AuthID: "auth-1", Payer: "did:anet:buyer", PayTo: "did:anet:provider",
+					Capability: "image.caption", Amount: 100, Network: net,
+					NotAfter: now - 1, Nonce: "v-1",
+				}
+				if err := v.Sign(hub); err != nil {
+					t.Fatal(err)
+				}
+				return v, hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "expired",
+		},
+		{
+			name: "no nonce, so it could be spent for ever",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				v := &payment.Voucher{
+					AuthID: "auth-1", Payer: "did:anet:buyer", PayTo: "did:anet:provider",
+					Capability: "image.caption", Amount: 100, Network: net,
+					NotAfter: now + 60_000,
+				}
+				if err := v.Sign(hub); err != nil {
+					t.Fatal(err)
+				}
+				return v, hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "spent only once",
+		},
+		{
+			name: "amount raised after the hub signed it",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				v := voucher(t, hub, "did:anet:provider", "image.caption")
+				v.Amount = 1
+				return v, hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "signature",
+		},
+		{
+			name: "unsigned",
+			make: func() (*payment.Voucher, []identity.SignedEvent) {
+				v := voucher(t, hub, "did:anet:provider", "image.caption")
+				v.Envelope = nil
+				return v, hub.KEL()
+			},
+			payTo: "did:anet:provider", capID: "image.caption", network: net,
+			want: "unsigned",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v, kel := tc.make()
+			err := v.Verify(kel, hub.AID(), tc.payTo, tc.capID, tc.network, now)
+			if err == nil {
+				t.Fatal("this must be refused, and was accepted")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("refused for the wrong reason: %v (want mention of %q)", err, tc.want)
+			}
+		})
+	}
+}
+
+// A provider that trusts its own hub must not accept a voucher signed by
+// a stranger, even a well-formed one. Signature validity is not identity.
+func TestAVoucherFromAnUnexpectedSignerIsRefused(t *testing.T) {
+	hub, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	impostor, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := voucher(t, impostor, "did:anet:provider", "image.caption")
+	err = v.Verify(impostor.KEL(), hub.AID(), "did:anet:provider", "image.caption",
+		payment.CreditNetwork("did:anet:hub"), time.Now().UnixMilli())
+	if err == nil {
+		t.Fatal("a voucher signed by an unexpected hub must be refused")
+	}
+	if !strings.Contains(err.Error(), "not the expected hub") {
+		t.Errorf("refused for the wrong reason: %v", err)
+	}
+}
+
+func TestAVoucherSurvivesTheWire(t *testing.T) {
+	hub, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := voucher(t, hub, "did:anet:provider", "image.caption")
+	raw, err := v.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := payment.UnmarshalVoucher(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The buyer carries this between two parties that never speak. If the
+	// signature did not ride along, the provider would have nothing to
+	// check and would be trusting the buyer's word for the payment.
+	err = back.Verify(hub.KEL(), hub.AID(), "did:anet:provider", "image.caption",
+		payment.CreditNetwork("did:anet:hub"), time.Now().UnixMilli())
+	if err != nil {
+		t.Fatalf("a voucher off the wire must still verify: %v", err)
+	}
+	id1, _ := v.ID()
+	id2, _ := back.ID()
+	if id1 != id2 || id1 == "" {
+		t.Errorf("voucher id changed across the wire: %q vs %q", id1, id2)
+	}
+}

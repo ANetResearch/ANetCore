@@ -294,3 +294,48 @@ func goldenAuthorization() *payment.Authorization {
 		InteractionID: "ix-golden-1",
 	}
 }
+
+// VEC-PAYMENT-VOUCHER-1: a hub's signed statement that work is paid for,
+// carried by the buyer to the provider.
+//
+// This vector is load-bearing in an unusual way. The voucher is the only
+// object in the suite where the party that verifies it (the provider) and
+// the party that issued it (the hub) never speak during the exchange —
+// the buyer walks it between them. There is no round trip in which a
+// mismatch could be noticed and retried: a provider computing a different
+// preimage than the hub signed simply refuses paid work, and the buyer,
+// who has already been charged, is the one holding the loss.
+func TestVEC_PAYMENT_VOUCHER_1(t *testing.T) {
+	v := &payment.Voucher{
+		AuthID:     "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4",
+		Payer:      suiteAID,
+		PayTo:      "did:anet:golden-provider",
+		Capability: "image.caption",
+		Amount:     1250,
+		Network:    payment.CreditNetwork("did:anet:golden-hub"),
+		NotAfter:   1767225900000,
+		Nonce:      "golden-voucher-nonce",
+	}
+	pre, err := v.CanonicalPreimage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantCID = "bafyreih2ahmnrfe6fiq3xz5rawhsv2ao5ma5mmnqlpmav4x37v5lf4hez4"
+	if got := anetcid.MustSum(pre); got != wantCID {
+		t.Errorf("voucher CID\n got  %s\n want %s", got, wantCID)
+	}
+
+	// ArgsCID is optional and omitempty, so a voucher that pins arguments
+	// must NOT collide with one that does not. If omitempty were dropped,
+	// the empty string would encode and every existing voucher id would
+	// change silently.
+	pinned := *v
+	pinned.ArgsCID = "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4"
+	pinnedPre, err := pinned.CanonicalPreimage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anetcid.MustSum(pinnedPre) == wantCID {
+		t.Error("a voucher pinning its arguments must not share an id with one that does not")
+	}
+}
