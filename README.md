@@ -66,7 +66,7 @@ and the suite test key are frozen and will never change within v1.
 Extracted from the AgentNetwork v3 reference implementation
 (`internal/v3/*`, verbatim, imports rewritten), plus the daemon/Hub wire
 consolidated here in v0.5.x. 102 tests green.
-Module design rationale: `anet/docs/K207` (anet4 module architecture).
+Module design rationale: `ANet/docs/CONTRACTS-zh.md` (anet4 five contracts).
 
 License: ANet Community License 1.0 (free non-commercial; commercial up to
 1,000 nodes; larger deployments: hi@anet0.com). Versions ≤ v0.2.x were
