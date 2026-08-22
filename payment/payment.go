@@ -279,3 +279,104 @@ func ParseAmount(s string) (uint64, error) {
 	}
 	return n, nil
 }
+
+// ---- settlement receipts, for hubs that clear against each other ----
+
+// Receipt is a hub's signed statement that it settled a payment.
+//
+// It exists because of what cross-hub payment asks of the two hubs. A
+// provider on hub B, paid from a balance on hub A, means B must credit
+// its own user on A's say-so — and "A said so" over plain HTTP is not
+// something B can show anyone later, including A. So A signs, B keeps it,
+// and the obligation between them is evidenced rather than remembered.
+//
+// It rides in the x402 SettlementResponse's extensions, which is the
+// spec's own place for exactly this: functionality beyond the core
+// payment mechanics that a facilitator advertises and a client can
+// ignore.
+type Receipt struct {
+	AuthID   string `cbor:"1,keyasint"` // the authorization settled
+	Payer    string `cbor:"2,keyasint"`
+	PayTo    string `cbor:"3,keyasint"`
+	Amount   uint64 `cbor:"4,keyasint"`
+	Network  string `cbor:"5,keyasint"` // the ledger it moved on
+	SettleAt int64  `cbor:"6,keyasint"` // unix millis
+	// Envelope is the settling hub's detached signature.
+	Envelope *aobj.Envelope `cbor:"-"`
+}
+
+type receiptPreimage struct {
+	AuthID   string `cbor:"1,keyasint"`
+	Payer    string `cbor:"2,keyasint"`
+	PayTo    string `cbor:"3,keyasint"`
+	Amount   uint64 `cbor:"4,keyasint"`
+	Network  string `cbor:"5,keyasint"`
+	SettleAt int64  `cbor:"6,keyasint"`
+}
+
+func (r *Receipt) canonical() receiptPreimage {
+	return receiptPreimage{AuthID: r.AuthID, Payer: r.Payer, PayTo: r.PayTo,
+		Amount: r.Amount, Network: r.Network, SettleAt: r.SettleAt}
+}
+
+// CanonicalPreimage is what the settling hub signs.
+func (r *Receipt) CanonicalPreimage() ([]byte, error) { return coredet.Marshal(r.canonical()) }
+
+// Sign attaches the settling hub's signature.
+func (r *Receipt) Sign(c *identity.Controller) error {
+	pre, err := r.CanonicalPreimage()
+	if err != nil {
+		return err
+	}
+	sig, seq := c.Sign(pre)
+	r.Envelope = &aobj.Envelope{SignerAID: c.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
+	return nil
+}
+
+// Verify checks the settling hub's signature.
+//
+// signerAID is who the reader expected to have settled — the hub whose
+// ledger the network names. Without pinning it, a hub could sign a
+// receipt for a payment on somebody else's ledger and the reader would
+// have no reason to notice.
+func (r *Receipt) Verify(kel []identity.SignedEvent, signerAID string, now int64) error {
+	if r.Envelope == nil {
+		return ErrUnsigned
+	}
+	if err := r.Envelope.Validate(); err != nil {
+		return err
+	}
+	if signerAID != "" && r.Envelope.SignerAID != signerAID {
+		return fmt.Errorf("payment: receipt signed by %s, expected %s", r.Envelope.SignerAID, signerAID)
+	}
+	pre, err := r.CanonicalPreimage()
+	if err != nil {
+		return err
+	}
+	return identity.VerifyObject(kel, r.Envelope.SignerAID, r.Envelope.KeyStateSeq,
+		uint64(now), pre, r.Envelope.Sig)
+}
+
+type wireReceipt struct {
+	Receipt  receiptPreimage `cbor:"1,keyasint"`
+	Envelope *aobj.Envelope  `cbor:"2,keyasint"`
+}
+
+// Marshal encodes a receipt with its signature.
+func (r *Receipt) Marshal() ([]byte, error) {
+	return coredet.Marshal(wireReceipt{Receipt: r.canonical(), Envelope: r.Envelope})
+}
+
+// UnmarshalReceipt decodes one.
+func UnmarshalReceipt(b []byte) (*Receipt, error) {
+	var w wireReceipt
+	if err := coredet.Unmarshal(b, &w); err != nil {
+		return nil, err
+	}
+	return &Receipt{AuthID: w.Receipt.AuthID, Payer: w.Receipt.Payer, PayTo: w.Receipt.PayTo,
+		Amount: w.Receipt.Amount, Network: w.Receipt.Network, SettleAt: w.Receipt.SettleAt,
+		Envelope: w.Envelope}, nil
+}
+
+// ExtReceipt is the extensions key a settlement receipt rides under.
+const ExtReceipt = "anet.settlement.receipt"

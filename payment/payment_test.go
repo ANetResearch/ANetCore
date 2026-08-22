@@ -216,3 +216,59 @@ func TestAmountRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// A settlement receipt is what lets one hub credit its own user on
+// another hub's word. That word has to be attributable, and pinned to the
+// hub whose ledger it claims to have moved.
+func TestASettlementReceiptIsAttributable(t *testing.T) {
+	hubA, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hubB, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &payment.Receipt{
+		AuthID: "bafyauth", Payer: "did:anet:payer", PayTo: "did:anet:provider",
+		Amount: 120, Network: payment.CreditNetwork(hubA.AID()),
+		SettleAt: time.Now().UnixMilli(),
+	}
+	if err := r.Sign(hubA); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UnixMilli()
+	if err := r.Verify(hubA.KEL(), hubA.AID(), now); err != nil {
+		t.Fatalf("a genuine receipt must verify: %v", err)
+	}
+	// Signed by a hub other than the one whose ledger it names. Without
+	// pinning the signer, a reader has no reason to notice.
+	if err := r.Verify(hubB.KEL(), hubB.AID(), now); err == nil {
+		t.Error("a receipt verified against the wrong hub")
+	}
+	// Altered after signing.
+	r.Amount = 12000
+	if err := r.Verify(hubA.KEL(), hubA.AID(), now); err == nil {
+		t.Error("an inflated receipt verified")
+	}
+
+	// And the signature survives the wire, since the envelope is detached.
+	r.Amount = 120
+	if err := r.Sign(hubA); err != nil {
+		t.Fatal(err)
+	}
+	b, err := r.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := payment.UnmarshalReceipt(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Envelope == nil {
+		t.Fatal("the signature did not survive the wire")
+	}
+	if err := back.Verify(hubA.KEL(), hubA.AID(), now); err != nil {
+		t.Errorf("a round-tripped receipt must verify: %v", err)
+	}
+}
