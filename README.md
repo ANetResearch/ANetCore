@@ -25,6 +25,15 @@ implementation, pinned by golden vectors.
 | `agenturi` | `agent://` URI scheme — parsing & canonical form | agent-uri-spec |
 | `golden` | Conformance vectors — byte-for-byte oracle shared with `design3/tools/vectors.py` | `_CONVENTIONS §8` |
 | `ael` | Agent Event Ledger — per-DID append-only anti-fork hash chain (P6) | evidence-spec |
+| `evidence` | Receipt + Review — the interaction-anchored trust pair anyone can verify | evidence-spec |
+| `delegation` | The relayed delegation wire: signed request, completion, chat; `VerifyDelegateReq`, `VerifyResult` | arch-03 |
+| `relayauth` | The canonical challenge a client signs to authenticate a relay mailbox operation | arch-03 |
+
+The last three arrived by the rule below rather than by design: each was a
+wire between the daemon and the Hub, duplicated in both repositories, and
+`delegation` had already diverged by 28 lines in a way neither side could
+detect — CBOR `keyasint` drops an unknown key without a word. A wire type
+that lives in two repositories is a wire type that will diverge.
 
 ## Use
 
@@ -55,7 +64,8 @@ and the suite test key are frozen and will never change within v1.
 ## Status
 
 Extracted from the AgentNetwork v3 reference implementation
-(`internal/v3/*`, verbatim, imports rewritten). 71 tests green.
+(`internal/v3/*`, verbatim, imports rewritten), plus the daemon/Hub wire
+consolidated here in v0.5.x. 102 tests green.
 Module design rationale: `anet/docs/K207` (anet4 module architecture).
 
 License: ANet Community License 1.0 (free non-commercial; commercial up to
