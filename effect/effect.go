@@ -25,6 +25,14 @@ const (
 	Failed Status = "FAILED"
 	// Unavailable: the target could not be reached at invocation time.
 	Unavailable Status = "UNAVAILABLE"
+
+	// PaymentRequired means the provider will do the work, once it is
+	// paid for. Its own status because none of the others is honest about
+	// it: FAILED says something broke, UNAVAILABLE says nothing was
+	// attempted at the far end, and both would send a caller looking for
+	// a fault that is not there. The price rides with it, as an x402
+	// PaymentRequired body.
+	PaymentRequired Status = "PAYMENT_REQUIRED"
 )
 
 // Evidence carries the structured provenance of an execution: not just

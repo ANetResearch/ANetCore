@@ -43,6 +43,15 @@ type DelegateReq struct {
 	// provider up front). Like KEL/Envelope they are transport, NOT part of the signed TaskDoc/request
 	// CID; each attachment is self-verified by its own content CID.
 	Attachments []Attachment `cbor:"5,keyasint,omitempty"`
+	// Payment is an x402 PaymentPayload (JSON), when this delegation is
+	// paying for itself.
+	//
+	// Beside the TaskDoc rather than inside it, because the TaskDoc is
+	// what the request CID covers and what the receipt anchors: a task is
+	// the same task whether or not it was paid for, and folding the
+	// payment in would make an unpaid retry of the identical work a
+	// different request.
+	Payment []byte `cbor:"6,keyasint,omitempty"`
 }
 
 // Attachment is a binary payload (image, media, archive/zip of a folder…) carried inline alongside a
