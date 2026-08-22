@@ -149,6 +149,24 @@ type ChatMsg struct {
 	StreamAtMS          int64  `cbor:"5,keyasint,omitempty"`
 	ReasoningBody       string `cbor:"6,keyasint,omitempty"`
 	ReasoningStreamAtMS int64  `cbor:"7,keyasint,omitempty"`
+
+	// MsgID identifies this message, so a receiver can tell a redelivery
+	// from a repetition.
+	//
+	// Relay delivery is at-least-once by construction: a message is acked
+	// only after it has been handled, because acking first would lose work
+	// on a crash, and the price of that order is a redelivery whenever a
+	// node dies in between. The delegation and result paths can dedupe on
+	// the interaction id — there is one of each per interaction — but a
+	// conversation has many messages and "same body from the same peer" is
+	// not the same thing as "the message I already stored": people repeat
+	// themselves, and an agent saying "ok" twice means it twice.
+	//
+	// The sender mints it, because the sender is the only party present on
+	// every path. The hub's mailbox row id would have served for hub
+	// relay and does not exist over p2p, and a receiver cannot invent one
+	// without inventing exactly the ambiguity this removes.
+	MsgID string `cbor:"9,keyasint,omitempty"`
 }
 
 // Marshal encodes a ChatMsg for the relay.

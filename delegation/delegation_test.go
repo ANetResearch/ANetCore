@@ -272,6 +272,7 @@ func TestChatMsgKeysArePinned(t *testing.T) {
 		{5, ChatMsg{Kind: "x", StreamAtMS: 9}},
 		{6, ChatMsg{Kind: "x", ReasoningBody: "r"}},
 		{7, ChatMsg{Kind: "x", ReasoningStreamAtMS: 9}},
+		{9, ChatMsg{Kind: "x", MsgID: "m-1"}},
 	} {
 		b, err := tc.msg.Marshal()
 		if err != nil {
@@ -464,5 +465,45 @@ func TestAMissingKELIsUnverifiableNotInvalid(t *testing.T) {
 		"ix-1", "did:anet:r", provider.AID(), 1)
 	if !errors.Is(err, ErrUnverifiable) {
 		t.Fatalf("a completion with no KEL must be unverifiable, distinctly: %v", err)
+	}
+}
+
+// A message id must survive the wire, and must be absent when unset.
+//
+// Absent matters as much as present: an older sender does not mint one,
+// and a receiver that saw an empty string as an id would treat every such
+// message as the same message and drop all but the first.
+func TestAMessageIDSurvivesAndStaysOptional(t *testing.T) {
+	with := &ChatMsg{Kind: ChatText, Body: "on my way", MsgID: "01J8ZQ"}
+	b, err := with.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := UnmarshalChatMsg(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.MsgID != "01J8ZQ" {
+		t.Errorf("message id lost on the wire: %q", got.MsgID)
+	}
+
+	without := &ChatMsg{Kind: ChatText, Body: "on my way"}
+	b, err = without.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[uint64]any
+	if err := coredet.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := raw[9]; present {
+		t.Error("an unset message id must not occupy key 9 — an older sender mints none")
+	}
+	back, err := UnmarshalChatMsg(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.MsgID != "" {
+		t.Errorf("an absent id must decode as empty, got %q", back.MsgID)
 	}
 }
