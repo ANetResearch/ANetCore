@@ -90,7 +90,12 @@ func (a *HeadAttestation) Sign(c *identity.Controller) error {
 	if a.ChainDID == c.AID() {
 		return errors.New("ael: a chain cannot witness itself")
 	}
-	if a.HeadID == "" || a.Seq == 0 {
+	// HeadID alone says whether there is a head. Seq must NOT be part of
+	// this check: an AEL's first record is seq 0, so requiring a non-zero
+	// sequence refuses attestations of a chain with exactly one record —
+	// which is every chain at the moment it first becomes worth
+	// witnessing.
+	if a.HeadID == "" {
 		return errors.New("ael: an attestation must name a head")
 	}
 	pre, err := a.CanonicalPreimage()

@@ -145,3 +145,35 @@ func TestAnAttestationDetectsARewrittenHistory(t *testing.T) {
 		t.Error("another chain's record was reported as a contradiction")
 	}
 }
+
+// A chain with exactly one record is at seq 0, and that is precisely
+// when it first becomes worth witnessing.
+//
+// An earlier version required a non-zero sequence, treating seq 0 as
+// "there is no head". That refused every attestation of a one-record
+// chain.
+func TestSeqZeroIsAHeadLikeAnyOther(t *testing.T) {
+	w, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &ael.HeadAttestation{
+		ChainDID: "did:anet:hub", Seq: 0, HeadID: "bafy-genesis",
+		ObservedAt: time.Now().UnixMilli(),
+	}
+	if err := a.Sign(w); err != nil {
+		t.Fatalf("refused to attest to a one-record chain: %v", err)
+	}
+	if err := a.Verify(w.KEL(), w.AID(), time.Now().UnixMilli()); err != nil {
+		t.Fatalf("the attestation does not verify: %v", err)
+	}
+	// And it still detects a rewrite at that position.
+	if !a.ContradictedBy(&ael.EventRecord{ChainDID: "did:anet:hub", Seq: 0, ID: "bafy-other"}) {
+		t.Error("a rewritten genesis record was not detected")
+	}
+	// An attestation with no head id is still refused.
+	empty := &ael.HeadAttestation{ChainDID: "did:anet:hub", Seq: 0, ObservedAt: time.Now().UnixMilli()}
+	if err := empty.Sign(w); err == nil {
+		t.Error("signed an attestation naming no head")
+	}
+}
