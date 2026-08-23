@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/ANetResearch/ANetCore/ael"
 	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/delegation"
 	"github.com/ANetResearch/ANetCore/evidence"
@@ -337,5 +338,32 @@ func TestVEC_PAYMENT_VOUCHER_1(t *testing.T) {
 	}
 	if anetcid.MustSum(pinnedPre) == wantCID {
 		t.Error("a voucher pinning its arguments must not share an id with one that does not")
+	}
+}
+
+// VEC-AEL-ATTESTATION-1: a witness's signed record of another chain's
+// head.
+//
+// Pinned because the two parties to an attestation never communicate
+// about it. A witness signs what it saw; a third party compares that
+// against the chain much later, possibly after both the witness and the
+// chain owner have stopped running. If the preimage drifted between the
+// version that signed and the version that verifies, the comparison
+// silently stops detecting rewritten history — and it stops in the
+// direction that favours whoever rewrote it.
+func TestVEC_AEL_ATTESTATION_1(t *testing.T) {
+	a := &ael.HeadAttestation{
+		ChainDID:   "did:anet:golden-hub",
+		Seq:        42,
+		HeadID:     "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4",
+		ObservedAt: 1767225800000,
+	}
+	pre, err := a.CanonicalPreimage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantCID = "bafyreibzi4owp36tltchlqhtxodxhjarhpoqxnmev53rsgfrrym3crathq"
+	if got := anetcid.MustSum(pre); got != wantCID {
+		t.Errorf("attestation CID\n got  %s\n want %s", got, wantCID)
 	}
 }
