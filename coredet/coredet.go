@@ -40,10 +40,38 @@ func init() {
 }
 
 // Marshal encodes v as CoreDet-CBOR. It returns an error if v contains NaN or
-// ±Infinity (C-R1). The result is the canonical preimage for CID (see anetcid)
-// and for AObj signatures (see aobj).
+// ±Infinity (C-R1), or if the result would not decode under Unmarshal.
+//
+// That last check closes an asymmetry between the two modes. A Go string may
+// hold arbitrary bytes and the encoder writes it as a CBOR text string without
+// looking; the decoder refuses one that is not valid UTF-8, as RFC 8949
+// requires. Without the check this package can emit a preimage it cannot read
+// back, and the writer is told it succeeded.
+//
+// 位置 coredet.Marshal; 行为 编码器接受非法 UTF-8 的 Go string, 解码器拒绝;
+// 影响 写入成功、数据落盘, 失败推迟到下一次读取 —— 往往是另一个进程、另一天;
+// 发现方式 anet daemon 把一条含 0xa2 字节的命令回显写进证据账本, 两天后重启时
+// 账本读不动, 节点在 systemd 下每 5 秒崩溃重启, 只能手工编辑账本才能恢复。
+//
+// 修在这里而不是各调用点: 本包是全栈唯一的 preimage 编码器, 在这里立住
+// "能编码即能解码", 这类缺陷对所有调用方一次消失。代价是每次 Marshal 多一次
+// 解码; 若将来证明它在热路径上要紧, 那时再拿基准数据来换写法。
 func Marshal(v any) ([]byte, error) {
-	return encMode.Marshal(v)
+	b, err := encMode.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	// Ask the decoder rather than reimplement its rules. Valid() only checks
+	// structure — the UTF-8 rule lives in the value-building path — and a
+	// hand-written scan would be a second copy of the decoder that is free to
+	// drift from the first.
+	var back any
+	if err := decMode.Unmarshal(b, &back); err != nil {
+		return nil, fmt.Errorf("coredet: encoded value will not decode (%w) — "+
+			"a string almost certainly carries bytes that are not valid UTF-8; "+
+			"arbitrary bytes belong in a []byte field", err)
+	}
+	return b, nil
 }
 
 // Unmarshal decodes CoreDet-CBOR bytes into v. Decoding determinism is not required
