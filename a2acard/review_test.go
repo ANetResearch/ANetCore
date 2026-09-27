@@ -106,7 +106,7 @@ func TestVerifyRejectsCaseFoldedDuplicateNames(t *testing.T) {
 	for name, f := range cases {
 		card := baseCard(a.AID())
 		f(card)
-		signed := signCard(t, card, a)
+		signed := signLoose(t, card, a) // Sign's publish-form check would refuse these first
 		r := newResolver(a, b)
 		_, err := Verify(signed, r.resolve, t0)
 		if !IsCode(err, CodeInvalidCard) {
@@ -124,7 +124,7 @@ func TestVerifyRejectsCaseFoldedDuplicateNames(t *testing.T) {
 	card["x_key"] = 2
 	card["xkey"] = 3
 	skill(card, 0)["examples"] = []any{"e"}
-	if _, err := Verify(signCard(t, card, a), newResolver(a).resolve, t0); err != nil {
+	if _, err := Verify(signLoose(t, card, a), newResolver(a).resolve, t0); err != nil {
 		t.Fatalf("distinct names rejected: %v", err)
 	}
 }
@@ -178,7 +178,8 @@ func TestVerifyFindsCardExtensionAmongOthers(t *testing.T) {
 	card := baseCard(c.AID())
 	anet := extensions(card)[0]
 	card["capabilities"].(map[string]any)["extensions"] = []any{
-		map[string]any{"uri": "https://github.com/google-a2a/a2a-x402/v0.2", "required": false},
+		// Not required: the member is omitted, not written as false (A2A-DESIGN §8.7).
+		map[string]any{"uri": "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2"},
 		map[string]any{"uri": "https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1", "params": map[string]any{
 			"network": "anet", "prices": []any{map[string]any{"skillId": "echo", "amount": "10"}},
 		}},

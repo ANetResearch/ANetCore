@@ -1,0 +1,389 @@
+{
+  "APIKeySecurityScheme": {
+    "description": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "location": {
+      "presence": "required",
+      "type": "string"
+    },
+    "name": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "AgentCapabilities": {
+    "extendedAgentCard": {
+      "presence": "explicit",
+      "type": "bool"
+    },
+    "extensions": {
+      "message": "AgentExtension",
+      "presence": "implicit",
+      "type": "repeated_message"
+    },
+    "pushNotifications": {
+      "presence": "explicit",
+      "type": "bool"
+    },
+    "streaming": {
+      "presence": "explicit",
+      "type": "bool"
+    }
+  },
+  "AgentCard": {
+    "capabilities": {
+      "message": "AgentCapabilities",
+      "presence": "required",
+      "type": "message"
+    },
+    "defaultInputModes": {
+      "presence": "required",
+      "type": "repeated_string"
+    },
+    "defaultOutputModes": {
+      "presence": "required",
+      "type": "repeated_string"
+    },
+    "description": {
+      "presence": "required",
+      "type": "string"
+    },
+    "documentationUrl": {
+      "presence": "explicit",
+      "type": "string"
+    },
+    "iconUrl": {
+      "presence": "explicit",
+      "type": "string"
+    },
+    "name": {
+      "presence": "required",
+      "type": "string"
+    },
+    "provider": {
+      "message": "AgentProvider",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "securityRequirements": {
+      "message": "SecurityRequirement",
+      "presence": "implicit",
+      "type": "repeated_message"
+    },
+    "securitySchemes": {
+      "message": "SecurityScheme",
+      "presence": "implicit",
+      "type": "map_message"
+    },
+    "signatures": {
+      "message": "AgentCardSignature",
+      "presence": "implicit",
+      "type": "repeated_message"
+    },
+    "skills": {
+      "message": "AgentSkill",
+      "presence": "required",
+      "type": "repeated_message"
+    },
+    "supportedInterfaces": {
+      "message": "AgentInterface",
+      "presence": "required",
+      "type": "repeated_message"
+    },
+    "version": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "AgentCardSignature": {
+    "header": {
+      "presence": "explicit",
+      "type": "struct"
+    },
+    "protected": {
+      "presence": "required",
+      "type": "string"
+    },
+    "signature": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "AgentExtension": {
+    "description": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "params": {
+      "presence": "explicit",
+      "type": "struct"
+    },
+    "required": {
+      "presence": "implicit",
+      "type": "bool"
+    },
+    "uri": {
+      "presence": "implicit",
+      "type": "string"
+    }
+  },
+  "AgentInterface": {
+    "protocolBinding": {
+      "presence": "required",
+      "type": "string"
+    },
+    "protocolVersion": {
+      "presence": "required",
+      "type": "string"
+    },
+    "tenant": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "url": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "AgentProvider": {
+    "organization": {
+      "presence": "required",
+      "type": "string"
+    },
+    "url": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "AgentSkill": {
+    "description": {
+      "presence": "required",
+      "type": "string"
+    },
+    "examples": {
+      "presence": "implicit",
+      "type": "repeated_string"
+    },
+    "id": {
+      "presence": "required",
+      "type": "string"
+    },
+    "inputModes": {
+      "presence": "implicit",
+      "type": "repeated_string"
+    },
+    "name": {
+      "presence": "required",
+      "type": "string"
+    },
+    "outputModes": {
+      "presence": "implicit",
+      "type": "repeated_string"
+    },
+    "securityRequirements": {
+      "message": "SecurityRequirement",
+      "presence": "implicit",
+      "type": "repeated_message"
+    },
+    "tags": {
+      "presence": "required",
+      "type": "repeated_string"
+    }
+  },
+  "AuthorizationCodeOAuthFlow": {
+    "authorizationUrl": {
+      "presence": "required",
+      "type": "string"
+    },
+    "pkceRequired": {
+      "presence": "implicit",
+      "type": "bool"
+    },
+    "refreshUrl": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "scopes": {
+      "presence": "required",
+      "type": "map_string"
+    },
+    "tokenUrl": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "ClientCredentialsOAuthFlow": {
+    "refreshUrl": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "scopes": {
+      "presence": "required",
+      "type": "map_string"
+    },
+    "tokenUrl": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "DeviceCodeOAuthFlow": {
+    "deviceAuthorizationUrl": {
+      "presence": "required",
+      "type": "string"
+    },
+    "refreshUrl": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "scopes": {
+      "presence": "required",
+      "type": "map_string"
+    },
+    "tokenUrl": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "HTTPAuthSecurityScheme": {
+    "bearerFormat": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "description": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "scheme": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "ImplicitOAuthFlow": {
+    "authorizationUrl": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "refreshUrl": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "scopes": {
+      "presence": "implicit",
+      "type": "map_string"
+    }
+  },
+  "MutualTlsSecurityScheme": {
+    "description": {
+      "presence": "implicit",
+      "type": "string"
+    }
+  },
+  "OAuth2SecurityScheme": {
+    "description": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "flows": {
+      "message": "OAuthFlows",
+      "presence": "required",
+      "type": "message"
+    },
+    "oauth2MetadataUrl": {
+      "presence": "implicit",
+      "type": "string"
+    }
+  },
+  "OAuthFlows": {
+    "authorizationCode": {
+      "message": "AuthorizationCodeOAuthFlow",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "clientCredentials": {
+      "message": "ClientCredentialsOAuthFlow",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "deviceCode": {
+      "message": "DeviceCodeOAuthFlow",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "implicit": {
+      "message": "ImplicitOAuthFlow",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "password": {
+      "message": "PasswordOAuthFlow",
+      "presence": "explicit",
+      "type": "message"
+    }
+  },
+  "OpenIdConnectSecurityScheme": {
+    "description": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "openIdConnectUrl": {
+      "presence": "required",
+      "type": "string"
+    }
+  },
+  "PasswordOAuthFlow": {
+    "refreshUrl": {
+      "presence": "implicit",
+      "type": "string"
+    },
+    "scopes": {
+      "presence": "implicit",
+      "type": "map_string"
+    },
+    "tokenUrl": {
+      "presence": "implicit",
+      "type": "string"
+    }
+  },
+  "SecurityRequirement": {
+    "schemes": {
+      "message": "StringList",
+      "presence": "implicit",
+      "type": "map_message"
+    }
+  },
+  "SecurityScheme": {
+    "apiKeySecurityScheme": {
+      "message": "APIKeySecurityScheme",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "httpAuthSecurityScheme": {
+      "message": "HTTPAuthSecurityScheme",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "mtlsSecurityScheme": {
+      "message": "MutualTlsSecurityScheme",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "oauth2SecurityScheme": {
+      "message": "OAuth2SecurityScheme",
+      "presence": "explicit",
+      "type": "message"
+    },
+    "openIdConnectSecurityScheme": {
+      "message": "OpenIdConnectSecurityScheme",
+      "presence": "explicit",
+      "type": "message"
+    }
+  },
+  "StringList": {
+    "list": {
+      "presence": "implicit",
+      "type": "repeated_string"
+    }
+  }
+}
