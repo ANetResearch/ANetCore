@@ -83,13 +83,17 @@ func (s Skill) WithDefaults() Skill {
 }
 
 // ExtensionDecl returns an AgentExtension declaration for capabilities.extensions in publish
-// form: "uri" always; "description" only when non-empty; "required" only when true, since
-// required is a plain proto3 bool whose false is omitted (A2A §8.4.1; A2A-DESIGN §8.7, where
-// the a2a-x402 declaration on a proxy card is not required and so carries no "required"
-// member); "params" only when non-empty. The params values themselves must also be free of
-// null, "", [] and {} (see CheckPublishForm); Sign reports any that are not.
+// form: "uri" and "description" only when non-empty (both are plain proto3 strings, and every
+// real declaration has a uri); "required" only when true, since required is a plain proto3
+// bool whose false is omitted (A2A §8.4.1; A2A-DESIGN §8.7, where the a2a-x402 declaration on
+// a proxy card is not required and so carries no "required" member); "params" only when
+// non-empty. The params values themselves must also be free of null, "", [] and {} (see
+// CheckPublishForm); Sign reports any that are not.
 func ExtensionDecl(uri, description string, required bool, params map[string]any) map[string]any {
-	ext := map[string]any{"uri": uri}
+	ext := map[string]any{}
+	if uri != "" {
+		ext["uri"] = uri
+	}
 	if description != "" {
 		ext["description"] = description
 	}

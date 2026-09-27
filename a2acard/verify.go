@@ -64,9 +64,9 @@ func (v *Verified) Mark() Mark { return Mark{Seq: v.Seq, PayloadHash: v.PayloadH
 //     array has at least one element) and limits: name (<= MaxNameBytes), description
 //     (<= MaxDescriptionBytes) and version, all non-empty strings; supportedInterfaces (at
 //     least one; non-empty url, protocolBinding and protocolVersion); capabilities (an
-//     object); defaultInputModes and defaultOutputModes (at least one non-empty string each);
-//     skills (1 to MaxSkills; unique non-empty id; non-empty name and description; 1 to
-//     MaxTagsPerSkill non-empty tags);
+//     object); defaultInputModes and defaultOutputModes (at least one element each, every
+//     element a non-empty string); skills (1 to MaxSkills; unique non-empty id; non-empty
+//     name and description; 1 to MaxTagsPerSkill non-empty tags);
 //  5. exactly one anet-card extension with params aid, seq, issuedAt and notBefore, the last
 //     three canonical decimal strings;
 //  6. every supportedInterfaces entry whose protocolBinding is BindingRelayURI has tenant == aid;

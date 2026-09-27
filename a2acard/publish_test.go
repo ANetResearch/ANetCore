@@ -159,6 +159,10 @@ func fullCard(aid string) map[string]any {
 				"scopes": map[string]any{"read": "Read access"}, "pkceRequired": true,
 			},
 		}}},
+		// The deprecated implicit flow with the members a2a-go always writes (goWrites).
+		"legacy": map[string]any{"oauth2SecurityScheme": map[string]any{"flows": map[string]any{
+			"implicit": map[string]any{"authorizationUrl": "https://example.org/auth", "scopes": map[string]any{"read": "Read access"}},
+		}}},
 	}
 	card["securityRequirements"] = []any{map[string]any{"schemes": map[string]any{"bearer": map[string]any{"list": []any{"a2a"}}}}}
 	caps := card["capabilities"].(map[string]any)
@@ -228,12 +232,46 @@ func TestCheckPublishFormRejections(t *testing.T) {
 			m["securityRequirements"] = []any{map[string]any{"schemes": map[string]any{"anetLocal": map[string]any{}}}}
 		}, "securityRequirements[0].schemes.anetLocal", CodeNotPublishForm},
 
+		// oneof: a2a-python's ParseDict and a2a-go refuse two members, so no verifier parses it.
+		{"two security scheme members", func(m map[string]any) {
+			m["securitySchemes"] = map[string]any{"s": map[string]any{
+				"httpAuthSecurityScheme": map[string]any{"scheme": "Bearer"},
+				"apiKeySecurityScheme":   map[string]any{"location": "header", "name": "X-Key"},
+			}}
+		}, "securitySchemes.s", CodeNotPublishForm},
+		{"two OAuth flows", func(m map[string]any) {
+			m["securitySchemes"] = map[string]any{"o": map[string]any{"oauth2SecurityScheme": map[string]any{"flows": map[string]any{
+				"authorizationCode": map[string]any{"authorizationUrl": "https://e.org/a", "tokenUrl": "https://e.org/t", "scopes": map[string]any{"r": "R"}},
+				"clientCredentials": map[string]any{"tokenUrl": "https://e.org/t", "scopes": map[string]any{"r": "R"}},
+			}}}}
+		}, "securitySchemes.o.oauth2SecurityScheme.flows", CodeNotPublishForm},
+
+		// Members a2a-go writes on every serialization although a2a.proto does not require them.
+		{"implicit flow without authorizationUrl", func(m map[string]any) {
+			m["securitySchemes"] = map[string]any{"o": map[string]any{"oauth2SecurityScheme": map[string]any{"flows": map[string]any{
+				"implicit": map[string]any{"scopes": map[string]any{"r": "R"}},
+			}}}}
+		}, "securitySchemes.o.oauth2SecurityScheme.flows.implicit.authorizationUrl", CodeNotPublishForm},
+		{"password flow without scopes", func(m map[string]any) {
+			m["securitySchemes"] = map[string]any{"o": map[string]any{"oauth2SecurityScheme": map[string]any{"flows": map[string]any{
+				"password": map[string]any{"tokenUrl": "https://e.org/t"},
+			}}}}
+		}, "securitySchemes.o.oauth2SecurityScheme.flows.password.scopes", CodeNotPublishForm},
 		{"streaming missing", func(m map[string]any) { delete(m["capabilities"].(map[string]any), "streaming") }, "capabilities.streaming", CodeNotPublishForm},
 		{"pushNotifications missing", func(m map[string]any) { delete(m["capabilities"].(map[string]any), "pushNotifications") }, "capabilities.pushNotifications", CodeNotPublishForm},
 		{"extendedAgentCard false", func(m map[string]any) { m["capabilities"].(map[string]any)["extendedAgentCard"] = false }, "capabilities.extendedAgentCard", CodeNotPublishForm},
 
 		{"case-folded names", func(m map[string]any) { params(m)["AID"] = "x" }, "", CodeInvalidCard},
 		{"signatures not an array", func(m map[string]any) { m["signatures"] = map[string]any{} }, "", CodeInvalidCard},
+		// An existing entry is outside the payload, but a malformed one makes every SDK refuse
+		// to parse the card.
+		{"existing signature entry without signature", func(m map[string]any) {
+			m["signatures"] = []any{map[string]any{"protected": "eyJhbGciOiJFZERTQSJ9"}}
+		}, "signatures[0].signature", CodeNotPublishForm},
+		{"existing signature entry header not an object", func(m map[string]any) {
+			m["signatures"] = []any{map[string]any{"protected": "eyJhbGciOiJFZERTQSJ9", "signature": "c2ln", "header": "h"}}
+		}, "signatures[0].header", CodeNotPublishForm},
+		{"existing signature entry not an object", func(m map[string]any) { m["signatures"] = []any{"x"} }, "signatures[0]", CodeNotPublishForm},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

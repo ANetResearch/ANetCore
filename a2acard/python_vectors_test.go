@@ -209,8 +209,8 @@ func TestPythonVectors(t *testing.T) {
 
 // schema.go is the AgentCard schema of a2a.proto. The generator dumps the same table from the
 // a2a-python SDK's compiled descriptors (field_behavior REQUIRED, has_presence, map and
-// repeated labels), so a transcription error here, or a schema change in a new A2A version,
-// shows up as a difference.
+// repeated labels, real oneofs), so a transcription error here, or a schema change in a new
+// A2A version, shows up as a difference.
 func TestSchemaMatchesReferenceDescriptors(t *testing.T) {
 	b, err := os.ReadFile("testdata/a2a-agentcard-schema.json")
 	if err != nil {
@@ -220,6 +220,7 @@ func TestSchemaMatchesReferenceDescriptors(t *testing.T) {
 		Type     string `json:"type"`
 		Presence string `json:"presence"`
 		Message  string `json:"message,omitempty"`
+		Oneof    string `json:"oneof,omitempty"`
 	}
 	var want map[string]map[string]fieldDesc
 	if err := json.Unmarshal(b, &want); err != nil {
@@ -242,7 +243,7 @@ func TestSchemaMatchesReferenceDescriptors(t *testing.T) {
 		fields := map[string]fieldDesc{}
 		got[m.name] = fields
 		for name, f := range m.fields {
-			d := fieldDesc{Type: typeName[f.typ], Presence: presenceName[f.pres]}
+			d := fieldDesc{Type: typeName[f.typ], Presence: presenceName[f.pres], Oneof: m.oneof}
 			if f.msg != nil {
 				d.Message = f.msg.name
 				walk(f.msg)

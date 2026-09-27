@@ -298,26 +298,31 @@
   "OAuthFlows": {
     "authorizationCode": {
       "message": "AuthorizationCodeOAuthFlow",
+      "oneof": "flow",
       "presence": "explicit",
       "type": "message"
     },
     "clientCredentials": {
       "message": "ClientCredentialsOAuthFlow",
+      "oneof": "flow",
       "presence": "explicit",
       "type": "message"
     },
     "deviceCode": {
       "message": "DeviceCodeOAuthFlow",
+      "oneof": "flow",
       "presence": "explicit",
       "type": "message"
     },
     "implicit": {
       "message": "ImplicitOAuthFlow",
+      "oneof": "flow",
       "presence": "explicit",
       "type": "message"
     },
     "password": {
       "message": "PasswordOAuthFlow",
+      "oneof": "flow",
       "presence": "explicit",
       "type": "message"
     }
@@ -356,26 +361,31 @@
   "SecurityScheme": {
     "apiKeySecurityScheme": {
       "message": "APIKeySecurityScheme",
+      "oneof": "scheme",
       "presence": "explicit",
       "type": "message"
     },
     "httpAuthSecurityScheme": {
       "message": "HTTPAuthSecurityScheme",
+      "oneof": "scheme",
       "presence": "explicit",
       "type": "message"
     },
     "mtlsSecurityScheme": {
       "message": "MutualTlsSecurityScheme",
+      "oneof": "scheme",
       "presence": "explicit",
       "type": "message"
     },
     "oauth2SecurityScheme": {
       "message": "OAuth2SecurityScheme",
+      "oneof": "scheme",
       "presence": "explicit",
       "type": "message"
     },
     "openIdConnectSecurityScheme": {
       "message": "OpenIdConnectSecurityScheme",
+      "oneof": "scheme",
       "presence": "explicit",
       "type": "message"
     }

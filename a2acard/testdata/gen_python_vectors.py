@@ -9,9 +9,9 @@ in "expect".
 
 Outputs, next to this script:
   python-vectors.json         the vectors
-  a2a-agentcard-schema.json   field name, shape and presence of AgentCard and every message
-                              under it, read from the SDK's proto descriptors; schema.go must
-                              match it (TestSchemaMatchesReferenceDescriptors)
+  a2a-agentcard-schema.json   field name, shape, presence and oneof of AgentCard and every
+                              message under it, read from the SDK's proto descriptors; schema.go
+                              must match it (TestSchemaMatchesReferenceDescriptors)
 
 Environment used for the committed files (see "generator" in python-vectors.json):
   python3 -m venv --without-pip /data/projs/anet-dev/.venv
@@ -355,7 +355,11 @@ def main():
 
 
 def dump_schema(root):
-    """Every message reachable from root: {message: {json_name: {type, presence, message}}}."""
+    """Every message reachable from root: {message: {json_name: {type, presence, message, oneof}}}.
+
+    oneof is the name of the field's real oneof (SecurityScheme.scheme, OAuthFlows.flow); the
+    synthetic oneof protoc makes for a proto3 optional field ("_" + field name, one field) is
+    presence, not a oneof, and is left out."""
     out = {}
 
     def short(d):
@@ -391,6 +395,9 @@ def dump_schema(root):
             entry = {"type": kind, "presence": presence}
             if mt is not None:
                 entry["message"] = short(mt)
+            oneof = f.containing_oneof
+            if oneof is not None and not (len(oneof.fields) == 1 and oneof.name == "_" + f.name):
+                entry["oneof"] = oneof.name
             fields[f.json_name] = entry
             if mt is not None:
                 walk(mt)

@@ -78,6 +78,10 @@ func TestExtensionDecl(t *testing.T) {
 	if got := ExtensionDecl(x402, "", false, map[string]any{}); !reflect.DeepEqual(got, map[string]any{"uri": x402}) {
 		t.Fatalf("ExtensionDecl = %v", got)
 	}
+	// uri is a plain proto3 string too: an empty one is omitted, not written as "".
+	if got := ExtensionDecl("", "No uri.", false, nil); !reflect.DeepEqual(got, map[string]any{"description": "No uri."}) {
+		t.Fatalf("ExtensionDecl = %v", got)
+	}
 }
 
 // A network card assembled from the builder helpers is in publish form, signs, and verifies

@@ -52,7 +52,12 @@ type field struct {
 }
 
 type message struct {
-	name   string // proto message name, for error text and the descriptor comparison
+	name string // proto message name, for error text and the descriptor comparison
+	// oneof names the proto oneof that every field of the message belongs to (SecurityScheme's
+	// scheme, OAuthFlows' flow), or is "" when the message has none. At most one member of a
+	// oneof may be set; proto3 JSON parsers (a2a-python's ParseDict) and a2a-go reject an object
+	// that sets two.
+	oneof  string
 	fields map[string]field
 }
 
@@ -134,7 +139,7 @@ var schemaStringList = &message{name: "StringList", fields: map[string]field{
 }}
 
 // SecurityScheme is a oneof; each member is a message field with explicit presence.
-var schemaSecurityScheme = &message{name: "SecurityScheme", fields: map[string]field{
+var schemaSecurityScheme = &message{name: "SecurityScheme", oneof: "scheme", fields: map[string]field{
 	"apiKeySecurityScheme":        msgField(explicit, schemaAPIKeySecurityScheme),
 	"httpAuthSecurityScheme":      msgField(explicit, schemaHTTPAuthSecurityScheme),
 	"oauth2SecurityScheme":        msgField(explicit, schemaOAuth2SecurityScheme),
@@ -170,7 +175,7 @@ var schemaMutualTLSSecurityScheme = &message{name: "MutualTlsSecurityScheme", fi
 }}
 
 // OAuthFlows is a oneof; each member is a message field with explicit presence.
-var schemaOAuthFlows = &message{name: "OAuthFlows", fields: map[string]field{
+var schemaOAuthFlows = &message{name: "OAuthFlows", oneof: "flow", fields: map[string]field{
 	"authorizationCode": msgField(explicit, schemaAuthorizationCodeOAuthFlow),
 	"clientCredentials": msgField(explicit, schemaClientCredentialsOAuthFlow),
 	"implicit":          msgField(explicit, schemaImplicitOAuthFlow),

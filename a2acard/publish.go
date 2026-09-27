@@ -1,6 +1,9 @@
 package a2acard
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 // CanonicalForm names the payload a signature was checked against.
 type CanonicalForm string
@@ -140,18 +143,23 @@ func payloads(card *value) (stripped, raw []byte, err error) {
 //     a2a-python and the specification disagree: the specification keeps "description": ""
 //     and "params": {"note": ""}, a2a-python removes them, so no card holding them verifies in
 //     both;
-//  5. capabilities has streaming and pushNotifications, and extendedAgentCard, when present,
-//     is true. a2a-go always writes the first two and omits the third when false, so any other
-//     card changes when a2a-go parses and re-serializes it (A2A-DESIGN §10.1).
+//  5. a oneof message (SecurityScheme, OAuthFlows) sets exactly one member: a2a-python's
+//     ParseDict and a2a-go both refuse to parse an object that sets two;
+//  6. every member that a2a-go writes on each serialization is present (see goWrites:
+//     capabilities.streaming and pushNotifications, and the unset-but-always-written members
+//     of the deprecated implicit and password OAuth flows), and extendedAgentCard, when
+//     present, is true, since a2a-go omits it when false. Any other card changes when a2a-go
+//     parses and re-serializes it (A2A-DESIGN §10.1).
 //
 // Consequences for card builders: an extension that is not required omits "required" (never
 // "required": false, A2A-DESIGN §8.7); a skill always has a non-empty description and at least
 // one tag (see DefaultSkillDescription); a security requirement names each scheme with a
 // non-empty scope list, because {"schemes": {"s": {}}} is dropped whole by a2a-python.
 //
-// The top-level "signatures" member is not part of the payload and is only checked to be an
-// array. Violations are reported as CodeNotPublishForm with the member's path; parse failures
-// keep their own codes.
+// The top-level "signatures" member is not part of the payload. It is only checked to be an
+// array whose entries, if any, have the AgentCardSignature shape every verifier parses
+// (non-empty protected and signature strings, header an object). Violations are reported as
+// CodeNotPublishForm with the member's path; parse failures keep their own codes.
 func CheckPublishForm(cardJSON []byte) error {
 	card, err := parseCard(cardJSON)
 	if err != nil {
@@ -164,20 +172,55 @@ func checkPublishForm(card *value) error {
 	if err := checkCaseDistinctNames(card); err != nil {
 		return err
 	}
-	if sigs, ok := card.member("signatures"); ok && sigs.kind != kindArray {
-		return newErr(CodeInvalidCard, "signatures is not an array")
+	if sigs, ok := card.member("signatures"); ok {
+		if sigs.kind != kindArray {
+			return newErr(CodeInvalidCard, "signatures is not an array")
+		}
+		if err := publishSignatureEntries(sigs); err != nil {
+			return err
+		}
 	}
 	if err := publishMessage(card, schemaAgentCard, "", "signatures"); err != nil {
 		return err
 	}
 	caps := card.obj["capabilities"] // present and an object: checked above
-	for _, name := range []string{"streaming", "pushNotifications"} {
-		if _, ok := caps.member(name); !ok {
-			return notPublish("capabilities."+name, "missing; a2a-go writes it on re-serialization, so the payload would change")
-		}
-	}
 	if e, ok := caps.member("extendedAgentCard"); ok && !e.b {
 		return notPublish("capabilities.extendedAgentCard", "false; a2a-go omits it on re-serialization, so the payload would change")
+	}
+	return nil
+}
+
+// goWrites lists, per message, the members that are not REQUIRED in a2a.proto but that
+// a2a-go v2's AgentCard types write on every serialization (struct fields without omitempty):
+// an unset one comes back as false, "" or null. A card that omits one of them therefore
+// changes when a2a-go parses and re-serializes it, and a2a-go verifies the re-serialized
+// bytes as they are, so the publish form requires them. With the default-value rule the
+// strings and maps among them are also non-empty.
+var goWrites = map[*message][]string{
+	schemaAgentCapabilities: {"pushNotifications", "streaming"},
+	schemaImplicitOAuthFlow: {"authorizationUrl", "scopes"},
+	schemaPasswordOAuthFlow: {"scopes", "tokenUrl"},
+}
+
+// publishSignatureEntries checks the entries already in "signatures" (a card that is being
+// signed a second time, for key rotation). They are not part of the payload, but a verifier
+// parses them with the rest of the card, and a2a-python's ParseDict and a2a-go's decoder
+// refuse the whole card when an entry is not an AgentCardSignature. Unknown members of an
+// entry are ignored by both and are not checked.
+func publishSignatureEntries(sigs *value) error {
+	for i, e := range sigs.arr {
+		p := index("signatures", i)
+		if e.kind != kindObject {
+			return notPublish(p, "not a JSON object (AgentCardSignature)")
+		}
+		for _, name := range []string{"protected", "signature"} {
+			if m, ok := e.member(name); !ok || m.kind != kindString || m.str == "" {
+				return notPublish(join(p, name), "missing, not a string or empty; the field is REQUIRED in AgentCardSignature")
+			}
+		}
+		if h, ok := e.member("header"); ok && h.kind != kindObject {
+			return notPublish(join(p, "header"), "not a JSON object (google.protobuf.Struct)")
+		}
 	}
 	return nil
 }
@@ -207,6 +250,17 @@ func publishMessage(v *value, m *message, path, skip string) error {
 	if len(v.obj) == 0 {
 		return notPublish(where, "empty object ("+m.name+"); a2a-python drops empty objects")
 	}
+	if m.oneof != "" {
+		set := 0
+		for name := range v.obj {
+			if _, ok := m.fields[name]; ok {
+				set++
+			}
+		}
+		if set > 1 {
+			return notPublish(where, fmt.Sprintf("sets %d members of oneof %s.%s; a2a-python and a2a-go accept exactly one", set, m.name, m.oneof))
+		}
+	}
 	for _, name := range sortedNames(v.obj) {
 		if name == skip {
 			continue
@@ -225,6 +279,11 @@ func publishMessage(v *value, m *message, path, skip string) error {
 		}
 		if _, ok := v.obj[name]; !ok {
 			return notPublish(join(path, name), "missing; the field is REQUIRED in "+m.name)
+		}
+	}
+	for _, name := range goWrites[m] {
+		if _, ok := v.obj[name]; !ok {
+			return notPublish(join(path, name), "missing; a2a-go writes it on re-serialization, so the payload would change")
 		}
 	}
 	return nil
