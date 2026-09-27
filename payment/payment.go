@@ -123,9 +123,39 @@ type SettlementResponse struct {
 	Extensions  map[string]any `json:"extensions,omitempty"`
 }
 
+// PaymentRequirements is x402 v2's name for the terms a resource server
+// requires, as it sends them to a facilitator's /verify and /settle. It
+// has the fields of one accepted option, so it is the same type.
+type PaymentRequirements = PaymentOption
+
+// FacilitatorRequest is the body of a facilitator's /verify and /settle
+// (x402 v2).
+//
+// PaymentRequirements is what lets the facilitator compare the payer's
+// signed authorization with the terms the resource server asked for. A
+// facilitator given only the payload settles whatever the payer signed:
+// a smaller amount, or a different payee. An anet hub refuses a request
+// without it (A2A-DESIGN §8.5).
+type FacilitatorRequest struct {
+	X402Version         int                  `json:"x402Version"`
+	PaymentPayload      *PaymentPayload      `json:"paymentPayload"`
+	PaymentRequirements *PaymentRequirements `json:"paymentRequirements"`
+}
+
 // Supported is what a facilitator advertises at /supported.
 type Supported struct {
 	Kinds []SupportedKind `json:"kinds"`
+	// Extensions lists the identifiers of the extensions this facilitator
+	// implements (x402 v2). An anet hub lists ExtReceipt: every settlement
+	// response carries its signed receipt.
+	Extensions []string `json:"extensions"`
+	// Signers maps a network to the identities that sign settlements on
+	// it (x402 v2). On anet-credit the signer of hub:<aid> is that hub.
+	Signers map[string][]string `json:"signers"`
+	// SignerKEL maps each signer AID in Signers to a URL serving its KEL,
+	// which is what a reader verifies a receipt against. An anet addition;
+	// x402 clients ignore it.
+	SignerKEL map[string]string `json:"anet.signer_kel,omitempty"`
 }
 
 // SupportedKind is one scheme-network pair a facilitator will handle.
@@ -407,23 +437,82 @@ const ClockSkew = 2 * 60 * 1000 // milliseconds
 // uses, named so a caller can branch on them rather than matching prose
 // that will be reworded. A reason not in this list is still valid — the
 // field is a string, deliberately.
+//
+// An anet hub sets errorReason (and invalidReason) to exactly one of these
+// values, with no suffix; the prose detail, when there is one, travels in
+// the response's extensions under ExtErrorDetail. The daemon maps the
+// value to an a2a-x402 x402.payment.error code (A2A-DESIGN §8.5), and that
+// mapping is a lookup on the exact string.
 const (
 	// ReasonInsufficientFunds: the payer's balance would not cover it.
 	ReasonInsufficientFunds = "insufficient_funds"
 	// ReasonInvalidSignature: the authorization did not verify against the
 	// payer's key history. Includes a signature over different terms.
 	ReasonInvalidSignature = "invalid_signature"
-	// ReasonExpired: presented outside the authorization's window.
+	// ReasonExpired is the value this constant had before the hub emitted
+	// window failures. No hub sent it.
+	//
+	// Deprecated: use ReasonExpiredPayment, which is the value a hub sends.
 	ReasonExpired = "expired"
+	// ReasonExpiredPayment: presented outside the authorization's window,
+	// or the authorization has no valid window at all.
+	ReasonExpiredPayment = "expired_payment"
 	// ReasonUnknownPayer: this facilitator holds no account for the payer,
 	// so it has nothing to move and no key history to check against.
 	ReasonUnknownPayer = "unknown_payer"
-	// ReasonNetworkMismatch: signed for a different ledger. An
-	// authorization naming another hub is not payable here, which is the
-	// point of putting the hub's AID in the network.
+	// ReasonNetworkMismatch: signed for a different ledger, or offered on a
+	// network other than the one the requirements name. An authorization
+	// naming another hub is not payable here, which is the point of putting
+	// the hub's AID in the network.
 	ReasonNetworkMismatch = "network_mismatch"
 	// ReasonMalformed: the payload could not be read as an authorization.
 	ReasonMalformed = "malformed_payment"
+	// ReasonUnsupportedScheme: the payload or the requirements name a
+	// scheme other than SchemeCredit, or the two name different schemes.
+	ReasonUnsupportedScheme = "unsupported_scheme"
+	// ReasonInvalidAmount: the authorized amount is below the required
+	// amount, differs from the amount the payload says it accepted, or is
+	// not a whole number of units.
+	ReasonInvalidAmount = "invalid_amount"
+	// ReasonPayeeMismatch: the authorization pays someone other than the
+	// required payee, or other than the payee the payload says it accepted.
+	ReasonPayeeMismatch = "payee_mismatch"
+	// ReasonDuplicateNonce: this exact authorization was already settled
+	// (answered by /verify; /settle answers a repeat with the original
+	// receipt instead).
+	ReasonDuplicateNonce = "duplicate_nonce"
+	// ReasonDuplicateBinding: a different authorization from the same payer
+	// with the same non-empty InteractionID was already settled. Nothing
+	// moved; the original transaction id is in the extensions under
+	// ExtOriginalTransaction.
+	ReasonDuplicateBinding = "duplicate_binding"
+	// ReasonSettlementPending: the outcome is not known yet. The ledger hub
+	// could not be reached or answered unreadably, or it settled and this
+	// hub has not yet credited the payee. Not final: the caller retries
+	// with the same payload, which is idempotent on the authorization id.
+	ReasonSettlementPending = "settlement_pending"
+	// ReasonSettlementFailed: the facilitator could not complete the
+	// settlement for a reason not listed above (a storage error, a
+	// corrupt key history, a peer receipt that does not match the terms).
+	ReasonSettlementFailed = "settlement_failed"
+	// ReasonInvalidRequirements: the request carried no
+	// paymentRequirements, or requirements that cannot be read (x402's
+	// own name for this case).
+	ReasonInvalidRequirements = "invalid_payment_requirements"
+)
+
+// Extension keys an anet hub sets on a SettlementResponse, beside
+// ExtReceipt and ExtVoucher.
+const (
+	// ExtReplayed is true on a response that repeats an earlier successful
+	// settlement of the same authorization. The receipt is the original.
+	ExtReplayed = "anet.replayed"
+	// ExtOriginalTransaction carries the transaction id of the settlement
+	// that already holds a binding, on a ReasonDuplicateBinding refusal.
+	ExtOriginalTransaction = "anet.original_transaction"
+	// ExtErrorDetail carries human-readable detail for a failure whose
+	// errorReason is one of the Reason constants.
+	ExtErrorDetail = "anet.error_detail"
 )
 
 // ---- the voucher: payment here, work there ----

@@ -357,9 +357,11 @@ type KeyState struct {
 	// do NOT sign anet objects (the owner's CurrentKeys do) — they authenticate a delegated endpoint
 	// (anrp VAL-11 mode b: a NameRecord's host_key_sig must be by a key in this set).
 	DelegatedKeys [][]byte
-	// SupersededAt is the Timestamp (unix-millis) of the LATER rot/dip event that retired
-	// this key-state, or 0 if this state is still the tip (or the superseding event carried
-	// no timestamp). Used by the revocation gate's grace window (arch-03 §5.1 M5.1.3).
+	// SupersededAt is the Timestamp (unix-millis) of the first rot/dip event after this
+	// key-state, which retired its signing key; ixn/drt events in between do not change the key
+	// and are skipped. It is 0 if no later rot/dip exists, or if the retiring event carried no
+	// timestamp (Status is then non-active regardless). Used by the revocation gate's grace
+	// window (arch-03 §5.1 M5.1.3).
 	SupersededAt uint64
 }
 
@@ -457,22 +459,40 @@ func Replay(kel []SignedEvent) ([]KeyState, error) {
 		}
 		states = append(states, prior)
 	}
-	// Post-pass (arch-03 §5.1 M5.1.3): mark each key-state that a LATER rot/dip supersedes.
-	// State i is superseded by event i+1 when that event rotates the key (rot) or terminates
-	// the AID (dip) — in both cases the key current at seq i is retired by event i+1. The
-	// superseding event's Timestamp seeds the grace window in VerifyObject. (An ixn does not
-	// change the key, so it does not supersede.) The terminal dip's own state keeps
-	// StatusDeactivated; intermediate retired states become StatusRotated.
-	for i := 0; i+1 < len(states); i++ {
-		next := kel[i+1].Event
-		if next.Type == Rotation || next.Type == Deactivation {
+	markSuperseded(kel, states)
+	return states, nil
+}
+
+// markSuperseded is Replay's post-pass (arch-03 §5.1 M5.1.3; A2A-DESIGN §3.6 C4a). The signing key
+// of state i is retired by the FIRST rot or dip event at an index greater than i: a rot replaces
+// the key and a dip terminates the AID. ixn and drt events do not change the signing key, so they
+// are skipped when looking for that event rather than ending the search.
+//
+// An earlier version looked only at event i+1. With an ixn or drt between a state and the rot/dip
+// that retired its key (for example icp → drt → rot), the icp state kept StatusActive and
+// SupersededAt 0, and VerifyObject accepted objects signed by the retired key at any msgTime.
+//
+// Every retired state gets the retiring event's Timestamp as SupersededAt, which seeds the grace
+// window in VerifyObject. When that Timestamp is 0 the state is still marked non-active, so
+// VerifyObject rejects it for every non-zero msgTime (no grace can be established). The terminal
+// dip's own state keeps StatusDeactivated and SupersededAt 0; every other retired state becomes
+// StatusRotated.
+//
+// The walk runs from the end so each state is assigned in one pass: retiring holds the index of the
+// nearest rot/dip after the state being visited, or -1 when there is none.
+func markSuperseded(kel []SignedEvent, states []KeyState) {
+	retiring := -1
+	for i := len(states) - 1; i >= 0; i-- {
+		if retiring >= 0 {
 			if states[i].Status == StatusActive {
 				states[i].Status = StatusRotated
 			}
-			states[i].SupersededAt = next.Timestamp
+			states[i].SupersededAt = kel[retiring].Event.Timestamp
+		}
+		if t := kel[i].Event.Type; t == Rotation || t == Deactivation {
+			retiring = i
 		}
 	}
-	return states, nil
 }
 
 // priorNextDigest returns the next_digest committed by the event before index i.

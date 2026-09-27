@@ -1,14 +1,17 @@
-// Package delegation defines the two payloads that ride the Hub relay for a v0.1 task delegation, plus
-// the self-contained verification a provider runs before storing a stranger's task.
+// Package delegation defines the payloads that ride the Hub relay for a task delegation, plus the
+// verification a provider runs before storing a task and a requester runs before accepting a result.
 //
 //	DelegateReq — a SIGNED TaskDoc (the request) with its detached Envelope and the signer's KEL inline,
 //	              so the provider can verify the signature without any shared registry, and the
 //	              requester-chosen InteractionID both sides key the interaction by.
 //	ResultResp  — the completion: status + the deliverable bytes + the provider-signed Receipt.
+//	ChatMsg     — a conversation message within an interaction.
+//	StatusMsg   — a provider's task-state update (anet.status/1, A2A-DESIGN §3.4).
 //
-// Both are CoreDet-CBOR and travel as opaque relay payloads; the Hub never decodes them. Verification is
-// end-to-end (VerifyDelegateReq here for the request; the Receipt is verified at review-upload time), so
-// the centralized relay moves bytes it cannot forge.
+// All are CoreDet-CBOR and travel as opaque relay payloads; the Hub never decodes them. Verification is
+// end-to-end (VerifyDelegateReqWithKEL for the request and VerifyResultWithKEL for the receipt, each
+// against a KEL the receiver resolved; the older VerifyDelegateReq and VerifyResult read the KEL from
+// the body), so the centralized relay moves bytes it cannot forge.
 package delegation
 
 import (
@@ -35,10 +38,13 @@ const (
 // Envelope (tsir taskdoc cbor:"-"), so the Envelope rides alongside; the signer's KEL rides inline so the
 // provider verifies self-contained.
 type DelegateReq struct {
-	TaskDoc       []byte         `cbor:"1,keyasint"`
-	Envelope      *aobj.Envelope `cbor:"2,keyasint"`
-	KEL           []byte         `cbor:"3,keyasint"`
-	InteractionID string         `cbor:"4,keyasint"`
+	TaskDoc  []byte         `cbor:"1,keyasint"`
+	Envelope *aobj.Envelope `cbor:"2,keyasint"`
+	// KEL is the requester's KEL as the requester states it. VerifyDelegateReqWithKEL does not check
+	// the signature against it; it only requires it to be absent, equal to, or a prefix of the KEL
+	// the receiver resolved.
+	KEL           []byte `cbor:"3,keyasint"`
+	InteractionID string `cbor:"4,keyasint"`
 	// Attachments ride alongside the initial delegation (e.g. reference material the requester hands the
 	// provider up front). Like KEL/Envelope they are transport, NOT part of the signed TaskDoc/request
 	// CID; each attachment is self-verified by its own content CID.
@@ -52,6 +58,16 @@ type DelegateReq struct {
 	// payment in would make an unpaid retry of the identical work a
 	// different request.
 	Payment []byte `cbor:"6,keyasint,omitempty"`
+
+	// ContextID is the A2A contextId the requester groups this task under (A2A-DESIGN §3.4). Like
+	// Payment it is outside the signed TaskDoc, so it does not change the request CID. Under wire 2
+	// the whole DelegateReq is the body of a sealed anet.delegate/1 envelope, and the envelope's
+	// inner signature is what authenticates this field.
+	ContextID string `cbor:"7,keyasint,omitempty"`
+	// Metadata is a JSON object carried as raw bytes (A2A Message.metadata, including the reserved
+	// keys listed in A2A-DESIGN §3.4 and the x402.payment.* keys). This package does not parse it.
+	// Outside the TaskDoc for the same reason as ContextID.
+	Metadata []byte `cbor:"8,keyasint,omitempty"`
 }
 
 // Attachment is a binary payload (image, media, archive/zip of a folder…) carried inline alongside a
@@ -99,6 +115,11 @@ type ResultResp struct {
 	// and knowing-it-is-fine are different states, and a completion is
 	// exactly where collapsing them is worst.
 	KEL []byte `cbor:"4,keyasint,omitempty"`
+
+	// Metadata is a JSON object carried as raw bytes (A2A-DESIGN §3.4), for example the anet.*
+	// effect and receipt status keys that must reach the requester unchanged. Not covered by the
+	// receipt; under wire 2 the sealed envelope's inner signature authenticates it.
+	Metadata []byte `cbor:"5,keyasint,omitempty"`
 }
 
 // Marshal encodes a ResultResp for the relay.
@@ -119,7 +140,16 @@ func UnmarshalResultResp(b []byte) (*ResultResp, error) {
 const (
 	ChatText       = "text"
 	ChatEndRequest = "end_request"
-	ChatEndAccept  = "end_accept"
+	// ChatEndAccept was the second step of the end negotiation.
+	//
+	// Deprecated: from ANetCore v0.15.0 (A2A-DESIGN §3.4) the provider completes a text task on its
+	// own and accepts an end_request automatically, so senders must not emit end_accept; receivers
+	// drop it. Kept so wire-1 code builds.
+	ChatEndAccept = "end_accept"
+	// KindCancel asks the peer to cancel the interaction (A2A CancelTask). Whether the provider
+	// honors it depends on the task state; once a payment has been submitted it does not
+	// (A2A-DESIGN §4.2). A task that is canceled produces no receipt.
+	KindCancel = "cancel"
 	// ChatStreamPreview is an ephemeral, replace-in-place snapshot of a
 	// streaming reply. Receivers keep it in memory only; it is never a
 	// conversation message and never participates in a receipt.
@@ -130,6 +160,10 @@ const (
 // delegation/result payloads it is NOT signed — chat is conversational and the Hub is trusted as the
 // relay; the signed, Hub-verified trust anchor remains the end-of-task Receipt + Review. The interaction
 // id rides in the relay envelope, so only the kind + body travel here.
+//
+// Under wire 2 (A2A-DESIGN §3.3) a ChatMsg is the body of a sealed anet.message/1 envelope. The
+// struct itself still carries no signature; the envelope's inner signature covers its bytes and the
+// hub no longer sees them.
 type ChatMsg struct {
 	Kind        string       `cbor:"1,keyasint"`
 	Body        string       `cbor:"2,keyasint,omitempty"`
@@ -176,6 +210,14 @@ type ChatMsg struct {
 	// relay and does not exist over p2p, and a receiver cannot invent one
 	// without inventing exactly the ambiguity this removes.
 	MsgID string `cbor:"9,keyasint,omitempty"`
+
+	// Metadata is a JSON object carried as raw bytes (A2A Message.metadata; reserved keys in
+	// A2A-DESIGN §3.4). This package does not parse it.
+	//
+	// Key 10, not 8: key 8 has never been assigned in this struct and its absence is not recorded
+	// anywhere, so the new field takes the key after the highest one in use rather than filling a
+	// gap whose history cannot be checked. Key 8 stays unassigned.
+	Metadata []byte `cbor:"10,keyasint,omitempty"`
 }
 
 // Marshal encodes a ChatMsg for the relay.
@@ -194,26 +236,93 @@ func UnmarshalChatMsg(b []byte) (*ChatMsg, error) {
 // the TaskDoc (identity binding via td.Verify — a forged KEL cannot impersonate an AID; msgTime=now
 // accepts only a currently-valid, non-revoked key). It returns the accountable requester AID (the
 // verified signer), the decoded TaskDoc, and the exact signed TaskDoc bytes (the request CID anchor).
+//
+// Deprecated: the KEL is taken from the request body, so the sender chooses the key history its
+// own signature is checked against, and the revocation gate is evaluated at the verifier's clock
+// rather than at the message time. Wire-2 receivers use VerifyDelegateReqWithKEL with the KEL
+// resolved from the sealed envelope and the peer record (A2A-DESIGN §3.6 step 6, C4d).
 func VerifyDelegateReq(r *DelegateReq) (requesterAID string, td *tsir.TaskDoc, taskDocBytes []byte, err error) {
-	if r == nil || r.Envelope == nil {
-		return "", nil, nil, fmt.Errorf("delegation: missing envelope")
-	}
-	if r.InteractionID == "" {
-		return "", nil, nil, fmt.Errorf("delegation: missing interaction id")
-	}
-	var doc tsir.TaskDoc
-	if coredet.Unmarshal(r.TaskDoc, &doc) != nil || len(doc.Tasks) == 0 {
-		return "", nil, nil, fmt.Errorf("delegation: undecodable or task-less TaskDoc")
+	doc, err := decodeDelegateReq(r)
+	if err != nil {
+		return "", nil, nil, err
 	}
 	kel, err := identity.UnmarshalKEL(r.KEL)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("delegation: bad KEL: %w", err)
 	}
+	return verifyTaskDoc(r, doc, kel, uint64(time.Now().UnixMilli()))
+}
+
+// VerifyDelegateReqWithKEL verifies a delegation against a KEL the caller resolved itself
+// (A2A-DESIGN §3.4, §3.6 step 6 and the nested-object rule after the step table; review items C4b
+// and C4d). kel is the requester's KEL as resolved from the sealed envelope and the stored peer
+// record; msgTime is the envelope's inner ts, in unix milliseconds, and drives the revocation gate
+// (0 selects the conservative rule in identity.VerifyObject).
+//
+// The body's own KEL field is never used to check the signature. When it is present it must be
+// equal to kel or a prefix of it (identity.ExtendsKEL); otherwise the request is refused, because a
+// body KEL that forks from or runs ahead of the resolved one means the sender's two statements of
+// its key history disagree. An empty body KEL is accepted.
+//
+// identity.VerifyObject requires kel's AID to equal the envelope's SignerAID, so when kel was
+// resolved for the authenticated sender the returned requester AID is that sender.
+func VerifyDelegateReqWithKEL(r *DelegateReq, kel []identity.SignedEvent, msgTime uint64) (requesterAID string, td *tsir.TaskDoc, taskDocBytes []byte, err error) {
+	doc, err := decodeDelegateReq(r)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if len(kel) == 0 {
+		return "", nil, nil, errors.New("delegation: no resolved requester KEL")
+	}
+	if err := checkBodyKEL(r.KEL, kel); err != nil {
+		return "", nil, nil, err
+	}
+	return verifyTaskDoc(r, doc, kel, msgTime)
+}
+
+// decodeDelegateReq performs the structural checks shared by both delegation verifiers, in the
+// order the original VerifyDelegateReq performed them.
+func decodeDelegateReq(r *DelegateReq) (*tsir.TaskDoc, error) {
+	if r == nil || r.Envelope == nil {
+		return nil, fmt.Errorf("delegation: missing envelope")
+	}
+	if r.InteractionID == "" {
+		return nil, fmt.Errorf("delegation: missing interaction id")
+	}
+	var doc tsir.TaskDoc
+	if coredet.Unmarshal(r.TaskDoc, &doc) != nil || len(doc.Tasks) == 0 {
+		return nil, fmt.Errorf("delegation: undecodable or task-less TaskDoc")
+	}
+	return &doc, nil
+}
+
+func verifyTaskDoc(r *DelegateReq, doc *tsir.TaskDoc, kel []identity.SignedEvent, msgTime uint64) (string, *tsir.TaskDoc, []byte, error) {
 	doc.Envelope = r.Envelope
-	if err := doc.Verify(kel, uint64(time.Now().UnixMilli())); err != nil {
+	if err := doc.Verify(kel, msgTime); err != nil {
 		return "", nil, nil, fmt.Errorf("delegation: TaskDoc signature invalid: %w", err)
 	}
-	return r.Envelope.SignerAID, &doc, r.TaskDoc, nil
+	return r.Envelope.SignerAID, doc, r.TaskDoc, nil
+}
+
+// ErrBodyKELMismatch is returned by the *WithKEL verifiers when the KEL carried in the body is
+// neither equal to nor a prefix of the resolved KEL. It wraps the identity.ExtendsKEL error, so
+// errors.Is also matches identity.ErrKELFork or identity.ErrKELRollback.
+var ErrBodyKELMismatch = errors.New("delegation: body KEL is not a prefix of the resolved KEL")
+
+// checkBodyKEL applies the body-KEL rule of the *WithKEL verifiers: absent is accepted; present must
+// decode and be a prefix of (or equal to) the resolved KEL.
+func checkBodyKEL(body []byte, resolved []identity.SignedEvent) error {
+	if len(body) == 0 {
+		return nil
+	}
+	bodyKEL, err := identity.UnmarshalKEL(body)
+	if err != nil {
+		return fmt.Errorf("delegation: bad body KEL: %w", err)
+	}
+	if err := identity.ExtendsKEL(bodyKEL, resolved); err != nil {
+		return fmt.Errorf("%w: %w", ErrBodyKELMismatch, err)
+	}
+	return nil
 }
 
 // VerifiedKEL returns the requester's key history from a DelegateReq whose
@@ -223,6 +332,12 @@ func VerifyDelegateReq(r *DelegateReq) (requesterAID string, td *tsir.TaskDoc, t
 // that is only trustworthy because verification passed, and a caller that
 // reaches for it without having verified is making a mistake the signature
 // should have caught.
+//
+// Deprecated: pairs only with VerifyDelegateReq, which checks the signature against this same
+// body KEL. After VerifyDelegateReqWithKEL the signature was checked against the caller's resolved
+// KEL; the body KEL is then absent or a prefix of it, so storing the value returned here as the
+// peer's KEL can replace a longer stored history with an older one (the rollback
+// identity.ExtendsKEL refuses). Wire-2 callers keep the resolved KEL they passed in.
 func VerifiedKEL(r *DelegateReq) ([]identity.SignedEvent, error) {
 	return identity.UnmarshalKEL(r.KEL)
 }
@@ -241,6 +356,7 @@ func TaskGoal(td *tsir.TaskDoc) string {
 // ErrUnverifiable is returned when a completion carries no key history, so
 // its receipt cannot be checked at all. Distinct from a failed check: an
 // older provider produces this, a lying one produces an error.
+// VerifyResultWithKEL returns it (wrapped) when the caller supplies no KEL.
 var ErrUnverifiable = errors.New("delegation: completion carries no provider KEL")
 
 // VerifyResult checks that a completion is the signed answer to the request
@@ -257,6 +373,10 @@ var ErrUnverifiable = errors.New("delegation: completion carries no provider KEL
 //
 // now is the time the receipt is judged against for key revocation; pass 0
 // to fall back to the conservative rule in identity.VerifyObject.
+//
+// Deprecated: the provider KEL is taken from the completion body, so the provider chooses the key
+// history its own receipt is checked against. Wire-2 receivers use VerifyResultWithKEL with the KEL
+// resolved from the sealed envelope and the peer record (A2A-DESIGN §3.4, C4d).
 func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string, now uint64) (*evidence.Receipt, error) {
 	if r == nil || len(r.Receipt) == 0 {
 		return nil, fmt.Errorf("delegation: completion carries no receipt")
@@ -272,7 +392,41 @@ func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string
 	if err != nil {
 		return nil, fmt.Errorf("delegation: bad provider KEL: %w", err)
 	}
-	if err := rc.Verify(kel, now); err != nil {
+	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, now)
+}
+
+// VerifyResultWithKEL is VerifyResult with the provider KEL supplied by the caller (A2A-DESIGN
+// §3.4, §3.6; review items C4b and C4d). kel is the provider's KEL as resolved from the sealed
+// envelope and the stored peer record; msgTime is the envelope's inner ts in unix milliseconds
+// (0 selects the conservative rule in identity.VerifyObject). The receipt bindings are the same as
+// VerifyResult's: signer, provider, requester, interaction and deliverable hash.
+//
+// The body's KEL field is never used to check the receipt. When present it must be equal to kel or
+// a prefix of it, else the completion is refused with ErrBodyKELMismatch. An empty kel yields an
+// error wrapping ErrUnverifiable: the receipt was not checked, which is a different state from a
+// receipt that failed the check.
+func VerifyResultWithKEL(r *ResultResp, kel []identity.SignedEvent, interactionID, requesterAID, providerAID string, msgTime uint64) (*evidence.Receipt, error) {
+	if r == nil || len(r.Receipt) == 0 {
+		return nil, fmt.Errorf("delegation: completion carries no receipt")
+	}
+	if len(kel) == 0 {
+		return nil, fmt.Errorf("%w (no resolved provider KEL supplied)", ErrUnverifiable)
+	}
+	rc, err := evidence.UnmarshalReceipt(r.Receipt)
+	if err != nil {
+		return nil, fmt.Errorf("delegation: undecodable receipt: %w", err)
+	}
+	if err := checkBodyKEL(r.KEL, kel); err != nil {
+		return nil, err
+	}
+	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, msgTime)
+}
+
+// bindReceipt verifies the receipt signature against kel at msgTime and binds each field the
+// receipt asserts to what the caller knows. An empty interactionID, requesterAID or providerAID
+// skips that one binding.
+func bindReceipt(rc *evidence.Receipt, deliverable []byte, kel []identity.SignedEvent, interactionID, requesterAID, providerAID string, msgTime uint64) (*evidence.Receipt, error) {
+	if err := rc.Verify(kel, msgTime); err != nil {
 		return nil, fmt.Errorf("delegation: receipt signature invalid: %w", err)
 	}
 	if providerAID != "" && rc.ProviderAID != providerAID {
@@ -288,7 +442,7 @@ func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string
 	}
 	// The binding that makes the rest worth having: the signature must cover
 	// the bytes that actually arrived.
-	cid, err := anetcid.Sum(r.Deliverable)
+	cid, err := anetcid.Sum(deliverable)
 	if err != nil {
 		return nil, err
 	}
