@@ -4,14 +4,18 @@
 // Ed25519 key that the agent's KEL currently designates. The package provides:
 //
 //   - Canonicalize: RFC 8785 JSON Canonicalization Scheme (JCS) over strict I-JSON input.
-//   - Sign: an A2A §8.4.2 JWS signature (EdDSA) over the canonical card with the top-level
-//     "signatures" member removed, appended to the card's "signatures" array.
+//   - CheckPublishForm: whether a card is in publish form, the form on which the A2A rule,
+//     a2a-python and a2a-go compute the same payload (see below).
+//   - Sign: an A2A §8.4.2 JWS signature (EdDSA) over the §8.4.1 payload of a card in publish
+//     form, appended to the card's "signatures" array.
 //   - Verify: the anet admission rules for a network card (§10.3): a current KEL key state,
 //     the anet-card extension bound to the signing AID, relay interfaces addressed to that
-//     AID, notBefore, required fields and size limits, and member names that stay distinct
+//     AID, notBefore, REQUIRED members and size limits, and member names that stay distinct
 //     under case folding (so struct decoders read the members Verify checked).
 //   - CheckHighWater: the three-branch params.seq rule that consumers and publishers apply.
 //   - JWKS: the JSON Web Key Set that a hub serves at /agents/{aid}/jwks.json.
+//   - DefaultSkillDescription, Skill.WithDefaults, ExtensionDecl: publish-form building blocks
+//     for card builders.
 //
 // The package uses only the Go standard library and the identity package. It does not import
 // a2a-go: ANetCore's dependency list is frozen (docs/scope.md), and a card signed here must be
@@ -23,12 +27,24 @@
 // BASE64URL(header) "." BASE64URL(payload), with the payload base64url-encoded (RFC 7797
 // unencoded payloads are not used).
 //
-// Canonicalization is applied to the card bytes as given. The A2A specification (§8.4.1)
-// additionally asks signers to drop protobuf default values before canonicalizing; a2a-go does
-// not do this and neither does this package. A card builder that wants a2a-go's
-// parse-and-reserialize round trip to preserve the signature must therefore emit exactly the
-// members a2a-go emits (A2A-DESIGN §10.1: required slices non-nil, streaming and
-// pushNotifications always present, numbers as strings).
+// # Payload forms
+//
+// A2A §8.4.1 signs the card after removing "signatures" and every member that proto3 field
+// presence treats as unset: defaults ("", false, [], {}) of fields without the optional
+// keyword, and null. REQUIRED members stay even at their default; optional and message fields
+// stay whenever set; the inside of a google.protobuf.Struct (extension params) is not touched.
+// schema.go holds the field table this needs, transcribed from a2a.proto and checked against
+// the a2a-python descriptors. That payload is FormProtoStripped (SigningPayload). a2a-go
+// instead signs the card as written, minus "signatures": FormRaw (RawSigningPayload).
+//
+// Sign accepts only cards in publish form (CheckPublishForm), on which the two forms are the
+// same bytes and a2a-python's own canonicalization (which additionally drops every empty
+// string, array and object, even inside Struct values and REQUIRED fields) agrees as well. It
+// refuses other cards instead of rewriting them, so a card builder that writes
+// "required": false or an empty REQUIRED description learns it at signing time rather than
+// from a verifier in another language. Verify checks FormProtoStripped first and falls back
+// to FormRaw, which admits a2a-go-signed cards that carry default values; Verified records the
+// form. testdata/python-vectors.json pins all of this against a2a-python.
 //
 // Times in the anet-card extension (issuedAt, notBefore) and the now argument of Verify are
 // unix milliseconds, the unit used by the identity package and the rest of the v0.2 wire.

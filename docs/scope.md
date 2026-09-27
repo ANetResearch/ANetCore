@@ -58,7 +58,11 @@ the top of this file:
   `relayauth` and `delegation`.
 - It is deterministic and performs no I/O: canonical bytes and signature checks depend only on
   the inputs.
-- It is pinned by golden vectors: the RFC 8785 appendix vectors and a golden signed card.
+- It is pinned by golden vectors: the RFC 8785 appendix vectors, a golden signed card, and
+  cards signed by the a2a-python reference SDK (`a2acard/testdata/python-vectors.json`, with
+  the AgentCard field table dumped from that SDK's proto descriptors). The generator script is
+  committed next to the vectors; Python is needed only to regenerate them, never to build or
+  test.
 
 It does not import `github.com/a2aproject/a2a-go`. The dependency allow-list is frozen, and the
 card format is small enough to implement from the specifications. Interoperability with a2a-go is

@@ -3,7 +3,9 @@ package a2acard
 import "fmt"
 
 // Mark is the per-AID record a consumer or publisher keeps for the params.seq high-water rule:
-// the highest seq admitted and the SHA-256 of that card's canonical payload.
+// the highest seq admitted and the SHA-256 of that card's proto-stripped payload
+// (Verified.PayloadHash), so byte variants of one card that differ only in default-valued
+// members are the same card.
 type Mark struct {
 	Seq         uint64
 	PayloadHash [32]byte
@@ -15,7 +17,7 @@ type Decision int
 const (
 	// Advance: the card is new (no stored mark, or seq above it). Store it and its Mark.
 	Advance Decision = iota + 1
-	// Same: the card repeats the stored one (same seq, same canonical payload). Keep the stored
+	// Same: the card repeats the stored one (same seq, same proto-stripped payload). Keep the stored
 	// mark; refreshing a cache timestamp is appropriate. The signature may differ from the
 	// stored card's, for example after a re-sign under a rotated key, and that is not a change.
 	Same

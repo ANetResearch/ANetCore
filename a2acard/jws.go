@@ -106,9 +106,22 @@ func parseDecimal(s string) (uint64, bool) {
 	return n, err == nil
 }
 
-// SigningPayload returns the JWS payload for a card: the RFC 8785 form of the card with its
-// top-level "signatures" member removed (A2A §8.4.1). The card must be a JSON object.
+// SigningPayload returns the A2A §8.4.1 JWS payload for a card (FormProtoStripped): the card
+// with its top-level "signatures" member removed and the members that proto3 field presence
+// treats as unset removed (see stripDefaults), in RFC 8785 form. This is the payload Sign signs
+// and Verify checks first. The card must be a JSON object. For a card in publish form it equals
+// RawSigningPayload.
 func SigningPayload(cardJSON []byte) ([]byte, error) {
+	card, err := parseCard(cardJSON)
+	if err != nil {
+		return nil, err
+	}
+	return canonicalPayload(stripDefaults(card, schemaAgentCard))
+}
+
+// RawSigningPayload returns the FormRaw payload: the RFC 8785 form of the card with only its
+// top-level "signatures" member removed. This is the payload a2a-go signs and verifies.
+func RawSigningPayload(cardJSON []byte) ([]byte, error) {
 	card, err := parseCard(cardJSON)
 	if err != nil {
 		return nil, err
@@ -148,19 +161,36 @@ func signingInput(protectedB64 string, payload []byte) []byte {
 // Sign signs cardJSON with priv and returns the card with the new signature appended to its
 // "signatures" array (existing entries are kept).
 //
+// cardJSON must be in publish form (CheckPublishForm); otherwise Sign returns the
+// CodeNotPublishForm error naming the first offending member and signs nothing. Sign does not
+// rewrite the card into that form: dropping a member the builder wrote, such as an empty
+// REQUIRED description, would publish a card other than the one the builder meant, and some
+// violations (an empty skill description, an unknown member) have no correct automatic repair.
+// The card builder emits the publish form directly. On a card in publish form the
+// proto-stripped and the raw payload are the same bytes, so the signature verifies under the
+// A2A specification's rule, a2a-python and a2a-go alike.
+//
 // The protected header is {"alg":"EdDSA","jku":jku,"kid":kid,"typ":"JOSE"}, with jku omitted
 // when empty. It is serialized with encoding/json from a map, which sorts the keys and applies
-// Go's HTML escaping to the values; this is the serialization a2a-go's Signer uses, so both
-// produce the same bytes and, Ed25519 being deterministic, the same signature for the same
-// card and key.
+// Go's HTML escaping to the values; this is the serialization a2a-go's Signer uses (and, for
+// these values, PyJWT's), so they produce the same bytes and, Ed25519 being deterministic, the
+// same signature for the same card and key.
 //
 // The returned card is the RFC 8785 form of the whole card including "signatures". Member
 // order of the input is therefore not preserved, and numbers are printed in their canonical
 // form, so the returned bytes show exactly the values the signature covers.
 //
-// Sign does not check anet card rules (see Verify); it signs any JSON object. Use
-// SignWithController to sign under an identity's current key state.
+// Sign does not check anet network card rules (see Verify): it also signs the proxy cards of
+// the local A2A interface, which carry no anet-card extension. Use SignWithController to sign
+// under an identity's current key state.
 func Sign(cardJSON []byte, priv ed25519.PrivateKey, kid, jku string) ([]byte, error) {
+	return sign(cardJSON, priv, kid, jku, true)
+}
+
+// sign implements Sign. With checkForm false it signs any JSON object over its proto-stripped
+// payload, as a signer that follows A2A §8.4.1 without enforcing the publish form would; the
+// tests use that to build cards that only Verify's own checks reject.
+func sign(cardJSON []byte, priv ed25519.PrivateKey, kid, jku string, checkForm bool) ([]byte, error) {
 	if len(priv) != ed25519.PrivateKeySize {
 		return nil, newErr(CodeBadHeader, "private key is not an Ed25519 private key")
 	}
@@ -175,10 +205,21 @@ func Sign(cardJSON []byte, priv ed25519.PrivateKey, kid, jku string) ([]byte, er
 	if present && sigs.kind != kindArray {
 		return nil, newErr(CodeInvalidCard, "signatures is not an array")
 	}
-	payload, err := canonicalPayload(card)
+	if checkForm {
+		if err := checkPublishForm(card); err != nil {
+			return nil, err
+		}
+	}
+	payload, err := canonicalPayload(stripDefaults(card, schemaAgentCard))
 	if err != nil {
 		return nil, err
 	}
+	return appendSignature(card, sigs, present, priv, kid, jku, payload)
+}
+
+// appendSignature signs payload under a new protected header and returns the canonical card
+// with the signature entry appended.
+func appendSignature(card, sigs *value, present bool, priv ed25519.PrivateKey, kid, jku string, payload []byte) ([]byte, error) {
 	hdr := map[string]string{"alg": AlgEdDSA, "kid": kid, "typ": TypJOSE}
 	if jku != "" {
 		hdr["jku"] = jku
@@ -214,20 +255,49 @@ func SignWithController(cardJSON []byte, c *identity.Controller, jku string) ([]
 
 // VerifySignature checks one JWS signature over cardJSON against pub, with no anet rules: the
 // A2A §8.4.3 procedure for a key the caller already trusts. alg must be EdDSA and the header
-// must not carry crit. It returns the decoded protected header.
+// must not carry crit. The signature is checked over the proto-stripped payload and, if that
+// fails, over the raw payload (see Verify). It returns the decoded protected header.
 func VerifySignature(cardJSON []byte, sig Signature, pub ed25519.PublicKey) (*Header, error) {
-	payload, err := SigningPayload(cardJSON)
+	hdr, _, err := VerifySignatureForm(cardJSON, sig, pub)
+	return hdr, err
+}
+
+// VerifySignatureForm is VerifySignature that also reports the payload form under which the
+// signature verified.
+func VerifySignatureForm(cardJSON []byte, sig Signature, pub ed25519.PublicKey) (*Header, CanonicalForm, error) {
+	card, err := parseCard(cardJSON)
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	stripped, raw, err := payloads(card)
+	if err != nil {
+		return nil, "", err
 	}
 	hdr, err := parseHeader(sig.Protected)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if err := verifyEd25519(pub, sig, payload); err != nil {
-		return nil, err
+	form, err := verifyForms(pub, sig, stripped, raw)
+	if err != nil {
+		return nil, "", err
 	}
-	return hdr, nil
+	return hdr, form, nil
+}
+
+// verifyForms checks sig over the proto-stripped payload and then, when the raw payload is
+// different, over the raw one.
+func verifyForms(pub ed25519.PublicKey, sig Signature, stripped, raw []byte) (CanonicalForm, error) {
+	err := verifyEd25519(pub, sig, stripped)
+	if err == nil {
+		return FormProtoStripped, nil
+	}
+	if !IsCode(err, CodeInvalidSignature) || bytes.Equal(stripped, raw) {
+		return "", err
+	}
+	if verifyEd25519(pub, sig, raw) == nil {
+		return FormRaw, nil
+	}
+	return "", newErr(CodeInvalidSignature, "Ed25519 verification failed over both the proto-stripped and the raw payload")
 }
 
 func verifyEd25519(pub ed25519.PublicKey, sig Signature, payload []byte) error {

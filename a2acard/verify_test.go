@@ -31,7 +31,7 @@ func TestVerifyAcceptsSignedCard(t *testing.T) {
 	}
 	want := &Verified{
 		AID: c.AID(), KeyStateSeq: 0, Seq: t0, IssuedAt: t0, NotBefore: t0 - 60_000,
-		PayloadHash: sha256.Sum256(payload), Name: "Test Agent",
+		PayloadHash: sha256.Sum256(payload), CanonicalForm: FormProtoStripped, Name: "Test Agent",
 		Skills: []Skill{
 			{ID: "echo", Name: "Echo", Description: "Returns the input text.", Tags: []string{"text", "echo"}},
 			{ID: "translate", Name: "Translate", Description: "Translates text.", Tags: []string{"text", "translation"}},
@@ -78,10 +78,12 @@ func TestVerifyRejections(t *testing.T) {
 		t.Fatalf("baseline card rejected: %v", err)
 	}
 
+	// withCard signs without the publish-form check: most of these cards are not in publish
+	// form, and the point is that Verify rejects them on its own.
 	withCard := func(f func(map[string]any)) []byte {
 		card := baseCard(a.AID())
 		f(card)
-		return signCard(t, card, a)
+		return signLoose(t, card, a)
 	}
 	after := func(f func(map[string]any)) []byte { return edit(t, good, f) }
 
@@ -149,9 +151,13 @@ func TestVerifyRejections(t *testing.T) {
 		{"params missing", withCard(func(m map[string]any) { delete(extensions(m)[0].(map[string]any), "params") }), nil, CodeInvalidCard},
 		{"no anet-card extension", withCard(func(m map[string]any) { extensions(m)[0].(map[string]any)["uri"] = "https://example.org/other" }), nil, CodeInvalidCard},
 		{"extensions missing", withCard(func(m map[string]any) { delete(m["capabilities"].(map[string]any), "extensions") }), nil, CodeInvalidCard},
-		{"extension without uri", withCard(func(m map[string]any) {
+		{"extension uri not a string", withCard(func(m map[string]any) {
 			caps := m["capabilities"].(map[string]any)
-			caps["extensions"] = append([]any{map[string]any{"required": false}}, extensions(m)...)
+			caps["extensions"] = append([]any{map[string]any{"uri": 1}}, extensions(m)...)
+		}), nil, CodeInvalidCard},
+		{"extension not an object", withCard(func(m map[string]any) {
+			caps := m["capabilities"].(map[string]any)
+			caps["extensions"] = append([]any{"x"}, extensions(m)...)
 		}), nil, CodeInvalidCard},
 		{"two anet-card extensions", withCard(func(m map[string]any) {
 			caps := m["capabilities"].(map[string]any)
@@ -162,13 +168,17 @@ func TestVerifyRejections(t *testing.T) {
 		{"name missing", withCard(func(m map[string]any) { delete(m, "name") }), nil, CodeInvalidCard},
 		{"name empty", withCard(func(m map[string]any) { m["name"] = "" }), nil, CodeInvalidCard},
 		{"description missing", withCard(func(m map[string]any) { delete(m, "description") }), nil, CodeInvalidCard},
+		{"description empty", withCard(func(m map[string]any) { m["description"] = "" }), nil, CodeInvalidCard},
 		{"version missing", withCard(func(m map[string]any) { delete(m, "version") }), nil, CodeInvalidCard},
+		{"version empty", withCard(func(m map[string]any) { m["version"] = "" }), nil, CodeInvalidCard},
 		{"version not a string", withCard(func(m map[string]any) { m["version"] = 1 }), nil, CodeInvalidCard},
 		{"supportedInterfaces missing", withCard(func(m map[string]any) { delete(m, "supportedInterfaces") }), nil, CodeInvalidCard},
 		{"supportedInterfaces empty", withCard(func(m map[string]any) { m["supportedInterfaces"] = []any{} }), nil, CodeInvalidCard},
 		{"interface url missing", withCard(func(m map[string]any) { delete(iface(m, 0), "url") }), nil, CodeInvalidCard},
 		{"interface protocolBinding empty", withCard(func(m map[string]any) { iface(m, 0)["protocolBinding"] = "" }), nil, CodeInvalidCard},
 		{"interface protocolVersion missing", withCard(func(m map[string]any) { delete(iface(m, 0), "protocolVersion") }), nil, CodeInvalidCard},
+		{"interface protocolVersion empty", withCard(func(m map[string]any) { iface(m, 0)["protocolVersion"] = "" }), nil, CodeInvalidCard},
+		{"interface url empty", withCard(func(m map[string]any) { iface(m, 0)["url"] = "" }), nil, CodeInvalidCard},
 		{"interface not an object", withCard(func(m map[string]any) { m["supportedInterfaces"] = []any{"x"} }), nil, CodeInvalidCard},
 		{"capabilities missing", withCard(func(m map[string]any) { delete(m, "capabilities") }), nil, CodeInvalidCard},
 		{"capabilities not an object", withCard(func(m map[string]any) { m["capabilities"] = []any{} }), nil, CodeInvalidCard},
@@ -176,6 +186,9 @@ func TestVerifyRejections(t *testing.T) {
 		{"defaultOutputModes missing", withCard(func(m map[string]any) { delete(m, "defaultOutputModes") }), nil, CodeInvalidCard},
 		{"defaultOutputModes null", withCard(func(m map[string]any) { m["defaultOutputModes"] = nil }), nil, CodeInvalidCard},
 		{"defaultInputModes non-string", withCard(func(m map[string]any) { m["defaultInputModes"] = []any{1} }), nil, CodeInvalidCard},
+		{"defaultInputModes empty", withCard(func(m map[string]any) { m["defaultInputModes"] = []any{} }), nil, CodeInvalidCard},
+		{"defaultOutputModes empty", withCard(func(m map[string]any) { m["defaultOutputModes"] = []any{} }), nil, CodeInvalidCard},
+		{"defaultInputModes with an empty mode", withCard(func(m map[string]any) { m["defaultInputModes"] = []any{"text/plain", ""} }), nil, CodeInvalidCard},
 		{"skills missing", withCard(func(m map[string]any) { delete(m, "skills") }), nil, CodeInvalidCard},
 		{"skills empty", withCard(func(m map[string]any) { m["skills"] = []any{} }), nil, CodeInvalidCard},
 		{"skill id empty", withCard(func(m map[string]any) { skill(m, 0)["id"] = "" }), nil, CodeInvalidCard},
@@ -329,7 +342,7 @@ func TestVerifyResolvesOnlyWhenNeeded(t *testing.T) {
 		return m
 	}
 	cases := map[string][]byte{
-		"missing skills":  signCard(t, with(func(m map[string]any) { delete(m, "skills") }), a),
+		"missing skills":  signLoose(t, with(func(m map[string]any) { delete(m, "skills") }), a),
 		"future card":     signCard(t, with(func(m map[string]any) { params(m)["notBefore"] = dec(t0 + 10*NotBeforeSkewMillis) }), a),
 		"tenant mismatch": signCard(t, with(func(m map[string]any) { iface(m, 0)["tenant"] = b.AID() }), a),
 		"kid of b":        signAs(t, baseCard(a.AID()), b.CurrentPrivateKey(), KID(b.AID(), 0)),
@@ -476,7 +489,7 @@ func TestLargeJSONNumberCollapsesInCanonicalForm(t *testing.T) {
 	c := incept(t)
 	card := baseCard(c.AID())
 	card["x-count"] = json.Number("9007199254740993")
-	signed := signCard(t, card, c)
+	signed := signLoose(t, card, c) // x-count is not an AgentCard field, so not publish form
 	// Sign returns the canonical card, which already shows the rounded value.
 	if !strings.Contains(string(signed), `"x-count":9007199254740992`) {
 		t.Fatalf("signed card does not show the binary64 value: %s", signed)
@@ -512,7 +525,7 @@ func TestLargeJSONNumberCollapsesInCanonicalForm(t *testing.T) {
 	}
 	// As a number it is rejected.
 	params(card)["seq"] = json.Number("9007199254740993")
-	_, err = Verify(signCard(t, card, c), newResolver(c).resolve, t0)
+	_, err = Verify(signLoose(t, card, c), newResolver(c).resolve, t0)
 	wantCode(t, err, CodeInvalidCard)
 }
 

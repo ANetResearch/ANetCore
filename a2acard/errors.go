@@ -38,6 +38,11 @@ const (
 	CodeSeqRollback Code = "SEQ_ROLLBACK"
 	// CodeSeqFork: params.seq equals the stored mark but the canonical payload differs.
 	CodeSeqFork Code = "SEQ_FORK"
+	// CodeNotPublishForm: Sign or CheckPublishForm was given a card that is not in publish form
+	// (a default-valued member, a missing or empty REQUIRED member, an unknown member, an empty
+	// value inside a Struct; see CheckPublishForm). The card builder is at fault; the detail
+	// names the member.
+	CodeNotPublishForm Code = "NOT_PUBLISH_FORM"
 )
 
 // Error is the error type returned by this package.

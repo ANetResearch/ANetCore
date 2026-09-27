@@ -86,7 +86,8 @@ func marshal(t *testing.T, v any) []byte {
 	return b
 }
 
-// signCard signs card under c's current key state.
+// signCard signs card under c's current key state through the public API, so card must be in
+// publish form.
 func signCard(t *testing.T, card map[string]any, c *identity.Controller) []byte {
 	t.Helper()
 	out, err := SignWithController(marshal(t, card), c, jku(c.AID()))
@@ -96,7 +97,36 @@ func signCard(t *testing.T, card map[string]any, c *identity.Controller) []byte 
 	return out
 }
 
-// signAs signs card with an explicit key and kid.
+// signLoose signs card under c's current key state over its proto-stripped payload without
+// the publish-form check, as an A2A signer that does not enforce it would. Tests use it to
+// build cards that only Verify's own rules reject.
+func signLoose(t *testing.T, card map[string]any, c *identity.Controller) []byte {
+	t.Helper()
+	out, err := sign(marshal(t, card), c.CurrentPrivateKey(), KID(c.AID(), c.CurrentSeq()), jku(c.AID()), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// signRaw signs card under c's current key state over its raw payload (only "signatures"
+// removed, no stripping), as a2a-go does. The card keeps any default-valued members it has.
+func signRaw(t *testing.T, card map[string]any, c *identity.Controller) []byte {
+	t.Helper()
+	cj := marshal(t, card)
+	payload, err := RawSigningPayload(cj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hdr := marshal(t, map[string]string{"alg": AlgEdDSA, "kid": KID(c.AID(), c.CurrentSeq()), "typ": TypJOSE})
+	protected := b64.EncodeToString(hdr)
+	sig := b64.EncodeToString(ed25519.Sign(c.CurrentPrivateKey(), signingInput(protected, payload)))
+	return edit(t, cj, func(m map[string]any) {
+		m["signatures"] = []any{map[string]any{"protected": protected, "signature": sig}}
+	})
+}
+
+// signAs signs card with an explicit key and kid, through the public API.
 func signAs(t *testing.T, card map[string]any, priv ed25519.PrivateKey, kid string) []byte {
 	t.Helper()
 	out, err := Sign(marshal(t, card), priv, kid, "")

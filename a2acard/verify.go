@@ -33,12 +33,22 @@ type Verified struct {
 	Seq       uint64
 	IssuedAt  uint64
 	NotBefore uint64
-	// PayloadHash is SHA-256 of the canonical payload (the card without "signatures"). Two
-	// cards with the same PayloadHash make the same statement even if their signatures differ,
-	// for example after the same card was re-signed under a rotated key.
+	// PayloadHash is SHA-256 of the proto-stripped payload (SigningPayload), whichever form
+	// the signature verified under. Two cards with the same PayloadHash make the same
+	// statement even if their bytes or signatures differ: after the same card was re-signed
+	// under a rotated key, or when one copy carries default-valued members ("required": false,
+	// "examples": []) that the other omits. Byte equality is not a property of verified cards:
+	// the A2A rule lets such members be added without breaking the signature, so a hub or
+	// cache compares cards by PayloadHash, not by bytes.
 	PayloadHash [32]byte
-	Name        string
-	Skills      []Skill
+	// CanonicalForm is the payload form the accepted signature verified under:
+	// FormProtoStripped for a signer that follows A2A §8.4.1 (this package, a2a-python), or
+	// FormRaw for one that signs the card as written (a2a-go) when the card carries default
+	// values. On a card in publish form both forms are the same bytes and FormProtoStripped is
+	// reported.
+	CanonicalForm CanonicalForm
+	Name          string
+	Skills        []Skill
 }
 
 // Mark returns the high-water record a consumer stores for this card.
@@ -50,11 +60,13 @@ func (v *Verified) Mark() Mark { return Mark{Seq: v.Seq, PayloadHash: v.PayloadH
 //  1. size: the card is at most MaxCardBytes;
 //  2. strict I-JSON object (see Canonicalize);
 //  3. "signatures" is a non-empty array of at most MaxSignatures {protected, signature} objects;
-//  4. required members and limits: name (non-empty, <= MaxNameBytes), description
-//     (<= MaxDescriptionBytes), version, supportedInterfaces (non-empty; url, protocolBinding,
-//     protocolVersion), capabilities, defaultInputModes, defaultOutputModes, skills (1 to
-//     MaxSkills; unique non-empty id; non-empty name and description; 1 to MaxTagsPerSkill
-//     non-empty tags);
+//  4. REQUIRED members (a2a.proto field_behavior; A2A §5.7: present and set, and a REQUIRED
+//     array has at least one element) and limits: name (<= MaxNameBytes), description
+//     (<= MaxDescriptionBytes) and version, all non-empty strings; supportedInterfaces (at
+//     least one; non-empty url, protocolBinding and protocolVersion); capabilities (an
+//     object); defaultInputModes and defaultOutputModes (at least one element each, every
+//     element a non-empty string); skills (1 to MaxSkills; unique non-empty id; non-empty
+//     name and description; 1 to MaxTagsPerSkill non-empty tags);
 //  5. exactly one anet-card extension with params aid, seq, issuedAt and notBefore, the last
 //     three canonical decimal strings;
 //  6. every supportedInterfaces entry whose protocolBinding is BindingRelayURI has tenant == aid;
@@ -62,7 +74,17 @@ func (v *Verified) Mark() Mark { return Mark{Seq: v.Seq, PayloadHash: v.PayloadH
 //  8. at least one signature whose protected header has alg EdDSA and kid
 //     did:anet:<aid>#<seq>, where the KEL returned by resolve replays to aid, key state <seq>
 //     has not been retired by a later rotation or deactivation (see CurrentKey), and the
-//     Ed25519 signature verifies over the canonical payload.
+//     Ed25519 signature verifies over the proto-stripped payload (FormProtoStripped, the A2A
+//     §8.4.1 payload) or, failing that, over the raw payload (FormRaw, what a2a-go signs).
+//     Verified.CanonicalForm records which.
+//
+// The fallback admits cards that a2a-go signed while they carried default values; it admits
+// nothing a signer did not sign, because the raw payload covers every member of the card. The
+// proto-stripped form leaves out only members whose value proto3 treats as unset, so members
+// that a relaying party can add without breaking a signature ("required": false, "tenant": "",
+// "examples": [], "iconUrl": null) change nothing a schema-conforming reader sees; the checks
+// in steps 4-6 read only REQUIRED members, non-default values and members inside a Struct,
+// all of which both payloads cover.
 //
 // Step 2 also rejects an object, at any depth, with two member names that are equal under
 // Unicode simple case folding, such as "tenant" and "Tenant". Go's encoding/json matches struct
@@ -107,7 +129,7 @@ func Verify(cardJSON []byte, resolve Resolver, now uint64) (*Verified, error) {
 	if out.NotBefore > now && out.NotBefore-now > NotBeforeSkewMillis {
 		return nil, newErr(CodeNotYetValid, fmt.Sprintf("notBefore %d is more than %d ms after now %d", out.NotBefore, NotBeforeSkewMillis, now))
 	}
-	payload, err := canonicalPayload(card)
+	stripped, raw, err := payloads(card)
 	if err != nil {
 		return nil, err
 	}
@@ -115,10 +137,11 @@ func Verify(cardJSON []byte, resolve Resolver, now uint64) (*Verified, error) {
 	kels := &kelOnce{resolve: resolve}
 	var firstErr error
 	for _, sig := range sigs {
-		ks, err := verifyAnetSignature(sig, payload, out.AID, kels)
+		ks, form, err := verifyAnetSignature(sig, stripped, raw, out.AID, kels)
 		if err == nil {
 			out.KeyStateSeq = ks
-			out.PayloadHash = sha256.Sum256(payload)
+			out.CanonicalForm = form
+			out.PayloadHash = sha256.Sum256(stripped)
 			return out, nil
 		}
 		if firstErr == nil {
@@ -155,31 +178,32 @@ func (k *kelOnce) get(aid string) ([]identity.SignedEvent, error) {
 }
 
 // verifyAnetSignature checks one signature entry against the card AID and returns the kid's
-// key-state seq.
-func verifyAnetSignature(sig Signature, payload []byte, aid string, kels *kelOnce) (uint64, error) {
+// key-state seq and the payload form the signature verified under.
+func verifyAnetSignature(sig Signature, stripped, raw []byte, aid string, kels *kelOnce) (uint64, CanonicalForm, error) {
 	hdr, err := parseHeader(sig.Protected)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	kidAID, ksSeq, err := ParseKID(hdr.Kid)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if kidAID != aid {
-		return 0, newErr(CodeBindingMismatch, "kid AID "+kidAID+" is not the anet-card params.aid "+aid)
+		return 0, "", newErr(CodeBindingMismatch, "kid AID "+kidAID+" is not the anet-card params.aid "+aid)
 	}
 	kel, err := kels.get(aid)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	pub, err := currentKey(kel, aid, ksSeq)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
-	if err := verifyEd25519(pub, sig, payload); err != nil {
-		return 0, err
+	form, err := verifyForms(pub, sig, stripped, raw)
+	if err != nil {
+		return 0, "", err
 	}
-	return ksSeq, nil
+	return ksSeq, form, nil
 }
 
 // CurrentKey returns the public key named by kid, provided kid is did:anet:<AID>#<seq>, kel
@@ -279,14 +303,17 @@ func checkRequired(card *value, out *Verified) error {
 		return newErr(CodeTooLarge, fmt.Sprintf("name is %d bytes, limit %d", len(name), MaxNameBytes))
 	}
 	out.Name = name
-	desc, err := str(card, "description", false)
+	// description and version are REQUIRED strings. An empty one is also where the A2A rule
+	// (which keeps REQUIRED members at their default) and a2a-python (which drops every empty
+	// string) compute different payloads, so such a card cannot verify everywhere.
+	desc, err := str(card, "description", true)
 	if err != nil {
 		return err
 	}
 	if len(desc) > MaxDescriptionBytes {
 		return newErr(CodeTooLarge, fmt.Sprintf("description is %d bytes, limit %d", len(desc), MaxDescriptionBytes))
 	}
-	if _, err := str(card, "version", false); err != nil {
+	if _, err := str(card, "version", true); err != nil {
 		return err
 	}
 	ifaces, err := arr(card, "supportedInterfaces", true)
@@ -294,11 +321,8 @@ func checkRequired(card *value, out *Verified) error {
 		return err
 	}
 	for i, it := range ifaces {
-		for _, f := range []struct {
-			name     string
-			nonEmpty bool
-		}{{"url", true}, {"protocolBinding", true}, {"protocolVersion", false}} {
-			if _, err := str(it, f.name, f.nonEmpty); err != nil {
+		for _, f := range []string{"url", "protocolBinding", "protocolVersion"} {
+			if _, err := str(it, f, true); err != nil {
 				return prefixed(err, fmt.Sprintf("supportedInterfaces[%d]", i))
 			}
 		}
@@ -307,7 +331,7 @@ func checkRequired(card *value, out *Verified) error {
 		return err
 	}
 	for _, f := range []string{"defaultInputModes", "defaultOutputModes"} {
-		if _, err := strList(card, f, false); err != nil {
+		if _, err := strList(card, f, true); err != nil {
 			return err
 		}
 	}
@@ -367,11 +391,17 @@ func readCardExtension(card *value, out *Verified) error {
 	}
 	var params *value
 	for i, e := range exts.arr {
-		uri, err := str(e, "uri", false)
-		if err != nil {
-			return prefixed(err, fmt.Sprintf("capabilities.extensions[%d]", i))
+		if e.kind != kindObject {
+			return newErr(CodeInvalidCard, fmt.Sprintf("capabilities.extensions[%d] is not an object", i))
 		}
-		if uri != ExtCardURI {
+		// uri has implicit presence: a missing uri is the empty uri, which names no extension.
+		// Requiring the member would reject every card whose signer omitted an empty uri as
+		// A2A §8.4.1 asks, and would let a relaying party invalidate a card by deleting a
+		// "uri": "" that the signature does not cover.
+		var err error
+		if u, ok := e.member("uri"); ok && u.kind != kindString && u.kind != kindNull {
+			return newErr(CodeInvalidCard, fmt.Sprintf("capabilities.extensions[%d]: uri is not a string", i))
+		} else if !ok || u.str != ExtCardURI {
 			continue
 		}
 		if params != nil {
