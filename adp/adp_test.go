@@ -814,3 +814,54 @@ func mustCID(t *testing.T, card *AgentCard) string {
 	}
 	return cid
 }
+
+// Above 2^53 the pre-image, which carries every number as a float64, does not tell
+// neighbouring integers apart: a card signed with seq 2^53+1 verified with seq 2^53 too, so
+// whoever relayed it could change the seq a hub records as the high-water mark. AdmitCard now
+// refuses seq, issued_at and not_before beyond 2^53-1 (ANet docs/notes/0033).
+func TestAdmitRefusesIntegersThePreimageCannotBind(t *testing.T) {
+	suite := identity.SuiteController()
+	issued := int64(1767225600)
+	card := func(seq uint64) *AgentCard {
+		c := &AgentCard{SubjectDID: suite.AID(), CardSchema: CardSchema{Major: 1}, Seq: seq,
+			IssuedAt: issued, NotBefore: issued, Capabilities: []string{"x"}, CriticalExtensions: []string{}}
+		if err := c.SignWithKey(suiteIdentityKey(), suite.AID(), 0); err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	majors := SupportedMajors(SchemaMajor)
+	now := at(issued)
+
+	signed := card(1<<53 + 1)
+	tampered := *signed
+	tampered.Seq = 1 << 53
+	for name, c := range map[string]*AgentCard{"signed 2^53+1": signed, "re-labelled 2^53": &tampered} {
+		if _, err := AdmitCard(c, now, 0, suite.KEL(), majors, nil); !IsCode(err, MALFORMED_CARD) {
+			t.Errorf("%s: AdmitCard = %v, want MALFORMED_CARD", name, err)
+		}
+	}
+	// At the bound the seq is bound exactly: one less no longer verifies.
+	top := card(1<<53 - 1)
+	if _, err := AdmitCard(top, now, 0, suite.KEL(), majors, nil); err != nil {
+		t.Fatalf("card at 2^53-1: %v", err)
+	}
+	lower := *top
+	lower.Seq--
+	if _, err := AdmitCard(&lower, now, 0, suite.KEL(), majors, nil); !IsCode(err, INVALID_SIGNATURE) {
+		t.Errorf("re-labelled seq at the bound: %v, want INVALID_SIGNATURE", err)
+	}
+	for _, c := range []*AgentCard{card(1), card(2)} {
+		c.IssuedAt, c.NotBefore = 1<<53, issued
+		if _, err := AdmitCard(c, now, 0, suite.KEL(), majors, nil); !IsCode(err, MALFORMED_CARD) {
+			t.Errorf("issued_at 2^53: %v, want MALFORMED_CARD", err)
+		}
+	}
+	tb := &CardTombstone{SubjectDID: suite.AID(), Seq: 1<<53 + 1, RevokedCardCID: "cog:x", IssuedAt: issued}
+	if err := tb.SignWithKey(suiteIdentityKey(), suite.AID(), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := AdmitTombstone(tb, 0, suite.KEL()); !IsCode(err, MALFORMED_CARD) {
+		t.Errorf("tombstone seq 2^53+1: %v, want MALFORMED_CARD", err)
+	}
+}

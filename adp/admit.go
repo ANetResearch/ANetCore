@@ -84,6 +84,9 @@ func AdmitCard(card *AgentCard, now time.Time, highWater uint64, kel []identity.
 	if len(card.Name) > MaxNameLen || len(card.Description) > MaxDescriptionLen || len(card.Skills) > MaxSkills {
 		return "", &Error{Code: MALFORMED_CARD, Detail: "size limit exceeded (§2.7)"}
 	}
+	if !safeInt(card.Seq, card.IssuedAt, card.NotBefore) {
+		return "", &Error{Code: MALFORMED_CARD, Detail: "seq, issued_at or not_before is beyond 2^53-1 (I-JSON), where the pre-image does not bind it"}
+	}
 	if !majors[card.CardSchema.Major] {
 		// Held UNVERIFIABLE — a higher-MAJOR card cannot be misparsed (§2.4 / FSM T6).
 		return "", &Error{Code: UNSUPPORTED_SCHEMA_MAJOR, Detail: "card_schema.major not in supported set"}
@@ -201,6 +204,9 @@ func AdmitTombstone(tb *CardTombstone, highWater uint64, kel []identity.SignedEv
 	if tb.SubjectDID == "" || tb.Envelope.SignerAID == "" || tb.Envelope.Sig == "" {
 		return &Error{Code: MALFORMED_CARD, Detail: "tombstone missing subject_did or envelope signature"}
 	}
+	if !safeInt(tb.Seq, tb.IssuedAt, 0) {
+		return &Error{Code: MALFORMED_CARD, Detail: "seq or issued_at is beyond 2^53-1 (I-JSON), where the pre-image does not bind it"}
+	}
 	// §5.4: signerOf(tb) != tb.subject_did → UNAUTHORIZED_REVOKE (third-party reject). The
 	// signer's resolved identity is its envelope.signer_aid; a third party cannot sign as the
 	// subject (the KEL self-verification below proves the signer controls signer_aid).
@@ -251,4 +257,21 @@ func mapVerifyErr(err error) *Error {
 	default:
 		return &Error{Code: INVALID_SIGNATURE, Detail: ve.Reason + ": " + ve.Detail}
 	}
+}
+
+// maxSafeInt is 2^53-1, the largest integer I-JSON (RFC 7493 §2.2) lets JSON carry exactly.
+const maxSafeInt = 1<<53 - 1
+
+// safeInt reports whether seq, issuedAt and notBefore are all within ±maxSafeInt.
+//
+// The pre-image passes every number through float64 (preimageObject decodes the card's JSON
+// into map[string]any), so above 2^53 neighbouring integers share one pre-image and one
+// signature. A signed card with seq 2^53+1 then verified as well with seq 2^53 or 2^53+2: a
+// relaying party could raise the seq a hub records as the subject's high-water mark, and the
+// subject's next genuine card would be refused as stale (ANet docs/notes/0033). Cards this
+// suite writes use unix seconds for all three; refusing larger values keeps each signed number
+// bound exactly.
+func safeInt(seq uint64, issuedAt, notBefore int64) bool {
+	in := func(v int64) bool { return v >= -maxSafeInt && v <= maxSafeInt }
+	return seq <= maxSafeInt && in(issuedAt) && in(notBefore)
 }
