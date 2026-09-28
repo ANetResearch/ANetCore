@@ -29,6 +29,8 @@ implementation, pinned by golden vectors.
 | `delegation` | The relayed delegation wire: signed request, completion, chat; `VerifyDelegateReq`, `VerifyResult` | arch-03 |
 | `relayauth` | The canonical challenge a client signs to authenticate a relay mailbox operation | arch-03 |
 | `payment` | x402 wire objects + the `anet-credit` scheme: signed authorizations and settlement receipts | x402 v2 |
+| `seal` | End-to-end relay envelope: signed `EncKeySet`, sign-then-encrypt `SealedEnvelope` (HPKE Base, X25519 / HKDF-SHA256 / ChaCha20-Poly1305), Padmé padding (v0.15.0) | A2A-DESIGN §3 |
+| `a2acard` | A2A AgentCard signing and verification: RFC 8785 JCS + JWS EdDSA, standard library only (v0.15.0) | A2A-DESIGN §10.3 |
 
 The last three arrived by the rule below rather than by design: each was a
 wire between the daemon and the Hub, duplicated in both repositories, and
@@ -57,6 +59,9 @@ CIDs, and signatures under the frozen suite test key
 that pass these vectors produce byte-identical wire objects.
 
 ## Versioning
+
+Changes per version: [CHANGELOG.md](CHANGELOG.md). v0.15.0 (the kernel of
+anet 0.2.0 and hub wire 2) is planned and not tagged yet.
 
 Semantic versioning. Any change that alters bytes on the wire (preimage
 membership, CID prefix, envelope shape) is a **major** version. The CID prefix
