@@ -1,12 +1,10 @@
 # Changelog
 
-## v0.15.0 — planned (not tagged yet)
+## v0.15.0 — 2026-09-28
 
 The kernel side of anet 0.2.0 and hub wire 2 (ANet `docs/A2A-DESIGN-zh.md`,
-§3, §10.3, §18). The tag is cut in release stage G, after which ANet and
-ANetHub move their `go.mod` from v0.14.0 to v0.15.0 in the same push
-(ANet `docs/notes/0027`). Until then the two applications build against
-this tree through a `go.work`.
+§3, §10.3, §18). anet 0.2.0 and ANetHub 0.2.0 require this version in
+their `go.mod`.
 
 No external dependency was added. `go.mod` is unchanged since v0.14.0;
 `crypto/hpke` (standard library, Go 1.26) is the only new import that
@@ -62,6 +60,12 @@ their release notes.
   `duplicate_nonce`, `duplicate_binding`, `settlement_pending`,
   `settlement_failed`, `invalid_payment_requirements`; response extensions
   `anet.replayed`, `anet.original_transaction`, `anet.error_detail`.
+- **Fuzz targets** — Go native fuzzing for the parsing and verification
+  entry points of 14 packages (coredet, identity, seal, relayauth,
+  delegation, payment, a2acard, adp, tsir, aobj, evidence, ael, agenturi,
+  effect): 31 targets, each next to its package in `fuzz_test.go`, with the
+  inputs that found a defect kept under `testdata/fuzz/`. A plain `go test`
+  runs only the seeds and that corpus (ANet `docs/notes/0033`, core).
 
 ### Changed
 
@@ -70,6 +74,23 @@ their release notes.
   events lie in between (pinned by `golden/supersede_test.go`,
   VEC-KEL-SUPERSEDE-1/2). Callers use it to accept a retired key only for
   messages signed before the rotation and within their grace period.
+- **`identity.Replay`: pre-rotation honours only the commitment of the
+  last establishment event.** A `rot` must match the `next_digest` of the
+  most recent `icp`/`rot`; a `next_digest` written on an `ixn` or `drt`
+  no longer counts as the commitment (`Restore` uses the same rule). Before
+  this, the digest of whichever event came right before the `rot` was
+  taken, and an `ixn`/`drt` needs only the current key — so whoever stole
+  the current key could append a `drt` re-committing to a key of their own
+  and then rotate to it, which is exactly the takeover pre-rotation exists
+  to prevent. This is a behaviour change: a KEL whose `rot` matches a
+  commitment rewritten by an intervening `ixn`/`drt` is now refused, and a
+  KEL whose `rot` matches the establishment event across an `ixn`/`drt`
+  carrying another digest is now accepted. KELs written by a correct
+  `Controller` replay the same before and after (`Delegate` still writes
+  the same digest on its `drt`, so older verifiers accept the next
+  `Rotate`). Verifiers on v0.14.0 or earlier still accept the first shape,
+  so daemons and hubs both need this version (pinned by
+  `identity/prerotation_internal_test.go`).
 - `delegation.ChatEndAccept` is deprecated: from this version the provider
   completes a text task on its own (A2A-DESIGN §3.4, §4.2).
 
@@ -81,6 +102,29 @@ their release notes.
 - Receipt verification can bind the request CID (`VerifyResultForRequest`,
   F15): a receipt for another request of the same interaction no longer
   verifies.
+
+Found by fuzzing (ANet `docs/notes/0033`, core; each has a unit regression
+that fails without the fix):
+
+- `aobj.Verify` returns an error for a public key that is not 32 bytes
+  instead of panicking inside `ed25519.Verify` (the same class as F34, on
+  another entry point).
+- `agenturi`: the canonical form is a fixed point again. A query key or
+  value that is not UTF-8 after percent-decoding is refused (`BAD_UTF8`)
+  instead of being rewritten to U+FFFD, which made different URIs compare
+  equal; labels are folded after NFC and normalised again afterwards
+  (U+212A KELVIN SIGN now folds to `k`); a label that folds to nothing
+  (only ZWJ/ZWNJ) is refused (`EMPTY_LABEL`). URIs refused by the first
+  and last rule were accepted before.
+- `tsir`: glob matching is linear in pattern × input length instead of
+  exponential in the number of `*`/`**` (same semantics, checked against
+  the old implementation); `Validate` refuses a null child predicate
+  (`MALFORMED`) instead of dereferencing it.
+- `seal.Padme` no longer wraps to a negative length when the next Padmé
+  length would exceed `math.MaxInt`; it returns the length unchanged there.
+- `payment`: the validity checks of authorizations and vouchers compare
+  differences, so a `NotAfter` near `MaxInt64` ("never expires") no longer
+  overflows into "expired at any time".
 
 ### License
 
