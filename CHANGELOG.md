@@ -89,7 +89,7 @@ their release notes.
   Community License 1.0 of v0.3.0–v0.14.0: no node limit on commercial
   use; operating a multi-tenant hosted hub for third parties needs written
   authorization; code contributed to the A2A project goes upstream under
-  Apache-2.0 (Section 3). Earlier versions stay under their licenses.
+  Apache-2.0 (condition 3). Earlier versions stay under their licenses.
 
 ## v0.14.0 and earlier
 
