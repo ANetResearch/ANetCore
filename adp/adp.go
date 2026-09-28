@@ -197,6 +197,10 @@ func (c *AgentCard) preimageObject() (map[string]any, error) {
 	if err != nil {
 		return nil, &Error{Code: MALFORMED_CARD, Detail: "card not marshalable: " + err.Error()}
 	}
+	// Decoded without UseNumber: every number reaches jcsWrite as a float64, as RFC 8785 has
+	// it, so an integer above 2^53 (seq, issued_at, a price in extensions) is bound only to
+	// float64 precision and neighbouring values share one pre-image and one signature. The
+	// json.Number path in jcs.go serves RawMessage fields only (ANet docs/notes/0033 §5).
 	var obj map[string]any
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, &Error{Code: MALFORMED_CARD, Detail: "card not a JSON object: " + err.Error()}

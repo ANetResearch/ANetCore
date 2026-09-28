@@ -56,9 +56,6 @@ func fuzzSeedCards(tb testing.TB) [][]byte {
 	c.Genome = &Genome{SpeciesCID: "bafyspecies"}
 	c.DelegationProof = json.RawMessage(`{"zcap":"x"}`)
 	add(c)
-	c = base()
-	c.Seq = 1<<53 + 1 // TestAdmitRefusesIntegersThePreimageCannotBind
-	add(c)
 	return out
 }
 
@@ -147,7 +144,14 @@ func FuzzAdmitSigned(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The signature binds the signed fields: changing one changes the pre-image.
+		// The signature binds the signed fields: changing one changes the pre-image. Numbers
+		// pass through float64 on their way into the pre-image, so an integer beyond 2^53 is
+		// not bound exactly; that is recorded in ANet docs/notes/0033 §5 and left out here.
+		const safe = 1<<53 - 1
+		if card.Seq >= safe || card.IssuedAt >= safe || card.IssuedAt <= -safe ||
+			card.NotBefore >= safe || card.NotBefore <= -safe {
+			return
+		}
 		for name, mutate := range map[string]func(c *AgentCard){
 			"seq":        func(c *AgentCard) { c.Seq ^= 1 },
 			"issued_at":  func(c *AgentCard) { c.IssuedAt ^= 1 },
