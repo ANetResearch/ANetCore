@@ -113,6 +113,3 @@ ANet and ANetHub. Commercial use is allowed, including as a library in your own 
 condition does not apply to library use. Operating a multi-tenant hosted hub for third parties needs
 written authorization. The A2A specification work (ANet `docs/a2a/`) and code contributed to the A2A
 project are plain Apache-2.0. Questions: hi@anet0.com.
-
-This applies from v0.15.0. v0.3.0 through v0.14.0 were published under the ANet Community License 1.0,
-and versions ≤ v0.2.x under Apache-2.0; each stays under its license.
