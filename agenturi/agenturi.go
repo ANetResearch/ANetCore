@@ -208,6 +208,12 @@ func decodeQ(s string) (string, *Error) {
 		out = append(out, s[i:i+size]...)
 		i += size
 	}
+	// As for labels: percent-decoding can yield bytes that are not UTF-8. Kept, they would be
+	// re-encoded as U+FFFD by Serialize, so "a=%FF" and "a=%FE" would share one canonical form
+	// and compare Equal (ANet docs/notes/0033, found by FuzzCanonical).
+	if !utf8.Valid(out) {
+		return "", errf("BAD_UTF8", "decoded query bytes not valid utf-8")
+	}
 	return string(out), nil
 }
 
@@ -215,9 +221,15 @@ func decodeQ(s string) (string, *Error) {
 
 // foldLabel applies S3 to a decoded label: UTS-46 deviation folds enumerated in §3.2 +
 // ASCII lowercase, then NFC. Generic UTS-46 mapping (non-enumerated) is a follow-up.
+//
+// The mapping runs on the NFC form of the label as well as before the final NFC, because NFC
+// can produce what the mapping folds: U+212A KELVIN SIGN normalizes to ASCII 'K'. Mapped
+// first and normalized after, "%E2%84%AA" folded to "K", whose canonical form is "k", so the
+// canonical form was not a fixed point (AU-C-08) and two spellings of one name compared
+// unequal (ANet docs/notes/0033).
 func foldLabel(s string) string {
 	var b strings.Builder
-	for _, r := range s {
+	for _, r := range norm.NFC.String(s) {
 		switch r {
 		case 0x200C, 0x200D: // ZWNJ, ZWJ — deviation folded to nothing (§3.2)
 			continue
@@ -244,6 +256,12 @@ func foldLabel(s string) string {
 // (Latin mixed with Cyrillic or Greek). CONFUSABLE_SKELETON (corpus + whole-script
 // table) is a follow-up keyed to UTS-39 confusables.txt.
 func rejectCheck(label string) *Error {
+	// A label that folds to nothing (it held only ZWJ/ZWNJ, which S3 removes) is an empty
+	// label: serialized, it would be "agent://" or "/ns=", which do not parse (ANet
+	// docs/notes/0033).
+	if label == "" {
+		return errf("EMPTY_LABEL", "label folds to the empty string")
+	}
 	for _, r := range label {
 		if r == 0x200C || r == 0x200D {
 			continue // folded away at S3; never reaches here

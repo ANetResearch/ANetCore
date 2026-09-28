@@ -46,8 +46,13 @@ func (e Envelope) Validate() error {
 }
 
 // Verify checks a detached Ed25519 signature over preimage against pub. The signature
-// MUST be exactly 64 bytes (design3/spec/_CONVENTIONS §5).
+// MUST be exactly 64 bytes (design3/spec/_CONVENTIONS §5), and a public key that is not
+// 32 bytes is an error: ed25519.Verify panics on one, and the key may have come from
+// whoever sent the object (ANet docs/notes/0033, found by FuzzEnvelopeVerify).
 func Verify(pub ed25519.PublicKey, preimage, sig []byte) error {
+	if len(pub) != ed25519.PublicKeySize {
+		return errors.New("aobj: public key must be 32 bytes")
+	}
 	if len(sig) != ed25519.SignatureSize {
 		return errors.New("aobj: signature must be 64 bytes")
 	}

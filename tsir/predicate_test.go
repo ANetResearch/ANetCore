@@ -1,6 +1,12 @@
 package tsir
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ANetResearch/ANetCore/coredet"
+)
 
 func u64(v uint64) *uint64 { return &v }
 
@@ -109,5 +115,81 @@ func TestMalformed(t *testing.T) {
 	}
 	if err := deep.Validate(); err != ErrMalformed {
 		t.Errorf("over-depth: want ErrMalformed, got %v", err)
+	}
+}
+
+// globMatch takes time linear in the pattern and the string. The recursive matcher it replaced
+// tried every split at every star, so a pattern of twenty-one stars against twenty bytes ran for
+// minutes (ANet docs/notes/0033, found by FuzzGlobMatch: "*********************0").
+func TestGlobMatchIsNotExponential(t *testing.T) {
+	long := strings.Repeat("a", 4000)
+	cases := []struct {
+		pat, s string
+		want   bool
+	}{
+		{"*********************0", "\x84|\x82;_\xf4\x85f1\xec\x00i{\x87\x02\xe0\xe6\xf6Nd", false},
+		{strings.Repeat("**a", 30) + "b", long, false},
+		{strings.Repeat("*a", 30) + "b", long, false},
+		{strings.Repeat("*a", 30), long, true},
+		{"**/" + strings.Repeat("*/", 20) + "x", strings.Repeat("d/", 200) + "x", true},
+	}
+	// Each match runs in its own goroutine against a deadline, so an exponential matcher fails
+	// the test within seconds instead of holding it until go test's own timeout (ten minutes by
+	// default). The linear matcher takes microseconds; the deadline is generous for a loaded
+	// machine. A match that misses it is left running: the test binary exits after the failure.
+	const deadline = 5 * time.Second
+	for _, c := range cases {
+		done := make(chan bool, 1)
+		go func() { done <- globMatch(c.pat, c.s) }()
+		select {
+		case got := <-done:
+			if got != c.want {
+				t.Errorf("globMatch(%.30q..., %d bytes) = %v, want %v", c.pat, len(c.s), got, c.want)
+			}
+		case <-time.After(deadline):
+			t.Fatalf("globMatch(%.30q..., %d bytes) did not finish within %v", c.pat, len(c.s), deadline)
+		}
+	}
+}
+
+// The dialect is unchanged by the rewrite: '*' stays inside a segment, '**' crosses '/' and
+// swallows the '/' after it.
+func TestGlobMatchDialect(t *testing.T) {
+	for _, c := range []struct {
+		pat, s string
+		want   bool
+	}{
+		{"build/*.bin", "build/out.bin", true}, {"build/*.bin", "build/sub/out.bin", false},
+		{"build/**/*.bin", "build/out.bin", true}, {"build/**/*.bin", "build/a/b/out.bin", true},
+		{"secrets/**", "secrets/api/key.pem", true}, {"secrets/**", "secret", false},
+		{"a/**/b", "a/xb", true}, {"*", "", true}, {"", "", true}, {"", "a", false}, {"a*", "a/b", false},
+	} {
+		if got := globMatch(c.pat, c.s); got != c.want {
+			t.Errorf("globMatch(%q, %q) = %v, want %v", c.pat, c.s, got, c.want)
+		}
+	}
+}
+
+// A CBOR null among a connective's children decodes to a nil *Predicate. Validate reports it as
+// MALFORMED instead of dereferencing it; Compile, which validates a signed TaskDoc's scopes,
+// used to panic on one (ANet docs/notes/0033).
+func TestValidateRefusesANullChild(t *testing.T) {
+	// {1: 1, 2: [null, {1: 11, 11: {1: "t", 2: 1}}]}: AND of null and a test clause.
+	b := []byte{0xa2, 0x01, 0x01, 0x02, 0x82, 0xf6, 0xa2, 0x01, 0x0b, 0x0b, 0xa2, 0x01, 0x61, 't', 0x02, 0x01}
+	var p Predicate
+	if err := coredet.Unmarshal(b, &p); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []*Predicate{&p, {Op: OpNOT, Children: []*Predicate{nil}}, nil} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("Validate panicked: %v", r)
+				}
+			}()
+			if err := q.Validate(); err != ErrMalformed {
+				t.Errorf("Validate = %v, want MALFORMED", err)
+			}
+		}()
 	}
 }

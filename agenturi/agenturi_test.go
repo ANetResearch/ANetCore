@@ -118,3 +118,45 @@ func TestFoldCollisionAndForms(t *testing.T) {
 		t.Error("validate_capability_query over concrete: want WRONG_FORM")
 	}
 }
+
+// Percent-decoded query bytes must be UTF-8, as label bytes must. Parse used to keep them, and
+// Serialize wrote each invalid byte as U+FFFD, so distinct queries shared a canonical form (ANet
+// docs/notes/0033, found by FuzzCanonical: "Agent://0?a%800=").
+func TestQueryInvalidUTF8IsRejected(t *testing.T) {
+	for _, in := range []string{"agent://0?a%800=", "agent://a?k=%FF", "agent://*/cap?k=%C3"} {
+		if _, err := Parse(in); err == nil || err.(*Error).Reason != "BAD_UTF8" {
+			t.Errorf("Parse(%q) = %v, want BAD_UTF8", in, err)
+		}
+	}
+	if eq, err := Equals("agent://a?k=%FF", "agent://a?k=%FE"); err == nil && eq {
+		t.Error("two different invalid query bytes compare equal")
+	}
+}
+
+// The canonical form is a fixed point (AU-C-08) also where NFC produces a character S3 folds:
+// U+212A KELVIN SIGN normalizes to ASCII 'K'. It used to fold to "K", whose canonical form is
+// "k" (ANet docs/notes/0033).
+func TestKelvinSignFoldsToLowercaseK(t *testing.T) {
+	for _, in := range []string{"agent://%E2%84%AA", "agent://org/svc=%E2%84%AAelvin", "agent://*/%E2%84%AA"} {
+		c, err := Canonical(in)
+		if err != nil {
+			t.Fatalf("Canonical(%q): %v", in, err)
+		}
+		if again, err := Canonical(c); err != nil || again != c {
+			t.Errorf("Canonical(%q) = %q, whose canonical form is %q (%v)", in, c, again, err)
+		}
+	}
+	if eq, err := Equals("agent://%E2%84%AA", "agent://k"); err != nil || !eq {
+		t.Errorf("Kelvin sign and k: Equals = %v, %v", eq, err)
+	}
+}
+
+// A label of only ZWJ/ZWNJ folds to nothing and is an empty label, not a canonical form that
+// does not parse ("agent://" or "/ns=") (ANet docs/notes/0033).
+func TestLabelOfOnlyJoinersIsEmpty(t *testing.T) {
+	for _, in := range []string{"agent://%E2%80%8D", "agent://a/ns=%E2%80%8C%E2%80%8D", "agent://*/%E2%80%8C"} {
+		if _, err := Parse(in); err == nil || err.(*Error).Reason != "EMPTY_LABEL" {
+			t.Errorf("Parse(%q) = %v, want EMPTY_LABEL", in, err)
+		}
+	}
+}
