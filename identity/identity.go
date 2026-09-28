@@ -368,7 +368,18 @@ type KeyState struct {
 // Replay validates a KEL and returns the cumulative KeyState after each event (index i =
 // state as-of seq i). It enforces: icp first; monotonic seq; prev linkage; pre-rotation
 // hash match; and the signing rule (icp/dip self-signed by current; rot by prior current).
+//
+// When the process has installed a ReplayCache (SetReplayCache), a KEL replayed before is
+// answered from it.
 func Replay(kel []SignedEvent) ([]KeyState, error) {
+	if c := installedReplayCache.Load(); c != nil {
+		return c.replay(kel)
+	}
+	return replay(kel)
+}
+
+// replay is Replay without the cache.
+func replay(kel []SignedEvent) ([]KeyState, error) {
 	if len(kel) == 0 {
 		return nil, errors.New("identity: empty KEL")
 	}
@@ -392,7 +403,13 @@ func Replay(kel []SignedEvent) ([]KeyState, error) {
 			if e.AID != "" && e.AID != aid {
 				return nil, errors.New("identity: icp AID mismatch")
 			}
-			if len(e.Keys) != 1 || !ed25519.Verify(e.Keys[0], pre, se.Sig) {
+			if len(e.Keys) != 1 || len(e.Keys[0]) != ed25519.PublicKeySize {
+				// Checked before ed25519.Verify, which panics on a key of any
+				// other length: a KEL is what a stranger hands a verifier, and
+				// one with a 31-byte key took down whatever replayed it.
+				return nil, errors.New("identity: icp needs one Ed25519 key")
+			}
+			if !ed25519.Verify(e.Keys[0], pre, se.Sig) {
 				return nil, errors.New("identity: icp not self-signed by its key")
 			}
 			prior = KeyState{AID: aid, CurrentKeys: e.Keys, Threshold: e.Threshold,
@@ -416,8 +433,10 @@ func Replay(kel []SignedEvent) ([]KeyState, error) {
 			}
 			switch e.Type {
 			case Rotation:
-				if len(e.Keys) != 1 {
-					return nil, errors.New("identity: rot needs one key (baseline)")
+				if len(e.Keys) != 1 || len(e.Keys[0]) != ed25519.PublicKeySize {
+					// The rotated-in key signs the next event, and ed25519.Verify
+					// panics on a key that is not 32 bytes (see icp).
+					return nil, errors.New("identity: rot needs one Ed25519 key (baseline)")
 				}
 				// pre-rotation: revealed key MUST hash-match prior next_digest
 				if !bytesEqual(nextDigest(e.Keys[0]), priorNextDigest(kel, i)) {
