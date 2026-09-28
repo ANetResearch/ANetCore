@@ -9,16 +9,17 @@ import (
 )
 
 // A delegation (drt) must round-trip through Export/Restore AND still allow a later Rotate: the drt
-// carries the pre-rotation commitment forward, so the KEL head stays restorable and the next Rotate's
-// pre-rotation gate (which reads the IMMEDIATELY-prior event's next_digest) still matches. Regression
-// for the drt-missing-NextDigest bug (anrp VAL-11 mode (b) self-delegation bricked restore + rotation).
+// carries the pre-rotation commitment forward, so the KEL head advertises the live commitment and the
+// next Rotate matches it (Replay checks the commitment of the last icp/rot; before ANet docs/notes/0033
+// it read the IMMEDIATELY-prior event's next_digest). Regression for the drt-missing-NextDigest bug
+// (anrp VAL-11 mode (b) self-delegation bricked restore + rotation).
 func TestDelegateExportRestoreRotate(t *testing.T) {
 	c, _ := Incept()
 	hostPub, _, _ := ed25519.GenerateKey(nil)
 	if err := c.Delegate(hostPub, 1000); err != nil {
 		t.Fatalf("delegate: %v", err)
 	}
-	// delegate → rotate directly (exercises priorNextDigest reading the drt event).
+	// delegate → rotate directly (a drt between the icp and the rot).
 	if err := c.Rotate(2000); err != nil {
 		t.Fatalf("rotate immediately after delegate: %v", err)
 	}

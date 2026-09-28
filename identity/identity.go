@@ -8,8 +8,11 @@
 //   - A verifier resolves a DID to a current key by REPLAYING the KEL, not by decoding
 //     the DID string, producing KeyState(current_keys, threshold, key_state_seq, status).
 //   - Pre-rotation: a stolen current key cannot rotate to an attacker key, because the
-//     next key is pre-committed only as a digest (rot.keys MUST hash-match prior next_digest
-//     and rot is signed by the PRIOR current key).
+//     next key is pre-committed only as a digest (rot.keys MUST hash-match the next_digest of
+//     the last establishment event, icp or rot, and rot is signed by the PRIOR current key).
+//     An ixn or drt is signed by the current key alone, so the next_digest it carries is not a
+//     commitment; were it one, the holder of a stolen current key could re-commit to a key of
+//     its own and rotate to it.
 //   - legacy did:key is a single-event KEL (embedded key = icp.keys[0]).
 //
 // Baseline scope: single-key threshold (multi-sig / witnesses are fields here but the
@@ -148,13 +151,13 @@ func Restore(b []byte) (*Controller, error) {
 	if len(last.CurrentKeys) != 1 || !bytes.Equal(last.CurrentKeys[0], cur.Public().(ed25519.PublicKey)) {
 		return nil, errors.New("identity: current key does not match the KEL head (corrupt store)")
 	}
-	// The next (pre-rotation) seed MUST match the digest the KEL head committed to, else the first
-	// Rotate would emit an event the KEL's own pre-rotation gate rejects — silently bricking the
-	// identity. Validate it here so a corrupt/torn NxtSeed is rejected at restore, not at rotation.
+	// The next (pre-rotation) seed MUST match the digest the last establishment event committed
+	// to, else the first Rotate would emit an event the KEL's own pre-rotation gate rejects —
+	// silently bricking the identity. Validate it here so a corrupt/torn NxtSeed is rejected at
+	// restore, not at rotation.
 	nxt := ed25519.NewKeyFromSeed(e.NxtSeed)
-	head := e.KEL[len(e.KEL)-1].Event
-	if !bytes.Equal(nextDigest(nxt.Public().(ed25519.PublicKey)), head.NextDigest) {
-		return nil, errors.New("identity: next key does not match the KEL head's pre-rotation commitment (corrupt store)")
+	if !bytes.Equal(nextDigest(nxt.Public().(ed25519.PublicKey)), committedNextDigest(e.KEL)) {
+		return nil, errors.New("identity: next key does not match the KEL's pre-rotation commitment (corrupt store)")
 	}
 	return &Controller{
 		aid: aid,
@@ -260,9 +263,10 @@ func (c *Controller) Delegate(hostPub ed25519.PublicKey, ts uint64) error {
 		Type: Delegation,
 		Keys: [][]byte{append([]byte(nil), hostPub...)},
 		// Carry the pre-rotation commitment forward: a delegation does NOT change the signing keys, so it
-		// re-commits the SAME next key. The KEL head must always advertise the live commitment, else
-		// Restore (which validates head.NextDigest) and a later Rotate (whose pre-rotation gate reads the
-		// IMMEDIATELY-prior event's next_digest) would both reject a post-delegation KEL.
+		// repeats the SAME next key digest. Replay's pre-rotation gate reads the commitment of the last
+		// establishment event (icp/rot) and ignores this copy, but a reader of the KEL head sees the live
+		// commitment, and a verifier from before that gate was fixed (it read the IMMEDIATELY-prior
+		// event's next_digest) still accepts the next Rotate.
 		NextDigest: nextDigest(c.nxt.Public().(ed25519.PublicKey)),
 		Threshold:  1,
 		Timestamp:  ts,
@@ -385,6 +389,9 @@ func replay(kel []SignedEvent) ([]KeyState, error) {
 	}
 	states := make([]KeyState, 0, len(kel))
 	var prior KeyState
+	// committed is the next-key digest of the last establishment event (icp or rot), the only
+	// events that change the signing key. A rot must reveal a key that hashes to it.
+	var committed []byte
 	for i, se := range kel {
 		e := se.Event
 		pre, err := preimage(e)
@@ -414,6 +421,7 @@ func replay(kel []SignedEvent) ([]KeyState, error) {
 			}
 			prior = KeyState{AID: aid, CurrentKeys: e.Keys, Threshold: e.Threshold,
 				KeyStateSeq: 0, Status: StatusActive, LastEventID: aid}
+			committed = e.NextDigest
 		default:
 			if e.AID != prior.AID {
 				return nil, errors.New("identity: event AID mismatch")
@@ -438,8 +446,12 @@ func replay(kel []SignedEvent) ([]KeyState, error) {
 					// panics on a key that is not 32 bytes (see icp).
 					return nil, errors.New("identity: rot needs one Ed25519 key (baseline)")
 				}
-				// pre-rotation: revealed key MUST hash-match prior next_digest
-				if !bytesEqual(nextDigest(e.Keys[0]), priorNextDigest(kel, i)) {
+				// pre-rotation: the revealed key MUST hash-match the digest committed by the last
+				// establishment event. Not the event right before the rot: an ixn or drt there is
+				// signed by the current key alone, and taking its next_digest as the commitment let
+				// whoever held a stolen current key append a drt naming a key of its own and then
+				// rotate to that key, which is the takeover pre-rotation exists to prevent.
+				if !bytesEqual(nextDigest(e.Keys[0]), committed) {
 					return nil, errors.New("identity: rot key does not match pre-committed digest")
 				}
 				// rot signed by the PRIOR current key
@@ -448,6 +460,7 @@ func replay(kel []SignedEvent) ([]KeyState, error) {
 				}
 				prior = KeyState{AID: prior.AID, CurrentKeys: e.Keys, Threshold: e.Threshold,
 					KeyStateSeq: e.Seq, Status: StatusActive, LastEventID: id, DelegatedKeys: prior.DelegatedKeys}
+				committed = e.NextDigest
 			case Deactivation:
 				if !ed25519.Verify(prior.CurrentKeys[0], pre, se.Sig) {
 					return nil, errors.New("identity: dip not signed by current key")
@@ -514,8 +527,17 @@ func markSuperseded(kel []SignedEvent, states []KeyState) {
 	}
 }
 
-// priorNextDigest returns the next_digest committed by the event before index i.
-func priorNextDigest(kel []SignedEvent, i int) []byte { return kel[i-1].Event.NextDigest }
+// committedNextDigest returns the next-key digest of the last establishment event (icp or rot)
+// in kel: the commitment the next rot must match. ixn and drt events repeat it at most; they do
+// not change it (see Replay).
+func committedNextDigest(kel []SignedEvent) []byte {
+	for i := len(kel) - 1; i >= 0; i-- {
+		if t := kel[i].Event.Type; t == Inception || t == Rotation {
+			return kel[i].Event.NextDigest
+		}
+	}
+	return nil
+}
 
 func bytesEqual(a, b []byte) bool {
 	if len(a) != len(b) {
