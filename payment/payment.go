@@ -261,7 +261,7 @@ func (a *Authorization) Verify(kel []identity.SignedEvent, now int64) error {
 	if a.IssuedAt <= 0 || a.NotAfter <= a.IssuedAt {
 		return ErrBadWindow
 	}
-	if now < a.IssuedAt-ClockSkew || now > a.NotAfter+ClockSkew {
+	if beforeWithSkew(now, a.IssuedAt) || pastWithSkew(now, a.NotAfter) {
 		return fmt.Errorf("%w: valid %d..%d, now %d", ErrExpired, a.IssuedAt, a.NotAfter, now)
 	}
 	pre, err := a.CanonicalPreimage()
@@ -430,6 +430,16 @@ const ExtReceipt = "anet.settlement.receipt"
 // Applied to both ends, because a payer whose clock runs fast hits the
 // far edge and the failure is just as arbitrary.
 const ClockSkew = 2 * 60 * 1000 // milliseconds
+
+// pastWithSkew reports whether now is more than ClockSkew after t, and beforeWithSkew whether
+// it is more than ClockSkew before t. They compare the difference rather than adding the skew
+// to t: t is the signer's value, and t + ClockSkew overflowed for a NotAfter near
+// math.MaxInt64 (an authorization meant never to expire), which wrapped to a large negative
+// time and refused the authorization at every moment (ANet docs/notes/0033). The difference of
+// two int64 values always fits a uint64 once their order is known.
+func pastWithSkew(now, t int64) bool { return now > t && uint64(now)-uint64(t) > ClockSkew }
+
+func beforeWithSkew(now, t int64) bool { return now < t && uint64(t)-uint64(now) > ClockSkew }
 
 // ---- error reasons ----
 //
@@ -632,7 +642,7 @@ func (v *Voucher) Verify(kel []identity.SignedEvent, expectSigner, expectPayTo,
 	if expectNetwork != "" && v.Network != expectNetwork {
 		return fmt.Errorf("payment: voucher settles on %s, not on %s", v.Network, expectNetwork)
 	}
-	if v.NotAfter != 0 && now > v.NotAfter+ClockSkew {
+	if v.NotAfter != 0 && pastWithSkew(now, v.NotAfter) {
 		return errors.New("payment: voucher expired")
 	}
 	if v.Nonce == "" {
