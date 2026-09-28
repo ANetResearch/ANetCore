@@ -392,7 +392,13 @@ func Replay(kel []SignedEvent) ([]KeyState, error) {
 			if e.AID != "" && e.AID != aid {
 				return nil, errors.New("identity: icp AID mismatch")
 			}
-			if len(e.Keys) != 1 || !ed25519.Verify(e.Keys[0], pre, se.Sig) {
+			if len(e.Keys) != 1 || len(e.Keys[0]) != ed25519.PublicKeySize {
+				// Checked before ed25519.Verify, which panics on a key of any
+				// other length: a KEL is what a stranger hands a verifier, and
+				// one with a 31-byte key took down whatever replayed it.
+				return nil, errors.New("identity: icp needs one Ed25519 key")
+			}
+			if !ed25519.Verify(e.Keys[0], pre, se.Sig) {
 				return nil, errors.New("identity: icp not self-signed by its key")
 			}
 			prior = KeyState{AID: aid, CurrentKeys: e.Keys, Threshold: e.Threshold,
@@ -416,8 +422,10 @@ func Replay(kel []SignedEvent) ([]KeyState, error) {
 			}
 			switch e.Type {
 			case Rotation:
-				if len(e.Keys) != 1 {
-					return nil, errors.New("identity: rot needs one key (baseline)")
+				if len(e.Keys) != 1 || len(e.Keys[0]) != ed25519.PublicKeySize {
+					// The rotated-in key signs the next event, and ed25519.Verify
+					// panics on a key that is not 32 bytes (see icp).
+					return nil, errors.New("identity: rot needs one Ed25519 key (baseline)")
 				}
 				// pre-rotation: revealed key MUST hash-match prior next_digest
 				if !bytesEqual(nextDigest(e.Keys[0]), priorNextDigest(kel, i)) {
