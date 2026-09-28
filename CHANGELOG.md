@@ -82,6 +82,15 @@ their release notes.
   F15): a receipt for another request of the same interaction no longer
   verifies.
 
+### License
+
+- From this version ANetCore is released under the ANet Open Source
+  License, a modified Apache License 2.0 (`LICENSE`), replacing the ANet
+  Community License 1.0 of v0.3.0–v0.14.0: no node limit on commercial
+  use; operating a multi-tenant hosted hub for third parties needs written
+  authorization; code contributed to the A2A project goes upstream under
+  Apache-2.0 (condition 3). Earlier versions stay under their licenses.
+
 ## v0.14.0 and earlier
 
 See the tags and commit history.
