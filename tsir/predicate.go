@@ -144,7 +144,9 @@ type EffectRef struct {
 func (p *Predicate) Validate() error { return p.validate(0) }
 
 func (p *Predicate) validate(depth int) error {
-	if depth > MaxPredicateDepth {
+	// A nil node is a CBOR null in a children array (or a nil receiver): not a predicate.
+	// Without the check the switch below dereferenced it (ANet docs/notes/0033).
+	if p == nil || depth > MaxPredicateDepth {
 		return ErrMalformed
 	}
 	switch p.Op {
@@ -295,43 +297,51 @@ func matchResource(m ResourceMatch, id string) bool {
 
 // globMatch implements the C-D4 glob dialect: '*' matches within a path segment (not '/'),
 // '**' crosses '/'. (tsir-spec §3.2 design-fix: POSIX fnmatch with explicit ** crossing.)
+//
+// The pattern is read left to right into tokens: "**" (any run, '/' included; any '/'
+// directly after it is part of the token), '*' (any run without '/') and single bytes.
+// The match runs the tokens over the set of positions in s reachable so far, so it takes
+// O(len(pat) * len(s)) steps whatever the pattern. The recursive matcher it replaces tried
+// every split point at every star and took exponential time on patterns with several
+// stars (ANet docs/notes/0033, found by FuzzGlobMatch).
 func globMatch(pat, s string) bool {
-	return globHelper(pat, s)
-}
-
-func globHelper(pat, s string) bool {
-	for len(pat) > 0 {
-		if strings.HasPrefix(pat, "**") {
-			rest := strings.TrimLeft(pat[2:], "/")
-			if rest == "" {
-				return true // ** matches the remainder, crossing '/'
+	n := len(s)
+	cur := make([]bool, n+1)
+	next := make([]bool, n+1)
+	cur[0] = true
+	for p := 0; p < len(pat); {
+		clear(next)
+		switch {
+		case strings.HasPrefix(pat[p:], "**"):
+			p += 2
+			for p < len(pat) && pat[p] == '/' {
+				p++
 			}
-			for i := 0; i <= len(s); i++ {
-				if globHelper(rest, s[i:]) {
-					return true
-				}
+			seen := false
+			for j := 0; j <= n; j++ {
+				seen = seen || cur[j]
+				next[j] = seen
 			}
-			return false
-		}
-		if pat[0] == '*' {
-			rest := pat[1:]
-			// '*' matches any run not containing '/'
-			for i := 0; i <= len(s); i++ {
-				if i > 0 && s[i-1] == '/' {
-					break
+		case pat[p] == '*':
+			p++
+			run := false
+			for j := 0; j <= n; j++ {
+				if j > 0 && s[j-1] == '/' {
+					run = false
 				}
-				if globHelper(rest, s[i:]) {
-					return true
-				}
+				run = run || cur[j]
+				next[j] = run
 			}
-			return false
+		default:
+			c := pat[p]
+			p++
+			for j := 0; j < n; j++ {
+				next[j+1] = cur[j] && s[j] == c
+			}
 		}
-		if len(s) == 0 || pat[0] != s[0] {
-			return false
-		}
-		pat, s = pat[1:], s[1:]
+		cur, next = next, cur
 	}
-	return len(s) == 0
+	return cur[n]
 }
 
 // EvaluateScope is the negative-scope hard gate (tsir-spec §5.5): the committed action's
