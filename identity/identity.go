@@ -368,7 +368,18 @@ type KeyState struct {
 // Replay validates a KEL and returns the cumulative KeyState after each event (index i =
 // state as-of seq i). It enforces: icp first; monotonic seq; prev linkage; pre-rotation
 // hash match; and the signing rule (icp/dip self-signed by current; rot by prior current).
+//
+// When the process has installed a ReplayCache (SetReplayCache), a KEL replayed before is
+// answered from it.
 func Replay(kel []SignedEvent) ([]KeyState, error) {
+	if c := installedReplayCache.Load(); c != nil {
+		return c.replay(kel)
+	}
+	return replay(kel)
+}
+
+// replay is Replay without the cache.
+func replay(kel []SignedEvent) ([]KeyState, error) {
 	if len(kel) == 0 {
 		return nil, errors.New("identity: empty KEL")
 	}
