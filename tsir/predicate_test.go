@@ -133,13 +133,21 @@ func TestGlobMatchIsNotExponential(t *testing.T) {
 		{strings.Repeat("*a", 30), long, true},
 		{"**/" + strings.Repeat("*/", 20) + "x", strings.Repeat("d/", 200) + "x", true},
 	}
+	// Each match runs in its own goroutine against a deadline, so an exponential matcher fails
+	// the test within seconds instead of holding it until go test's own timeout (ten minutes by
+	// default). The linear matcher takes microseconds; the deadline is generous for a loaded
+	// machine. A match that misses it is left running: the test binary exits after the failure.
+	const deadline = 5 * time.Second
 	for _, c := range cases {
-		start := time.Now()
-		if got := globMatch(c.pat, c.s); got != c.want {
-			t.Errorf("globMatch(%.30q..., %d bytes) = %v, want %v", c.pat, len(c.s), got, c.want)
-		}
-		if d := time.Since(start); d > time.Second {
-			t.Errorf("globMatch(%.30q..., %d bytes) took %v", c.pat, len(c.s), d)
+		done := make(chan bool, 1)
+		go func() { done <- globMatch(c.pat, c.s) }()
+		select {
+		case got := <-done:
+			if got != c.want {
+				t.Errorf("globMatch(%.30q..., %d bytes) = %v, want %v", c.pat, len(c.s), got, c.want)
+			}
+		case <-time.After(deadline):
+			t.Fatalf("globMatch(%.30q..., %d bytes) did not finish within %v", c.pat, len(c.s), deadline)
 		}
 	}
 }
