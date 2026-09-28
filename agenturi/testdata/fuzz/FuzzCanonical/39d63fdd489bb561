@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Agent://0?a%800=")
