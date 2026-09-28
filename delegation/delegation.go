@@ -9,9 +9,10 @@
 //	StatusMsg   — a provider's task-state update (anet.status/1, A2A-DESIGN §3.4).
 //
 // All are CoreDet-CBOR and travel as opaque relay payloads; the Hub never decodes them. Verification is
-// end-to-end (VerifyDelegateReqWithKEL for the request and VerifyResultWithKEL for the receipt, each
-// against a KEL the receiver resolved; the older VerifyDelegateReq and VerifyResult read the KEL from
-// the body), so the centralized relay moves bytes it cannot forge.
+// end-to-end (VerifyDelegateReqWithKEL for the request and VerifyResultForRequest for the receipt, each
+// against a KEL the receiver resolved; VerifyResultWithKEL is the latter without the request binding,
+// and the older VerifyDelegateReq and VerifyResult read the KEL from the body), so the centralized
+// relay moves bytes it cannot forge.
 package delegation
 
 import (
@@ -392,7 +393,7 @@ func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string
 	if err != nil {
 		return nil, fmt.Errorf("delegation: bad provider KEL: %w", err)
 	}
-	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, now)
+	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, "", now)
 }
 
 // VerifyResultWithKEL is VerifyResult with the provider KEL supplied by the caller (A2A-DESIGN
@@ -405,7 +406,27 @@ func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string
 // a prefix of it, else the completion is refused with ErrBodyKELMismatch. An empty kel yields an
 // error wrapping ErrUnverifiable: the receipt was not checked, which is a different state from a
 // receipt that failed the check.
+//
+// It does not bind the receipt's RequestCID. A requester that holds the request it sent uses
+// VerifyResultForRequest.
 func VerifyResultWithKEL(r *ResultResp, kel []identity.SignedEvent, interactionID, requesterAID, providerAID string, msgTime uint64) (*evidence.Receipt, error) {
+	return VerifyResultForRequest(r, kel, interactionID, requesterAID, providerAID, "", msgTime)
+}
+
+// ErrRequestMismatch is returned when a receipt names a request other than the one the caller
+// sent.
+var ErrRequestMismatch = errors.New("delegation: receipt is for another request")
+
+// VerifyResultForRequest is VerifyResultWithKEL that also binds the receipt's RequestCID to
+// requestCID, the CID of the request (TaskDoc) bytes the requester sent (anetcid.Sum over them).
+// An empty requestCID skips that one binding, as for the other identifiers.
+//
+// Without it a provider can sign a receipt that names a request never made — the CID of any
+// bytes it likes — for the result it delivered. The receipt verifies, the requester reviews the
+// work, and a third party checking the pair with evidence.VerifyInterlock against those bytes is
+// shown the requester vouching for a request it never sent, while the request it did send no
+// longer matches. A mismatch is ErrRequestMismatch.
+func VerifyResultForRequest(r *ResultResp, kel []identity.SignedEvent, interactionID, requesterAID, providerAID, requestCID string, msgTime uint64) (*evidence.Receipt, error) {
 	if r == nil || len(r.Receipt) == 0 {
 		return nil, fmt.Errorf("delegation: completion carries no receipt")
 	}
@@ -419,13 +440,13 @@ func VerifyResultWithKEL(r *ResultResp, kel []identity.SignedEvent, interactionI
 	if err := checkBodyKEL(r.KEL, kel); err != nil {
 		return nil, err
 	}
-	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, msgTime)
+	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, requestCID, msgTime)
 }
 
 // bindReceipt verifies the receipt signature against kel at msgTime and binds each field the
-// receipt asserts to what the caller knows. An empty interactionID, requesterAID or providerAID
-// skips that one binding.
-func bindReceipt(rc *evidence.Receipt, deliverable []byte, kel []identity.SignedEvent, interactionID, requesterAID, providerAID string, msgTime uint64) (*evidence.Receipt, error) {
+// receipt asserts to what the caller knows. An empty interactionID, requesterAID, providerAID or
+// requestCID skips that one binding.
+func bindReceipt(rc *evidence.Receipt, deliverable []byte, kel []identity.SignedEvent, interactionID, requesterAID, providerAID, requestCID string, msgTime uint64) (*evidence.Receipt, error) {
 	if err := rc.Verify(kel, msgTime); err != nil {
 		return nil, fmt.Errorf("delegation: receipt signature invalid: %w", err)
 	}
@@ -439,6 +460,10 @@ func bindReceipt(rc *evidence.Receipt, deliverable []byte, kel []identity.Signed
 	if interactionID != "" && rc.InteractionID != interactionID {
 		return nil, fmt.Errorf("delegation: receipt is for interaction %s, not %s",
 			rc.InteractionID, interactionID)
+	}
+	if requestCID != "" && rc.RequestCID != requestCID {
+		return nil, fmt.Errorf("%w: it names %s, the request sent was %s", ErrRequestMismatch,
+			rc.RequestCID, requestCID)
 	}
 	// The binding that makes the rest worth having: the signature must cover
 	// the bytes that actually arrived.
