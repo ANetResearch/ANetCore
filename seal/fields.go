@@ -3,6 +3,7 @@ package seal
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/bits"
 
 	"github.com/ANetResearch/ANetCore/coredet"
@@ -171,6 +172,11 @@ func sigPreimage(fields fieldMap, enc, kid []byte, suite Suite) ([]byte, error) 
 // PETS 2019): n rounded up so that only the top floor(log2(E))+1 bits of the
 // length are free, where E = floor(log2(n)). The overhead is at most about
 // 12% and the number of distinct padded lengths grows as O(log log n).
+//
+// n below 2 is returned as is. So is an n whose Padmé length exceeds
+// math.MaxInt (n > 2^63 - 2^56 on a 64-bit int): no message is that long,
+// and rounding up would wrap to a negative length (ANet docs/notes/0033,
+// found by FuzzPadme).
 func Padme(n int) int {
 	if n < 2 {
 		return n
@@ -178,6 +184,9 @@ func Padme(n int) int {
 	e := bits.Len(uint(n)) - 1 // floor(log2(n))
 	s := bits.Len(uint(e))     // floor(log2(e)) + 1, for e >= 1
 	mask := (1 << (e - s)) - 1
+	if n > math.MaxInt-mask {
+		return n
+	}
 	return (n + mask) &^ mask
 }
 

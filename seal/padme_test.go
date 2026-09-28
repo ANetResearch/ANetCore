@@ -1,6 +1,7 @@
 package seal
 
 import (
+	"math"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/coredet"
@@ -26,6 +27,22 @@ func TestPadmeValues(t *testing.T) {
 		if n >= 256 && float64(p-n) > 0.12*float64(n) {
 			t.Fatalf("Padme(%d) = %d: overhead above 12%%", n, p)
 		}
+	}
+}
+
+// Near math.MaxInt the next Padmé length does not fit in an int. Padme used to
+// round up anyway and return a negative length (ANet docs/notes/0033, found by
+// FuzzPadme); it returns n, which is at least n and a fixed point.
+func TestPadmeDoesNotWrapNearMaxInt(t *testing.T) {
+	const top = math.MaxInt - (1<<56 - 1) // the last Padmé length of a 64-bit int
+	for _, n := range []int{top - 1, top, top + 1, math.MaxInt - 1, math.MaxInt} {
+		p := Padme(n)
+		if p < n || Padme(p) != p {
+			t.Errorf("Padme(%d) = %d: not >= n or not a fixed point", n, p)
+		}
+	}
+	if Padme(top-1) != top {
+		t.Errorf("Padme(%d) = %d, want %d", top-1, Padme(top-1), top)
 	}
 }
 
