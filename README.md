@@ -74,6 +74,11 @@ Extracted from the AgentNetwork v3 reference implementation
 consolidated here in v0.5.x. 102 tests green.
 Module design rationale: `ANet/docs/CONTRACTS-zh.md` (anet4 five contracts).
 
-License: ANet Community License 1.0 (free non-commercial; commercial up to
-1,000 nodes; larger deployments: hi@anet0.com). Versions ≤ v0.2.x were
-published under Apache-2.0 and remain so.
+License: ANet Open Source License, a modified Apache License 2.0 (see
+[LICENSE](LICENSE)): commercial use is allowed, including as a library in
+your own product; operating a multi-tenant hosted hub for third parties
+needs written authorization; the A2A specification work (ANet `docs/a2a/`)
+and the code contributed to the A2A project are plain Apache-2.0. Questions:
+hi@anet0.com. This applies from v0.15.0; v0.3.0 through v0.14.0 were
+published under the ANet Community License 1.0, and versions ≤ v0.2.x under
+Apache-2.0, and each stays under its license.
