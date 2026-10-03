@@ -84,11 +84,13 @@ func extend(kel []SignedEvent, e KeyEvent, k ed25519.PrivateKey) []SignedEvent {
 	return append(append([]SignedEvent(nil), kel...), signEvent(after(kel, e), k))
 }
 
-// Times of the vectors (unix ms).
+// Times of the vectors (unix ms). The KEL-2A hub incepts at hubT0 and is deactivated at hubDipTS;
+// the KEL-2B agent's whole KEL, which names that hub as its second witness, lies in between.
 const (
-	hubT0   uint64 = 1760000000000
-	agentT0 uint64 = 1760000300000
-	minute  uint64 = 60 * 1000
+	hubT0    uint64 = 1760000000000
+	hubDipTS uint64 = hubT0 + 10*60*1000
+	agentT0  uint64 = 1760000180000 // the agent incepts after the hub's emergency rot, and ends before its dip
+	minute   uint64 = 60 * 1000
 )
 
 // hubKeys and agentKeys are the KEL-2A and KEL-2B keys: k0 incepts, k1 is the hot next key the
@@ -111,7 +113,7 @@ func kel2A() []SignedEvent {
 	kel := []SignedEvent{signEvent(icpEvent(k[0], k[1], hubT0, ToadHub), k[0])}
 	kel = extend(kel, rotEvent(k[1], k[2], hubT0+1*minute, ToadHub, "", false), k[1])
 	kel = extend(kel, rotEvent(k[2], k[3], hubT0+2*minute, ToadHub, "", true), k[2])
-	kel = extend(kel, dipEvent(k[3], hubT0+3*minute), k[3])
+	kel = extend(kel, dipEvent(k[3], hubDipTS), k[3])
 	return kel
 }
 
@@ -176,7 +178,7 @@ func TestKEL2AAnd2BReplay(t *testing.T) {
 		{"KEL-2A", a, []row{
 			{StatusRotated, pubOf(ka[0]), 0, "", hubT0 + minute, false},
 			{StatusRotated, pubOf(ka[1]), 0, "", hubT0 + 2*minute, true},
-			{StatusRotated, pubOf(ka[2]), 0, "", hubT0 + 3*minute, true},
+			{StatusRotated, pubOf(ka[2]), 0, "", hubDipTS, true},
 			{StatusDeactivated, nil, 0, "", 0, false},
 		}},
 		{"KEL-2B", b, []row{
@@ -769,8 +771,8 @@ func TestVerifyObjectOrder(t *testing.T) {
 		{"retired state, msgTime just before SupersededAt", a, aid, 0, hubT0 + minute - 1, sign(0), ""},
 		{"retired state, msgTime = SupersededAt", a, aid, 0, hubT0 + minute, sign(0), "REVOKED_KEY"},
 		{"retired state, msgTime after SupersededAt", a, aid, 0, hubT0 + minute + 1, sign(0), "REVOKED_KEY"},
-		{"urgently retired state, before SupersededAt", a, aid, 2, hubT0 + 3*minute - 1, sign(2), ""},
-		{"urgently retired state, at SupersededAt", a, aid, 2, hubT0 + 3*minute, sign(2), "REVOKED_KEY"},
+		{"urgently retired state, before SupersededAt", a, aid, 2, hubDipTS - 1, sign(2), ""},
+		{"urgently retired state, at SupersededAt", a, aid, 2, hubDipTS, sign(2), "REVOKED_KEY"},
 	}
 	for _, c := range cases {
 		if got := reason(VerifyObject(c.kel, c.aid, c.seq, c.msgTime, obj, c.sig)); got != c.want {
@@ -883,7 +885,7 @@ func TestRetiredUsableAt(t *testing.T) {
 	if !RetiredUsableAt(states[1], hubT0+2*minute) || RetiredUsableAt(states[1], hubT0+2*minute+1) {
 		t.Error("KEL-2A state 1 (emergency rot): zero grace")
 	}
-	if !RetiredUsableAt(states[2], hubT0+3*minute) || RetiredUsableAt(states[2], hubT0+3*minute+1) {
+	if !RetiredUsableAt(states[2], hubDipTS) || RetiredUsableAt(states[2], hubDipTS+1) {
 		t.Error("KEL-2A state 2 (dip): zero grace")
 	}
 }

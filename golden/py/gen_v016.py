@@ -98,7 +98,8 @@ def dump(v):
 KEL_TYPE = "anet.kel/2"
 MINUTE = 60 * 1000
 HUB_T0 = 1760000000000
-AGENT_T0 = 1760000300000
+HUB_DIP_TS = HUB_T0 + 10 * MINUTE  # the KEL-2B agent's whole KEL lies between the hub's icp and dip
+AGENT_T0 = 1760000180000
 
 ABOUT_2A = ("KEL v2 hub identity (toad 0): icp, rot 1 (setup-recovery), rot 2 (emergency), dip 3. "
             "Key seeds are SHA-256 of the labels. The icp is signed by k0, every rot and dip by the key it reveals. "
@@ -159,7 +160,7 @@ def kel_2a():
     kel = KEL().add(icp(k[0], k[1], HUB_T0, 0), k[0])
     kel.add(rot(k[1], k[2], HUB_T0 + MINUTE, 0), k[1])
     kel.add(rot(k[2], k[3], HUB_T0 + 2 * MINUTE, 0, emergency=True), k[2])
-    kel.add(dip(k[3], HUB_T0 + 3 * MINUTE), k[3])
+    kel.add(dip(k[3], HUB_DIP_TS), k[3])
     return kel
 
 

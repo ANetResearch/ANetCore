@@ -130,7 +130,7 @@ func TestReplaySupersededEmergencyRot(t *testing.T) {
 	checkStates(t, kel, []wantState{
 		{StatusRotated, hubT0 + minute, false},
 		{StatusRotated, hubT0 + 2*minute, true},
-		{StatusRotated, hubT0 + 3*minute, true},
+		{StatusRotated, hubDipTS, true},
 		{StatusDeactivated, 0, false},
 	})
 }
