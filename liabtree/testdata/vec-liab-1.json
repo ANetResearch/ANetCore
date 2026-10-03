@@ -1,0 +1,663 @@
+{
+  "id": "LIAB-1",
+  "description": "Liability tree: the L25 leaf and L26 node hashes; 5 accounts padded to 16 leaves with a fixed random source; the root, outstanding and depth; the third account's proof in its response form; refused proofs.",
+  "labels": {
+    "leaf": "anet-liab-leaf/v1",
+    "node": "anet-liab-node/v1"
+  },
+  "leaf": {
+    "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+    "to_day": 20454,
+    "balance": 7919,
+    "salt": "fc742e28358cd5719e97f2611119cb6ee4e93bb70993cde1e195c80984ba3c9a",
+    "content": "a301783b62616679726569686e3762356e68726836746c7a3337707577797a69646464773668676e76686f61333275336a6133636f326d326a6d796b6e657102194fe603191eef",
+    "preimage": "616e65742d6c6961622d6c6561662f763100fc742e28358cd5719e97f2611119cb6ee4e93bb70993cde1e195c80984ba3c9aa301783b62616679726569686e3762356e68726836746c7a3337707577797a69646464773668676e76686f61333275336a6133636f326d326a6d796b6e657102194fe603191eef",
+    "hash": "016cd6a7c6d8a16be018162522c2a4703297ed9024d73d4c54fc9cbc03051a9a"
+  },
+  "padding_leaf": {
+    "aid": "",
+    "to_day": 20454,
+    "balance": 0,
+    "salt": "0b5a4a31456c1f5640e069d94e76c47ce9ff295b498c6fd9568dfd742bc54d2e",
+    "content": "a3016002194fe60300",
+    "preimage": "616e65742d6c6961622d6c6561662f7631000b5a4a31456c1f5640e069d94e76c47ce9ff295b498c6fd9568dfd742bc54d2ea3016002194fe60300",
+    "hash": "d272f14abd2537b52883804e7c3877a7fd08d48a04a47af95ec62fb454db66c3"
+  },
+  "node": {
+    "left": {
+      "h": "74ae11a67bf480a9b6d7103df1937706ef766a9e40e25430e37ab64adda60893",
+      "sum": 5
+    },
+    "right": {
+      "h": "715e883c1c56a3f57099e02ddc4923461a339774d1a69cf7e83b874a0aa66fe1",
+      "sum": 7
+    },
+    "preimage": "616e65742d6c6961622d6e6f64652f76310074ae11a67bf480a9b6d7103df1937706ef766a9e40e25430e37ab64adda608930000000000000005715e883c1c56a3f57099e02ddc4923461a339774d1a69cf7e83b874a0aa66fe10000000000000007",
+    "hash": "4c90a151c69cf45e6d263d543e85ea6182b63b2712756b3748d64a9b818230c5",
+    "sum": 12
+  },
+  "build": {
+    "rand": "SHA-256(UTF-8(rand_label) || u64be(i)) for i = 0, 1, ..., concatenated; consumed by liabtree.Build",
+    "rand_label": "anet-golden/v016/LIAB-1/rand",
+    "to_day": 20454,
+    "accounts": [
+      {
+        "aid": "bafyreiflkyuzturlk453zdntjakl6gfwfoan3l4q3qrw5lexniny54ohqa",
+        "balance": 120
+      },
+      {
+        "aid": "bafyreihugwsm67gd6btyksyxir62slgd5caymnovwylzns3htok3abmph4",
+        "balance": 0
+      },
+      {
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919
+      },
+      {
+        "aid": "bafyreichz4gm6hqlv3vr3onbu3phvrvkcqixebtvhobxrjwmetiy2mfcse",
+        "balance": 1000000
+      },
+      {
+        "aid": "bafyreidqcrzujifjmqjc224dl5hthhh35hr6xrx3rjpmpbuds3so7ekqmy",
+        "balance": 42
+      }
+    ],
+    "leaves": 16,
+    "depth": 4,
+    "entries": [
+      {
+        "aid": "bafyreichz4gm6hqlv3vr3onbu3phvrvkcqixebtvhobxrjwmetiy2mfcse",
+        "balance": 1000000,
+        "salt": "2fe8757ec2c4e560cbf1f39ef7b7f0be80032e15f5df81cbc0e894d342522f9b",
+        "hash": "718b4d176dcbbf5451ed3f13d9ae34ffb2777069f584c3ecdc994054a1bf2858"
+      },
+      {
+        "aid": "bafyreihugwsm67gd6btyksyxir62slgd5caymnovwylzns3htok3abmph4",
+        "balance": 0,
+        "salt": "2fbe6ab8949da3a656ac9753cecc09d3e4de3a161642c9f38c980200ab1b3886",
+        "hash": "4415faabb37181856a09675453d0cbaeebdc6be4e651f7ab26d9c8dbdb2e0481"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "fe00b82f7ec537c17c1bd26117ecae10fd299fbb371b27626f08faf6613e39a3",
+        "hash": "0dd52f8d12194985165e9d4e026ee09c4701130d0a756bdf9f37258dc0bdf29a"
+      },
+      {
+        "aid": "bafyreiflkyuzturlk453zdntjakl6gfwfoan3l4q3qrw5lexniny54ohqa",
+        "balance": 120,
+        "salt": "15da4c904a055c991c43e3bff03242b8c9360305f8b0b5994932cdf4189a4f1b",
+        "hash": "baa0df7553db24424b162eab4e753edfccae258d604358e287ac93a6b28f552c"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "644f1a54c50c6b70e84f2afea42c4cd54a3abcdf01e7b3d17b64450583b46d42",
+        "hash": "51f0fa5729d5fbe285271771053cdca88f6b90fdcaeb7713be8244aaa9da085b"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "d548738d5c69175e70a5c8d98affd867927409fe34760e0d430aff5a2f5c760d",
+        "hash": "83fb1b1071723e7d1f4b592659ee4f2a0111eb1f5e0c4b5c67dc3a8746753c2c"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "af87ac524afac5d7a721d46ce86918edb5f8916ad6f24b8a6d7c95da19a6c1f3",
+        "hash": "c5e9375461a9de7a36d1e1c6b91597b7ff8bd4b786792b8c51077e6b9d9f7600"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "d40afcf86dbf4bff5389faa1a2b41f647da0dec7f68d93a4aa25a700e710dce4",
+        "hash": "80371cc145f97ebe86d2976dd347d9a0505afc7794a540841c7dd08f57c1d581"
+      },
+      {
+        "aid": "bafyreidqcrzujifjmqjc224dl5hthhh35hr6xrx3rjpmpbuds3so7ekqmy",
+        "balance": 42,
+        "salt": "c2cea1b85a3a794b71d212cb7da2ac40c44b25b5c7405410572827a0797c7803",
+        "hash": "a828380a3a140b904f1c06d5c04ed155c6ffe9dd1ff64142f6d0fd700deb36e6"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "c8818eb1930955b0154357d6893ee82048354c988a8538b7e54cb45083b8c9fc",
+        "hash": "c312bebc9bc03fb14736e9a5a1793013bba3a1afb09815d133081d0849e28acc"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "a23c18b87b30a9129be3f1bc62e23b72750ccc6f07472281d9ddbe1b0d5610ad",
+        "hash": "616e1c708271100935b3cc73ef9fb0f9f58a25249b9ca9f70badcb42ad6f4929"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "98b801f0dc4d1d133dfeff1a88c7dcbe064407d7dbad16517d4432f562176e51",
+        "hash": "c499511970965421985cb65cc25f8d11d87fe6ba5930d931ecdae05f064df509"
+      },
+      {
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "hash": "b8f5e5045d15cf85513f1f648d8fe99e7d781b2237f2c5f82b6c0e9a8fdbe3b5"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "694cf59c79f9c768de50c306e844c8ef75cc7bbf884f9979319c33682b70bd91",
+        "hash": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "ec8c3c6b983899a792fd40a163268fad5f207dcb56dcc4d52151fcce8bf1e65b",
+        "hash": "d088d188b418b87fbee5051b4e754bcdc0e4d94c584a31de29b8eb57142fff58"
+      },
+      {
+        "aid": "",
+        "balance": 0,
+        "salt": "4ba4de92dcdb3580b20f9ccc5463fcaa93f1b6f6b31bb274325ae402c1005258",
+        "hash": "e05141d4743e842571b38dfdaba82cdde4df0a191b6d0f2dff2f3f1e0ac02502"
+      }
+    ],
+    "root": "06cc77d14540e83a69622cdb7a6e4b39bcb73adfac61785b365096de906e3763",
+    "outstanding": 1008081
+  },
+  "proof": {
+    "to_day": 20454,
+    "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+    "balance": 7919,
+    "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+    "path": [
+      {
+        "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+        "sum": 0,
+        "side": "R"
+      },
+      {
+        "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+        "sum": 0,
+        "side": "R"
+      },
+      {
+        "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+        "sum": 42,
+        "side": "L"
+      },
+      {
+        "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+        "sum": 1000120,
+        "side": "L"
+      }
+    ]
+  },
+  "negatives": [
+    {
+      "name": "moved_sum",
+      "note": "path[2].sum - 1 and path[0].sum + 1: the root sum is unchanged, the root hash is not",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 1,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 41,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "balance_changed",
+      "note": "the leaf's balance - 1",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7918,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "salt_changed",
+      "note": "one byte of the salt",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9baf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "day_changed",
+      "note": "to_day + 1",
+      "proof": {
+        "to_day": 20455,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "aid_changed",
+      "note": "another account's AID",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreiflkyuzturlk453zdntjakl6gfwfoan3l4q3qrw5lexniny54ohqa",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "sibling_hash_changed",
+      "note": "one byte of path[1].h",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "25440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "sibling_sum_changed",
+      "note": "path[2].sum + 1, which also changes the root sum",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 43,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "side_flipped",
+      "note": "path[0].side swapped",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "L"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "root"
+    },
+    {
+      "name": "path_short",
+      "note": "the last step dropped",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "malformed"
+    },
+    {
+      "name": "depth_mismatch",
+      "note": "depth 5 for a tree of depth 4",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "depth": 5,
+      "error": "malformed"
+    },
+    {
+      "name": "outstanding_mismatch",
+      "note": "the record's outstanding is the true sum + 1",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreihn7b5nhrh6tlz37puwyzidddw6hgnvhoa32u3ja3co2m2jmykneq",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "outstanding": 1008082,
+      "error": "sum"
+    },
+    {
+      "name": "padding_aid",
+      "note": "the empty AID marks a padding leaf, which is nobody's",
+      "proof": {
+        "to_day": 20454,
+        "aid": "",
+        "balance": 7919,
+        "salt": "9aaf94f7484e2467be45ccf380f58de2835b661eeded90803825eaf928dbbbd8",
+        "path": [
+          {
+            "h": "896e6aad76e838d7646f2daeee20aa045469cfcfcb3e14de345925a7532b58bd",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "24440544e8c457c1c6f43349c862d1034d44fd5e71b8758ba35db2f6cf7e52f0",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "aeb9621c42d6681fdcfe32568347f0eaf0870e8866c362ad7eaf8fcc100c6d9f",
+            "sum": 42,
+            "side": "L"
+          },
+          {
+            "h": "a3f52fef90b8cd61da3d376df18e87d21a5c3f49664976705656690366b67903",
+            "sum": 1000120,
+            "side": "L"
+          }
+        ]
+      },
+      "error": "malformed"
+    },
+    {
+      "name": "sum_wraps",
+      "note": "a sibling sum of 2^64 - 3: taken mod 2^64 the root sum is 2, and every hash matches",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreiflkyuzturlk453zdntjakl6gfwfoan3l4q3qrw5lexniny54ohqa",
+        "balance": 5,
+        "salt": "8a0caeb8dd8ee7b468940e14521e779d2dda76ff2b548def9560faab65cf9d39",
+        "path": [
+          {
+            "h": "eeea16a34ab2610de270b3f6771dedcb3ce20a14cb355bddcb3056524e2fb525",
+            "sum": 18446744073709551613,
+            "side": "R"
+          },
+          {
+            "h": "aee510f4d4839fc80434074fd81c510e04a727d4203372331bf3f1df19f9bd99",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "891af2ba237baebe6593855c58dfbec5d1b4a3f8fb8f2f26815985d626002fa3",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "351acef04b47743f498dc099c35e00633bf30294b2da17a2cbed49dd73f91509",
+            "sum": 0,
+            "side": "R"
+          }
+        ]
+      },
+      "root": "45db20880e24c3fc9ec4e63f18850870ce60cfad976378fcf00f9c85b47c2426",
+      "outstanding": 2,
+      "depth": 4,
+      "error": "overflow"
+    },
+    {
+      "name": "sum_over_max",
+      "note": "a sibling sum of 2^63: no wrap, but the sums and the outstanding are over 2^63 - 1",
+      "proof": {
+        "to_day": 20454,
+        "aid": "bafyreiflkyuzturlk453zdntjakl6gfwfoan3l4q3qrw5lexniny54ohqa",
+        "balance": 5,
+        "salt": "8a0caeb8dd8ee7b468940e14521e779d2dda76ff2b548def9560faab65cf9d39",
+        "path": [
+          {
+            "h": "d925b57301e07d43d9de69dd1dd9115e0ea17826293c376ebf1532ae3014fabb",
+            "sum": 9223372036854775808,
+            "side": "R"
+          },
+          {
+            "h": "aee510f4d4839fc80434074fd81c510e04a727d4203372331bf3f1df19f9bd99",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "891af2ba237baebe6593855c58dfbec5d1b4a3f8fb8f2f26815985d626002fa3",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "351acef04b47743f498dc099c35e00633bf30294b2da17a2cbed49dd73f91509",
+            "sum": 0,
+            "side": "R"
+          }
+        ]
+      },
+      "root": "d436e3bd509dce789f6e0bdefdb1118f08f96e6ecacbd1f6fa7e78a9a4193a8b",
+      "outstanding": 9223372036854775813,
+      "depth": 4,
+      "error": "overflow"
+    }
+  ]
+}

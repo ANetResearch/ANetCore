@@ -1,7 +1,10 @@
 package wire_test
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/ANetResearch/ANetCore/regpow"
 )
 
 // TestPreimageRejectsNUL (CORE-E9, ANetCore). B- and C-class inputs separate variable-length
@@ -21,7 +24,7 @@ func TestPreimageRejectsNUL(t *testing.T) {
 		"L8":  {nil, "v030-todo(SS-2)"},  // session MAC: method, pathAndQuery, X-ANet-Home
 		"L9":  {nil, "v030-todo(SS-2)"},  // dirbox h: aid
 		"L19": {nil, "v030-todo(KEL-3)"}, // next-key derivation: aid
-		"L23": {nil, "v030-todo(PAY-1)"}, // regpow hash: hub_aid, aid
+		"L23": {regpowNUL, ""},           // regpow hash: hub_aid, aid
 		"L27": {nil, "v030-todo(PAY-2)"}, // ix_commit: ix, anet.nonce
 		"L28": {nil, "v030-todo(PAY-2)"}, // requester_commit: requester_aid
 	}
@@ -56,4 +59,24 @@ func TestPreimageRejectsNUL(t *testing.T) {
 			t.Errorf("row %s is not a registered ANetCore nul_guard", label)
 		}
 	}
+}
+
+// regpowNUL puts field into hub_aid and into aid, one at a time. A field holding U+0000 counts as
+// refused only when both positions refuse it; a clean field counts as accepted only when both
+// accept it.
+func regpowNUL(field string) error {
+	var seed [32]byte
+	nonce := []byte{1}
+	_, errHub := regpow.Hash(field, "bafyreiaid", seed, nonce)
+	_, errAID := regpow.Hash("bafyreihub", field, seed, nonce)
+	if strings.Contains(field, "\x00") {
+		if errHub == nil || errAID == nil {
+			return nil
+		}
+		return errHub
+	}
+	if errHub != nil {
+		return errHub
+	}
+	return errAID
 }
