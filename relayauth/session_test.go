@@ -461,6 +461,10 @@ func TestSessionHeaderEncoding(t *testing.T) {
 		"empty":             "",
 		"embedded LF":       es[:10] + "\n" + es[10:21],
 		"trailing bits":     es[:21] + string(es[21]+1),
+		// The decoder skips CR and LF: these decode to the right 16 bytes, and only the length
+		// check refuses them.
+		"trailing LF":           es + "\n",
+		"embedded LF, all data": es[:10] + "\n" + es[10:],
 	} {
 		if _, err := DecodeSessionID(bad); !errors.Is(err, ErrBadSessionHeader) {
 			t.Errorf("session id %s: want ErrBadSessionHeader, got %v", name, err)
@@ -471,6 +475,8 @@ func TestSessionHeaderEncoding(t *testing.T) {
 		"31 bytes":      EncodeMAC(mac[:31]),
 		"session id":    es,
 		"embedded CRLF": em[:20] + "\r\n" + em[20:41],
+		// Decodes to the right 32 bytes; only the length check refuses it.
+		"embedded CRLF, all data": em[:20] + "\r\n" + em[20:],
 	} {
 		if _, err := DecodeMAC(bad); !errors.Is(err, ErrBadSessionHeader) {
 			t.Errorf("MAC %s: want ErrBadSessionHeader, got %v", name, err)

@@ -87,6 +87,8 @@ func FuzzSessionHeaders(f *testing.F) {
 	f.Add(EncodeMAC(bytes.Repeat([]byte{0xff}, SessionMACLen)) + "=")
 	f.Add(strings.Repeat("A", 21) + "B")
 	f.Add(strings.Repeat("A", 11) + "\n" + strings.Repeat("A", 10))
+	f.Add(EncodeSessionID(make([]byte, SessionIDLen)) + "\n")
+	f.Add(strings.Repeat("A", 20) + "\r\n" + strings.Repeat("A", 23))
 	f.Fuzz(func(t *testing.T, s string) {
 		if b, err := DecodeSessionID(s); err == nil {
 			if len(b) != SessionIDLen || EncodeSessionID(b) != s {
