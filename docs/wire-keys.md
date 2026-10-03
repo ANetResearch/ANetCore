@@ -1611,7 +1611,7 @@ Response (registration):
 | `card_status` | string | required | — |
 | `card_error` | string | optional | price_in_public_card among others |
 | `probation_until` | uint | optional | — |
-| `trial` | uint | optional | — |
+| `trial` | enum: `pending`, `granted` | optional | only for an account that came in through a sign-up window or open registration |
 | `revocations` | array | required | — |
 | `key_state_notice` | b64url | optional | NoticeWire bytes |
 | `key_state_notice_error` | enum: `quarantine`, `not_admitted`, `not_witness` | optional | — |
@@ -1741,7 +1741,7 @@ Response (only the members this version adds or changes):
 | Member | Type | Presence | Notes |
 |---|---|---|---|
 | `probation_until` | uint | optional | — |
-| `trial` | uint | optional | — |
+| `trial` | enum: `pending`, `granted` | optional | only for an account that came in through a sign-up window or open registration |
 
 #### `GET /agents/{aid}/ledger`
 
