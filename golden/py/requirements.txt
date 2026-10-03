@@ -1,0 +1,4 @@
+# The only library golden/py/gen_v016.py uses: the cryptography package (OpenSSL), for SHA-256,
+# HMAC, Ed25519, X25519, ChaCha20-Poly1305, AES-GCM and Argon2id (44 or later). The committed
+# vectors were generated with this version.
+cryptography==50.0.1
