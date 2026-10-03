@@ -49,7 +49,8 @@ flowchart TB
 | `seal` | End-to-end relay envelope: signed `EncKeySet`, sign-then-encrypt `SealedEnvelope` (HPKE Base, X25519 / HKDF-SHA256 / ChaCha20-Poly1305), Padmé padding | A2A-DESIGN §3 |
 | `a2acard` | A2A AgentCard signing and verification: RFC 8785 JCS + JWS EdDSA, standard library only | A2A-DESIGN §10.3 |
 | `payment` | x402 wire objects + the `anet-credit` scheme: signed authorizations and settlement receipts | x402 v2 |
-| `relayauth` | The canonical challenge a client signs to authenticate a hub request (v1 and v2) | arch-03 |
+| `relayauth` | What a client signs or MACs to authenticate a hub request: the signed request preimage, and the first-contact session (key delivery and MAC) | `docs/wire-keys.md` L7, L8, L22 |
+| `dirbox` | Directory entries sealed so that only a party that already knows the AID can find and open them | `docs/wire-keys.md` L9, L10 |
 | `delegation` | The relayed task wire: signed request, completion, chat; `VerifyDelegateReq`, `VerifyResult` | arch-03 |
 | `evidence` | Receipt + Review — the interaction-anchored trust pair anyone can verify | evidence-spec |
 | `ael` | Agent Event Ledger — per-DID append-only anti-fork hash chain (P6) | evidence-spec |

@@ -1151,6 +1151,314 @@ def gen_kel_2b():
     ])
 
 
+# --- SS: relayauth (RELAYAUTH-3 pins), the first-contact session (SESSION-1), the directory box (DIR-1)
+
+SS_AGENT_AID = "bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay"
+SS_OTHER_AID = "bafyreigoldenrecipient"
+SS_HUB_AID = "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y"
+SS_OTHER_HUB_AID = "bafyreianotherhub"
+SS_TS = 1767225600000
+
+SESS_KEY_LABEL = b"anet-sess-key/v1"
+SESS_MAC_LABEL = b"anet-sess-mac/v1"
+DIR_HASH_LABEL = b"anet-dir-hash/v1"
+DIR_BOX_LABEL = b"anet-dir-box/v1"
+
+
+def _no_nul(*fields: str):
+    """CORE-E9: a 0x00-separated text field must not hold U+0000."""
+    for f in fields:
+        if "\x00" in f:
+            raise GoldenError("a 0x00-separated field holds U+0000: %r" % f)
+
+
+def session_key_info(hub_aid: str, sid: bytes) -> bytes:
+    """L7: the HPKE info of a session key delivery."""
+    _no_nul(hub_aid)
+    if not hub_aid or len(sid) != 16:
+        raise GoldenError("session key info: empty hub AID or a session id that is not 16 bytes")
+    return SESS_KEY_LABEL + b"\x00" + hub_aid.encode("utf-8") + b"\x00" + bytes(sid)
+
+
+def session_mac_input(sid: bytes, ts: int, method: str, target: str, home: str, body: bytes) -> bytes:
+    """L8: the HMAC message of a session MAC."""
+    _no_nul(method, target, home)
+    if len(sid) != 16:
+        raise GoldenError("session MAC: a session id that is not 16 bytes")
+    return (SESS_MAC_LABEL + b"\x00" + bytes(sid) + b"\x00" + str(ts).encode("ascii") + b"\x00"
+            + method.encode("utf-8") + b"\x00" + target.encode("utf-8") + b"\x00" + home.encode("utf-8")
+            + b"\x00" + sha256(body))
+
+
+def session_mac(k: bytes, sid: bytes, ts: int, method: str, target: str, home: str, body: bytes) -> bytes:
+    return hmac_sha256(k, session_mac_input(sid, ts, method, target, home, body))
+
+
+@vector("SESSION-1", "ANetCore/relayauth/testdata/vec-session-1.json")
+def gen_session_1():
+    """L7 (receiving side: Go opens enc and ct with the recorded skR) and L8 (the MAC input and
+    output); the refused variants say which error each must give."""
+    vid = "SESSION-1"
+    sid = seed(vid, "sid")[:16]
+    k = seed(vid, "k_sess")
+    ikm_r = seed(vid, "epk")
+    ikm_e = seed(vid, "hpke-ephemeral")
+    sk_r, epk = SUITE1.derive_key_pair(ikm_r)
+    info = session_key_info(SS_HUB_AID, sid)
+    enc, sender = SUITE1.setup_base_s(epk, info, ikm_e)
+    ct = sender.seal(b"", k)
+    if SUITE1.setup_base_r(enc, sk_r, info).open(b"", ct) != k:
+        raise GoldenError("SESSION-1: the session key does not open")
+
+    def refused_key(name, error, hub_aid=SS_HUB_AID, sid_=sid, enc_=enc, ct_=ct):
+        return {"name": name, "hub_aid": hub_aid, "sid": b16(sid_), "enc": b16(enc_), "ct": b16(ct_), "error": error}
+
+    other_sid = seed(vid, "other-sid")[:16]
+    key_refused = [
+        refused_key("sealed by another hub", "session-key", hub_aid=SS_OTHER_HUB_AID),
+        refused_key("sealed for another session id", "session-key", sid_=other_sid),
+        refused_key("ct with one byte changed", "session-key", ct_=flip(ct, 5)),
+        refused_key("enc with one byte changed", "session-key", enc_=flip(enc, 7)),
+        refused_key("ct one byte short", "session-key", ct_=ct[:-1]),
+        refused_key("hub AID holding U+0000", "nul", hub_aid=SS_HUB_AID[:8] + "\x00" + SS_HUB_AID[8:]),
+        refused_key("session id one byte short", "input", sid_=sid[:15]),
+    ]
+    # Each refused delivery must really fail to open here too, or the vector proves nothing.
+    for r in key_refused:
+        try:
+            got = SUITE1.setup_base_r(_h(r["enc"]), sk_r, session_key_info(r["hub_aid"], _h(r["sid"]))).open(b"", _h(r["ct"]))
+        except GoldenError:
+            continue
+        raise GoldenError("SESSION-1: refused delivery %r opens to %s" % (r["name"], b16(got)))
+
+    body = b"\xa6" + seed(vid, "envelope") * 3  # stands for the envelope bytes of a send
+    cases = [
+        ("send with a home hint", SS_TS, "POST", "/relay/send", SS_OTHER_HUB_AID, body),
+        ("send without a home hint", SS_TS + 1, "POST", "/relay/send", "", body),
+        ("empty body and a query", 7, "POST", "/relay/send?x=%2F1", "", b""),
+    ]
+    mac = []
+    for name, ts, method, target, home, b in cases:
+        mac.append({"name": name, "k_sess": b16(k), "sid": b16(sid), "ts": ts, "method": method,
+                    "path_and_query": target, "home": home, "body": b16(b),
+                    "input": b16(session_mac_input(sid, ts, method, target, home, b)),
+                    "mac": b16(session_mac(k, sid, ts, method, target, home, b))})
+
+    base = mac[0]
+    other_k = seed(vid, "other-k_sess")
+
+    def refused_mac(name, error, **over):
+        m = {key: base[key] for key in ("k_sess", "sid", "ts", "method", "path_and_query", "home", "body")}
+        m.update(over)
+        m["mac"] = base["mac"]
+        return {"name": name, **m, "error": error}
+
+    mac_refused = [
+        refused_mac("body changed by one byte", "mac", body=b16(flip(body, 40))),
+        refused_mac("body one byte longer", "mac", body=b16(body + b"\x00")),
+        refused_mac("home hint changed", "mac", home=SS_HUB_AID),
+        refused_mac("home hint removed", "mac", home=""),
+        refused_mac("ts changed", "mac", ts=SS_TS + 1),
+        refused_mac("request target changed", "mac", path_and_query="/relay/send?"),
+        refused_mac("method changed", "mac", method="PUT"),
+        refused_mac("another session id", "mac", sid=b16(other_sid)),
+        refused_mac("another session key", "mac", k_sess=b16(other_k)),
+        refused_mac("byte moved from target to method", "mac", method="POST/", path_and_query="relay/send"),
+        refused_mac("method holding U+0000", "nul", method="PO\x00ST"),
+        refused_mac("request target holding U+0000", "nul", path_and_query="/relay/send\x00"),
+        refused_mac("home hint holding U+0000", "nul", home=SS_OTHER_HUB_AID + "\x00"),
+    ]
+    # The refused cases must really differ from the base, or the vector proves nothing.
+    for r in mac_refused:
+        if r["error"] == "mac":
+            got = session_mac(_h(r["k_sess"]), _h(r["sid"]), r["ts"], r["method"], r["path_and_query"], r["home"],
+                              _h(r["body"]))
+            if b16(got) == base["mac"]:
+                raise GoldenError("SESSION-1: refused MAC case %r has the base MAC" % r["name"])
+
+    return {
+        "id": vid,
+        "about": ("First-contact session: L7 session key delivery (receiving side: open enc and ct with skR) "
+                  "and L8 session MAC (input and output). Seeds: SHA-256(\"anet-golden/v016/SESSION-1/<role>\") for "
+                  "roles sid (first 16 bytes), k_sess, epk (ikm of the daemon's one-time key), hpke-ephemeral "
+                  "(ikm of the hub's HPKE ephemeral key), envelope, other-sid, other-k_sess. "
+                  "Generated by golden/py/gen_v016.py."),
+        "key_delivery": {"hub_aid": SS_HUB_AID, "sid": b16(sid), "k_sess": b16(k), "ikmR": b16(ikm_r),
+                         "skR": b16(sk_r), "epk": b16(epk), "ikmE": b16(ikm_e), "info": b16(info),
+                         "enc": b16(enc), "ct": b16(ct)},
+        "key_delivery_refused": key_refused,
+        "mac": mac,
+        "mac_refused": mac_refused,
+    }
+
+
+def dir_hash(aid: str) -> bytes:
+    """L9: h = SHA-256("anet-dir-hash/v1" || 0x00 || UTF-8(aid))."""
+    _no_nul(aid)
+    return sha256(DIR_HASH_LABEL + b"\x00" + aid.encode("utf-8"))
+
+
+def dir_key(aid: str) -> bytes:
+    """L10: K = HKDF-SHA256(ikm = UTF-8(aid), salt = empty, info = "anet-dir-box/v1", L = 32)."""
+    return hkdf(aid.encode("utf-8"), b"", DIR_BOX_LABEL, 32)
+
+
+def dir_box(aid: str, pt: bytes, nonce: bytes, aad: bytes | None = None) -> bytes:
+    """L10: box = nonce || ChaCha20-Poly1305(K, nonce, aad = h, pt); aad overrides h for a negative."""
+    return nonce + chacha20poly1305_seal(dir_key(aid), nonce, pt, dir_hash(aid) if aad is None else aad)
+
+
+def _cbor_map_in_order(pairs) -> bytes:
+    """A map written in the order given: only to make a non-canonical negative."""
+    return _head(5, len(pairs)) + b"".join(cbor(k) + cbor(x) for k, x in pairs)
+
+
+def _dir_entry_map(e: dict) -> dict:
+    m = {1: e["aid"], 2: e["home"], 3: e["kel"], 4: e["keys"]}
+    if "card" in e:
+        m[5] = e["card"]
+    if "notice" in e:
+        m[6] = e["notice"]
+    return m
+
+
+def _dir_entry_json(e: dict) -> dict:
+    out = {"aid": e["aid"], "home": e["home"], "kel": b16(e["kel"]), "keys": b16(e["keys"])}
+    for k in ("card", "notice"):
+        if k in e:
+            out[k] = b16(e[k])
+    return out
+
+
+@vector("DIR-1", "ANetCore/dirbox/testdata/vec-dir-1.json")
+def gen_dir_1():
+    """L9 h and L10 K; the box of a full and a minimal DirEntry under fixed nonces, which Go
+    reproduces and opens; boxes that must not open or must not decode; AIDs Hash must refuse."""
+    vid = "DIR-1"
+    full = {"aid": SS_AGENT_AID, "home": SS_HUB_AID,
+            "kel": seed(vid, "kel") + seed(vid, "kel-2"),
+            "keys": seed(vid, "keys") * 2,
+            "card": b'{"name":"golden agent","version":"1.0.0"}',
+            "notice": seed(vid, "notice")}
+    minimal = {"aid": SS_OTHER_AID, "home": SS_OTHER_HUB_AID, "kel": seed(vid, "kel-min"),
+               "keys": seed(vid, "keys-min")}
+    cases = []
+    for name, e, role in (("full entry", full, "nonce-full"), ("required keys only", minimal, "nonce-min")):
+        pt = cbor(_dir_entry_map(e))
+        nonce = seed(vid, role)[:12]
+        box = dir_box(e["aid"], pt, nonce)
+        if chacha20poly1305_open(dir_key(e["aid"]), box[:12], box[12:], dir_hash(e["aid"])) != pt:
+            raise GoldenError("DIR-1: the box of %r does not open" % name)
+        cases.append({"name": name, "aid": e["aid"], "entry": _dir_entry_json(e), "plaintext": b16(pt),
+                      "h": b16(dir_hash(e["aid"])), "k": b16(dir_key(e["aid"])), "nonce": b16(nonce),
+                      "box": b16(box)})
+
+    a = full["aid"]
+    box_a = _h(cases[0]["box"])
+    nonce = seed(vid, "nonce-refused")[:12]
+
+    def sealed(pairs_or_map, in_order=False):
+        pt = _cbor_map_in_order(pairs_or_map) if in_order else cbor(pairs_or_map)
+        return b16(dir_box(a, pt, nonce))
+
+    base = _dir_entry_map(full)
+    with7 = dict(base)
+    with7[7] = b"\x01"
+    without4 = {k: v for k, v in base.items() if k != 4}
+    other = dict(base)
+    other[1] = SS_OTHER_AID
+    kel_text = dict(base)
+    kel_text[3] = "kel"
+    empty_card = dict(base)
+    empty_card[5] = b""
+    unlabeled_h = sha256(a.encode("utf-8"))
+    h_a = b16(dir_hash(a))
+    refused = [
+        {"name": "opened with another AID", "aid": SS_OTHER_AID, "h": b16(dir_hash(SS_OTHER_AID)),
+         "box": b16(box_a), "error": "open"},
+        {"name": "filed under another AID's hash", "aid": a, "h": b16(dir_hash(SS_OTHER_AID)),
+         "box": b16(box_a), "error": "hash"},
+        {"name": "hash without its label", "aid": a, "h": b16(unlabeled_h),
+         "box": b16(dir_box(a, cbor(base), nonce, aad=unlabeled_h)), "error": "hash"},
+        {"name": "box with one byte changed", "aid": a, "h": h_a, "box": b16(flip(box_a, 20)), "error": "open"},
+        {"name": "nonce with one byte changed", "aid": a, "h": h_a, "box": b16(flip(box_a, 3)), "error": "open"},
+        {"name": "box one byte short", "aid": a, "h": h_a, "box": b16(box_a[:-1]), "error": "open"},
+        {"name": "shorter than a nonce and a tag", "aid": a, "h": h_a, "box": b16(box_a[:27]), "error": "open"},
+        {"name": "sealed without the hash as aad", "aid": a, "h": h_a,
+         "box": b16(dir_box(a, cbor(base), nonce, aad=b"")), "error": "open"},
+        {"name": "sealed with the key of another AID", "aid": a, "h": h_a,
+         "box": b16(nonce + chacha20poly1305_seal(dir_key(SS_OTHER_AID), nonce, cbor(base), dir_hash(a))),
+         "error": "open"},
+        {"name": "unregistered key 7", "aid": a, "h": h_a, "box": sealed(with7), "error": "entry"},
+        {"name": "key 4 (keys) missing", "aid": a, "h": h_a, "box": sealed(without4), "error": "entry"},
+        {"name": "key 1 names another AID", "aid": a, "h": h_a, "box": sealed(other), "error": "entry"},
+        {"name": "key 3 (kel) is a text string", "aid": a, "h": h_a, "box": sealed(kel_text), "error": "entry"},
+        {"name": "empty card instead of no card", "aid": a, "h": h_a, "box": sealed(empty_card), "error": "entry"},
+        {"name": "keys out of canonical order", "aid": a, "h": h_a,
+         "box": sealed([(2, full["home"]), (1, a), (3, full["kel"]), (4, full["keys"])], in_order=True),
+         "error": "entry"},
+        {"name": "an array, not a map", "aid": a, "h": h_a,
+         "box": b16(dir_box(a, cbor([a, full["home"]]), nonce)), "error": "entry"},
+    ]
+    hash_refused = [
+        {"name": "empty AID", "aid": "", "error": "aid"},
+        {"name": "AID holding U+0000", "aid": a[:6] + "\x00" + a[6:], "error": "aid"},
+    ]
+    return {
+        "id": vid,
+        "about": ("Directory box: L9 h, L10 K, the box under a fixed nonce, opening, and boxes that must not "
+                  "open or must not decode. Seeds: SHA-256(\"anet-golden/v016/DIR-1/<role>\") for roles kel, kel-2, "
+                  "keys, notice, kel-min, keys-min, nonce-full, nonce-min, nonce-refused (nonces: first 12 bytes). "
+                  "kel, keys, card and notice are opaque to the box and are placeholders here. "
+                  "Generated by golden/py/gen_v016.py."),
+        "cases": cases,
+        "refused": refused,
+        "hash_refused": hash_refused,
+    }
+
+
+def relayauth_preimage(action: str, aid: str, hub_aid: str, ts: int, method: str, target: str, body: bytes) -> str:
+    """L22: "anet-relay/v2/" + action + "/" + aid + "/" + hubAID + "/" + decimal(ts) + "/" +
+    base64url(SHA-256(method || 0x00 || pathAndQuery || 0x00 || body)), no padding."""
+    for f in (action, aid, hub_aid):
+        if "/" in f:
+            raise GoldenError("relayauth: %r holds the separator" % f)
+    d = sha256(method.encode("utf-8") + b"\x00" + target.encode("utf-8") + b"\x00" + bytes(body))
+    digest = base64.urlsafe_b64encode(d).rstrip(b"=").decode("ascii")
+    return "anet-relay/v2/%s/%s/%s/%d/%s" % (action, aid, hub_aid, ts, digest)
+
+
+def relayauth3_pins() -> list[tuple[str, str]]:
+    """RELAYAUTH-3 (gen "go": golden/relayauth_v3_test.go holds the rows): the (preimage, hex
+    signature) of each pinned action, in the order of the Go test's ra3Rows, computed here
+    independently. test_gen_v016.py compares them with the literals of the Go test. Signers:
+    Ed25519 seeds seed("RELAYAUTH-3", "agent") and seed("RELAYAUTH-3", "peer-hub")."""
+    a = SS_AGENT_AID
+    rows = [
+        ("poll", "agent", "POST", "/relay/poll", b'{"limit":10}'),
+        ("ack", "agent", "POST", "/relay/ack", b'{"items":[{"id":1}]}'),
+        ("register", "agent", "POST", "/register", b'{"aid":"' + a.encode() + b'"}'),
+        ("profile", "agent", "POST", "/profile", b'{"summary":"golden"}'),
+        ("visibility", "agent", "POST", "/visibility", b'{"visible":true}'),
+        ("deregister", "agent", "POST", "/deregister", b"{}"),
+        ("balance", "agent", "GET", "/agents/" + a + "/balance", b""),
+        ("ledger", "agent", "GET", "/agents/" + a + "/ledger?limit=10", b""),
+        ("redemptions", "agent", "GET", "/agents/" + a + "/redemptions?limit=500", b""),
+        ("keys", "agent", "POST", "/agents/" + a + "/keys", b'{"prev_seq":0}'),
+        ("session", "agent", "POST", "/relay/session", b'{"epk":"' + b"A" * 43 + b'"}'),
+        ("revoke", "agent", "POST", "/mailbox/revoke", b'{"cap_ids":["' + b"A" * 22 + b'"]}'),
+        ("fed_forward", "peer-hub", "POST", "/fed/v3/forward", b"\xa6\x01\x02"),
+        ("fed_bucket", "peer-hub", "POST", "/fed/v3/directory:bucket", b'{"prefix":"AA","bits":8}'),
+        ("fed_cards", "peer-hub", "GET", "/fed/v3/cards?cursor=0", b""),
+    ]
+    signer_aid = {"agent": SS_AGENT_AID, "peer-hub": SS_OTHER_HUB_AID}
+    out = []
+    for action, signer, method, target, body in rows:
+        pre = relayauth_preimage(action, signer_aid[signer], SS_HUB_AID, SS_TS, method, target, body)
+        out.append((pre, b16(ed25519_sign(seed("RELAYAUTH-3", signer), pre.encode("ascii")))))
+    return out
+
+
 # --- HPP: the liability tree (LIAB-1) and the registration proof of work (REGPOW-1) ------------
 
 U64 = 1 << 64

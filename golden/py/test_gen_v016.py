@@ -401,6 +401,27 @@ class Repository(unittest.TestCase):
             for p in gen.paths:
                 self.assertIn(p.split("/", 1)[0], g.REPOS, vid)
 
+    def test_relayauth3_pins_match_the_go_test(self):
+        """RELAYAUTH-3 is held by a Go test (gen "go"), so check does not regenerate it; the
+        preimages and signatures it pins must still be the ones computed here independently, in
+        the order of its ra3Rows."""
+        import re
+        src = (g.CORE_DIR / "golden" / "relayauth_v3_test.go").read_text(encoding="utf-8")
+        rows = src[src.index("var ra3Rows"):src.index("var ra3Pending")]
+        pinned = list(zip(re.findall(r'"(anet-relay/v2/[^"]*)"', rows), re.findall(r'"([0-9a-f]{128})"', rows)))
+        self.assertEqual(pinned, g.relayauth3_pins())
+
+    def test_session_and_dir_helpers_refuse_nul(self):
+        """CORE-E9 holds in the independent implementation too: no vector is built on a field
+        that holds U+0000."""
+        for call in (lambda: g.session_key_info("h\x00", bytes(16)),
+                     lambda: g.session_mac_input(bytes(16), 1, "PO\x00ST", "/", "", b""),
+                     lambda: g.session_mac_input(bytes(16), 1, "POST", "/\x00", "", b""),
+                     lambda: g.session_mac_input(bytes(16), 1, "POST", "/", "\x00", b""),
+                     lambda: g.dir_hash("a\x00b")):
+            with self.assertRaises(g.GoldenError):
+                call()
+
 
 if __name__ == "__main__":
     unittest.main()

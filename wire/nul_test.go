@@ -1,10 +1,14 @@
 package wire_test
 
 import (
+	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/ANetResearch/ANetCore/dirbox"
 	"github.com/ANetResearch/ANetCore/regpow"
+	"github.com/ANetResearch/ANetCore/relayauth"
 )
 
 // TestPreimageRejectsNUL (CORE-E9, ANetCore). B- and C-class inputs separate variable-length
@@ -20,9 +24,9 @@ func TestPreimageRejectsNUL(t *testing.T) {
 		fn   func(field string) error
 		todo string
 	}{
-		"L7":  {nil, "v030-todo(SS-2)"},  // session key delivery: hubAID
-		"L8":  {nil, "v030-todo(SS-2)"},  // session MAC: method, pathAndQuery, X-ANet-Home
-		"L9":  {nil, "v030-todo(SS-2)"},  // dirbox h: aid
+		"L7":  {nulSessionKey, ""},       // session key delivery: hubAID
+		"L8":  {nulSessionMAC, ""},       // session MAC: method, pathAndQuery, X-ANet-Home
+		"L9":  {nulDirHash, ""},          // dirbox h: aid
 		"L19": {nil, "v030-todo(KEL-3)"}, // next-key derivation: aid
 		"L23": {regpowNUL, ""},           // regpow hash: hub_aid, aid
 		"L27": {nil, "v030-todo(PAY-2)"}, // ix_commit: ix, anet.nonce
@@ -59,6 +63,64 @@ func TestPreimageRejectsNUL(t *testing.T) {
 			t.Errorf("row %s is not a registered ANetCore nul_guard", label)
 		}
 	}
+}
+
+// nulSessionKey seals and opens a session key with field as the hub AID (L7). Both ends must
+// refuse U+0000: the row reports an acceptance when either end accepts a field holding it, and a
+// refusal when either end refuses a clean field.
+func nulSessionKey(field string) error {
+	esk, epk, err := relayauth.NewSessionKey()
+	if err != nil {
+		return err
+	}
+	sid := bytes.Repeat([]byte{1}, relayauth.SessionIDLen)
+	k := bytes.Repeat([]byte{2}, relayauth.SessionKeyLen)
+	enc, ct, sealErr := relayauth.SealSessionKey(epk, field, sid, k)
+	if sealErr != nil {
+		// Open still gets a well-formed answer to refuse: one sealed for a clean hub AID.
+		if enc, ct, err = relayauth.SealSessionKey(epk, "h", sid, k); err != nil {
+			return err
+		}
+	}
+	_, openErr := relayauth.OpenSessionKey(esk, field, sid, enc, ct)
+	if sealErr != nil && !errors.Is(openErr, relayauth.ErrNUL) {
+		openErr = nil // it failed to open a key sealed for another hub, but took the field
+	}
+	if strings.Contains(field, "\x00") {
+		if sealErr == nil || openErr == nil {
+			return nil
+		}
+		return sealErr
+	}
+	return errors.Join(sealErr, openErr)
+}
+
+// nulSessionMAC computes a session MAC with field in each 0x00-separated text position (method,
+// request target, X-ANet-Home) in turn. It reports an acceptance when a field holding U+0000 is
+// accepted in any position, and a refusal when a clean field is refused in any position.
+func nulSessionMAC(field string) error {
+	k := make([]byte, relayauth.SessionKeyLen)
+	sid := make([]byte, relayauth.SessionIDLen)
+	var errs []error
+	for _, in := range [][3]string{{field, "/relay/send", ""}, {"POST", field, ""}, {"POST", "/relay/send", field}} {
+		_, err := relayauth.SessionMAC(k, sid, 1, in[0], in[1], in[2], nil)
+		errs = append(errs, err)
+	}
+	if strings.Contains(field, "\x00") {
+		for _, err := range errs {
+			if err == nil {
+				return nil
+			}
+		}
+		return errs[0]
+	}
+	return errors.Join(errs...)
+}
+
+// nulDirHash hashes field as the AID of a directory entry (L9).
+func nulDirHash(field string) error {
+	_, err := dirbox.Hash(field)
+	return err
 }
 
 // regpowNUL puts field into hub_aid and into aid, one at a time. A field holding U+0000 counts as
