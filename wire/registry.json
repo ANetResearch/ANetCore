@@ -2816,7 +2816,9 @@
       {"repo": "ANetCore", "func": "(*payment.Receipt).Sign", "signs": "PaymentReceipt"},
       {"repo": "ANetCore", "func": "(*tsir.TaskDoc).Sign", "signs": "TaskDocPreimage"},
       {"repo": "ANetCore", "func": "(*ael.EventRecord).Sign", "signs": "AELRecord"},
-      {"repo": "ANetCore", "func": "(*ael.HeadAttestation).Sign", "signs": "AELHeadAttestation"}
+      {"repo": "ANetCore", "func": "(*ael.HeadAttestation).Sign", "signs": "AELHeadAttestation"},
+      {"repo": "ANetCore", "func": "(*evidence.ReceiptBody).Sign", "signs": "ReceiptBody"},
+      {"repo": "ANetCore", "func": "(*evidence.ReviewAttBody).Sign", "signs": "ReviewAttBody"}
     ]
   },
   "scan": {

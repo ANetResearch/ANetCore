@@ -197,7 +197,7 @@
       "covers": "CardGet; CardResp with card and with error",
       "labels": ["L39"],
       "objects": ["CardGet", "CardResp"],
-      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestCARD_1", "todo": "v030-todo(PAY-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestCARD_1"}]
     },
     {
       "id": "TASKDOC-3",
@@ -206,7 +206,7 @@
       "covers": "$files in args; the three private contexts; the request CID changes with a file CID",
       "labels": [],
       "objects": ["TaskDoc", "TaskDocPreimage", "VersionPair", "Task", "Intent", "Context"],
-      "at": [{"repo": "ANetCore", "path": "golden/taskdoc_v3_test.go", "test": "TestTASKDOC_3", "todo": "v030-todo(PAY-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/taskdoc_v3_test.go", "test": "TestTASKDOC_3"}]
     },
     {
       "id": "EV2-1",
@@ -215,7 +215,7 @@
       "covers": "ix and requester commitments, settle guard; ReceiptBody and ReceiptWire; a ReceiptBody signature moved onto a payment Authorization fails; (ix, nonce) = (\"a\\u0000b\", \"c\") and (\"a\", \"b\\u0000c\") refused by the commitment and by PayBind",
       "labels": ["L27", "L28", "L29", "L33", "L34"],
       "objects": ["ReceiptBody", "ReceiptWire", "aobj.Envelope", "PaymentAuthorization"],
-      "at": [{"repo": "ANetCore", "path": "evidence/testdata/vec-ev2-1.json", "todo": "v030-todo(PAY-2)"}]
+      "at": [{"repo": "ANetCore", "path": "evidence/testdata/vec-ev2-1.json"}]
     },
     {
       "id": "REVIEW-2",
@@ -224,7 +224,7 @@
       "covers": "ReviewBody and ReviewWire; ReviewAttBody; the review tag",
       "labels": ["L30", "L31", "L32"],
       "objects": ["ReviewBody", "ReviewWire", "ReviewAttBody", "ReviewAttWire"],
-      "at": [{"repo": "ANetCore", "path": "evidence/testdata/vec-review-2.json", "todo": "v030-todo(PAY-2)"}]
+      "at": [{"repo": "ANetCore", "path": "evidence/testdata/vec-review-2.json"}]
     },
     {
       "id": "LIAB-1",
@@ -251,7 +251,7 @@
       "covers": "the ael anet.supply.epoch record (VersionMajor2): bytes and signature",
       "labels": [],
       "objects": ["AELRecord"],
-      "at": [{"repo": "ANetCore", "path": "golden/supply_epoch_test.go", "test": "TestSUPPLY_EPOCH_1", "todo": "v030-todo(PAY-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/supply_epoch_test.go", "test": "TestSUPPLY_EPOCH_1"}]
     },
     {
       "id": "C1-1",
@@ -405,10 +405,10 @@
     }
   ],
   "retired": [
-    {"id": "VEC_PAYMENT_VOUCHER_1", "why": "vouchers are removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_PAYMENT_VOUCHER_1", "todo": "v030-todo(PAY-2)"}]},
-    {"id": "VEC_RECEIPT_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RECEIPT_1", "todo": "v030-todo(PAY-2)"}]},
-    {"id": "VEC_RECEIPT_WIRE_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RECEIPT_WIRE_1", "todo": "v030-todo(PAY-2)"}]},
-    {"id": "VEC_REVIEW_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_REVIEW_1", "todo": "v030-todo(PAY-2)"}]},
+    {"id": "VEC_PAYMENT_VOUCHER_1", "why": "vouchers are removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_PAYMENT_VOUCHER_1"}]},
+    {"id": "VEC_RECEIPT_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RECEIPT_1"}]},
+    {"id": "VEC_RECEIPT_WIRE_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RECEIPT_WIRE_1"}]},
+    {"id": "VEC_REVIEW_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_REVIEW_1"}]},
     {"id": "VEC-SEALED-1", "why": "outer envelope v1 is removed", "at": [
       {"repo": "ANetCore", "path": "seal/golden_test.go", "test": "TestVEC_SEALED_1", "todo": "v030-todo(CORE-2)"},
       {"repo": "ANetCore", "path": "seal/testdata/vec-sealed-1.json", "todo": "v030-todo(CORE-2)"}

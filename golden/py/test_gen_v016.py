@@ -422,6 +422,22 @@ class Repository(unittest.TestCase):
             with self.assertRaises(g.GoldenError):
                 call()
 
+    def test_evidence_helpers_refuse_nul_and_empty(self):
+        """CORE-E9 (and "not empty") in the independent implementation of L27, L28, L31, L33 and
+        L34: no evidence vector is built on a field that holds U+0000."""
+        for call in (lambda: g.ix_commit_preimage("a\x00b", "c"),
+                     lambda: g.ix_commit_preimage("a", "b\x00c"),
+                     lambda: g.ix_commit_preimage("", "c"),
+                     lambda: g.requester_commit_preimage("r\x00", bytes(32)),
+                     lambda: g.requester_commit_preimage("r", bytes(31)),
+                     lambda: g.review_tag(bytes(32), "r", "s\x00"),
+                     lambda: g.review_tag(bytes(16), "r", "s"),
+                     lambda: g.settle_guard_preimage("p", ""),
+                     lambda: g.pay_bind_preimage("a\x00b", "c")):
+            with self.assertRaises(g.GoldenError):
+                call()
+        self.assertEqual(g.suite_kel().aid, g.SUITE_AID)
+
 
 if __name__ == "__main__":
     unittest.main()

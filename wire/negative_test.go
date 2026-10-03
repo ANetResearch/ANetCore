@@ -209,19 +209,19 @@ func TestCarriedDecodersRefuseUnregisteredKeys(t *testing.T) {
 		valid  func() ([]byte, error)
 		decode func([]byte) error
 	}{
-		{"PaymentAuthorizationWire", "v030-todo(PAY-2)",
+		{"PaymentAuthorizationWire", "",
 			func() ([]byte, error) {
 				a := &payment.Authorization{Payer: "p", PayTo: "q", Amount: 1, Network: "n", Nonce: "x", IssuedAt: 1, NotAfter: 2}
 				return a.Marshal()
 			},
 			func(b []byte) error { _, err := payment.UnmarshalAuthorization(b); return err }},
-		{"PaymentReceiptWire", "v030-todo(PAY-2)",
+		{"PaymentReceiptWire", "",
 			func() ([]byte, error) {
 				rc := &payment.Receipt{AuthID: "a", Payer: "p", PayTo: "q", Amount: 1, Network: "n", SettleAt: 1}
 				return rc.Marshal()
 			},
 			func(b []byte) error { _, err := payment.UnmarshalReceipt(b); return err }},
-		{"AELHeadAttestationWire", "v030-todo(PAY-2)",
+		{"AELHeadAttestationWire", "",
 			func() ([]byte, error) {
 				h := &ael.HeadAttestation{ChainDID: "c", Seq: 1, HeadID: "h", ObservedAt: 1}
 				return h.Marshal()

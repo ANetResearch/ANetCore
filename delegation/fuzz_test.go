@@ -91,7 +91,7 @@ func seedDelegateReq(tb testing.TB, c *identity.Controller, bodyKEL []byte) []by
 	}
 	req := &delegation.DelegateReq{TaskDoc: raw, Envelope: doc.Envelope, KEL: bodyKEL, InteractionID: "ix-golden-1",
 		Attachments: []delegation.Attachment{{Name: "a.txt", Mime: "text/plain", Size: 3, CID: anetcid.MustSum([]byte("abc")), Data: []byte("abc")}},
-		Payment:     []byte(`{"x402Version":2}`), ContextID: "ctx", Metadata: []byte(`{}`)}
+		ContextID:   "ctx", Metadata: []byte(`{}`)}
 	b, err := req.Marshal()
 	if err != nil {
 		tb.Fatal(err)
@@ -171,74 +171,76 @@ func FuzzDelegateReq(f *testing.F) {
 	})
 }
 
-func seedResultResp(tb testing.TB, c *identity.Controller, bodyKEL []byte) []byte {
+// fuzzTask is the suite identity's task the result seeds answer; the fuzz target checks every
+// completion against it.
+func fuzzTask(tb testing.TB) *task { return newTask(tb, identity.SuiteController(), "ix-golden-1") }
+
+func seedResultResp(tb testing.TB, tk *task, c *identity.Controller, bodyKEL []byte) []byte {
 	tb.Helper()
-	deliverable := []byte(`{"ok":true}`)
-	rc := &evidence.Receipt{InteractionID: "ix-golden-1", RequesterAID: "did:anet:golden-requester",
-		RequestCID: "bafyreigoldenrequest", ResultCID: anetcid.MustSum(deliverable), CompletedAt: fuzzTS}
-	if err := rc.Sign(c); err != nil {
-		tb.Fatal(err)
-	}
-	receipt, err := rc.Marshal()
-	if err != nil {
-		tb.Fatal(err)
-	}
-	b, err := (&delegation.ResultResp{Status: delegation.StatusDone, Deliverable: deliverable, Receipt: receipt,
-		KEL: bodyKEL, Metadata: []byte(`{}`)}).Marshal()
+	rr := tk.completion(tb, c, []byte(`{"ok":true}`), nil)
+	rr.KEL, rr.Metadata = bodyKEL, []byte(`{}`)
+	b, err := rr.Marshal()
 	if err != nil {
 		tb.Fatal(err)
 	}
 	return b
 }
 
+// FuzzResultResp decodes a completion, re-signs its receipt with one of two fixed identities when
+// asked, and checks every accepted receipt against what the requester holds.
 func FuzzResultResp(f *testing.F) {
 	ss := signers(f)
 	suite, rotated := ss[0], ss[1]
-	f.Add(seedResultResp(f, suite, kelBytes(f, suite)), false, byte(0), true, uint64(fuzzTS))
-	f.Add(seedResultResp(f, rotated, kelBytes(f, suite)), true, byte(1), false, uint64(fuzzTS))
-	f.Add(seedResultResp(f, rotated, nil), true, byte(1), true, uint64(0))
-	f.Fuzz(func(t *testing.T, b []byte, resign bool, sel byte, bind bool, msgTime uint64) {
+	tk := fuzzTask(f)
+	f.Add(seedResultResp(f, tk, suite, kelBytes(f, suite)), false, byte(0), uint64(fuzzTS))
+	f.Add(seedResultResp(f, tk, rotated, kelBytes(f, suite)), true, byte(1), uint64(fuzzTS))
+	f.Add(seedResultResp(f, tk, rotated, nil), true, byte(1), uint64(0))
+	f.Fuzz(func(t *testing.T, b []byte, resign bool, sel byte, msgTime uint64) {
 		r, err := delegation.UnmarshalResultResp(b)
 		if err != nil {
 			return
 		}
 		roundTrip(t, r, (*delegation.ResultResp).Marshal, delegation.UnmarshalResultResp)
 		c := ss[int(sel)%len(ss)]
-		decoded, derr := evidence.UnmarshalReceipt(r.Receipt)
-		if resign && derr == nil {
-			if decoded.Sign(c) == nil {
-				if rb, err := decoded.Marshal(); err == nil {
-					r.Receipt = rb
+		if resign {
+			if w, err := evidence.UnmarshalReceiptWire(r.Receipt); err == nil {
+				if body, err := w.Open(); err == nil {
+					body.Provider = ""
+					if again, err := body.Sign(c); err == nil {
+						if rb, err := again.Marshal(); err == nil {
+							r.Receipt = rb
+						}
+					}
 				}
 			}
 		}
-		_, _ = delegation.VerifyResult(r, "", "", "", msgTime)
-		ix, req, prov, reqCID := "", "", "", ""
-		if bind {
-			ix, req, prov, reqCID = "ix-golden-1", "did:anet:golden-requester", c.AID(), "bafyreigoldenrequest"
-		}
-		rc, err := delegation.VerifyResultForRequest(r, c.KEL(), ix, req, prov, reqCID, msgTime)
+		want := tk.check(c.AID())
+		want.Today = testDay + 1
+		rc, err := delegation.VerifyResultForRequest(r, c.KEL(), want, msgTime)
 		if err != nil {
-			if len(c.KEL()) > 0 && errors.Is(err, delegation.ErrUnverifiable) {
+			if errors.Is(err, delegation.ErrUnverifiable) {
 				t.Fatalf("ErrUnverifiable with a resolved KEL: %v", err)
 			}
 			return
 		}
-		if rc.Envelope == nil || rc.Envelope.SignerAID != c.AID() || rc.ProviderAID != c.AID() {
-			t.Fatalf("accepted a receipt signed by %+v for provider %s against the KEL of %s", rc.Envelope, rc.ProviderAID, c.AID())
-		}
-		if got := anetcid.MustSum(r.Deliverable); rc.ResultCID != got {
-			t.Fatalf("accepted a receipt for %s over a deliverable hashing to %s", rc.ResultCID, got)
-		}
-		if bind && (rc.InteractionID != ix || rc.RequesterAID != req || rc.RequestCID != reqCID) {
-			t.Fatalf("accepted a receipt that does not bind what was asked: %+v", rc)
-		}
-		pre, err := rc.CanonicalPreimage()
+		w, err := evidence.UnmarshalReceiptWire(r.Receipt)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("accepted a receipt that does not decode: %v", err)
+		}
+		ixc, _ := evidence.IXCommit(tk.ix, tk.binding.Nonce)
+		switch {
+		case w.Env.SignerAID != c.AID() || rc.Provider != c.AID():
+			t.Fatalf("accepted a receipt signed by %s for provider %s against the KEL of %s", w.Env.SignerAID, rc.Provider, c.AID())
+		case rc.ResultCID != anetcid.MustSum(r.Deliverable):
+			t.Fatalf("accepted a receipt for %s over a deliverable hashing to %s", rc.ResultCID, anetcid.MustSum(r.Deliverable))
+		case rc.RequestCID != anetcid.MustSum(tk.taskDoc) || !bytes.Equal(rc.IXCommit, ixc) ||
+			!bytes.Equal(rc.RequesterCommit, tk.binding.RequesterCommit) || !bytes.Equal(rc.ReviewKey, tk.binding.ReviewKey):
+			t.Fatalf("accepted a receipt that does not bind the task: %+v", rc)
+		case rc.CompletedDay+1 < want.DelegatedDay || rc.CompletedDay > want.Today+1:
+			t.Fatalf("accepted a receipt dated day %d", rc.CompletedDay)
 		}
 		states, _ := identity.Replay(c.KEL())
-		if seq := rc.Envelope.KeyStateSeq; seq >= uint64(len(states)) || !ed25519.Verify(states[seq].CurrentKeys[0], pre, rc.Envelope.Sig) {
+		if seq := w.Env.KeyStateSeq; seq >= uint64(len(states)) || !ed25519.Verify(states[seq].CurrentKeys[0], w.Body, w.Env.Sig) {
 			t.Fatal("accepted a receipt whose signature is not by the declared key state")
 		}
 	})
