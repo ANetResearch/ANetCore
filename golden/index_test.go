@@ -7,7 +7,9 @@ package golden
 // noticing, and a label can lose its last vector the same way. So:
 //
 //   - every A, B and C label of wire/registry.json, and every object, is covered by a row of the
-//     index (an object with no vector at all is listed under "uncovered", with the reason);
+//     index (an object with no vector at all is listed under "uncovered", with the reason; only a
+//     node-local object or one carried unchanged from 0.2.1 may be, pending W0's decision on
+//     CORE-G1, so a new object that travels between nodes always needs a vector);
 //   - every file and test the index names exists, unless it is marked todo; one marked todo must
 //     not exist yet (the change that delivers it removes the marker); a retired vector must be
 //     gone unless it is marked todo, and must not be gone while it is;
@@ -149,11 +151,12 @@ type regView struct {
 	labels  map[string]string   // tag id → its strings, for A, B and C labels (CORE-G1)
 	tags    map[string]bool     // every tag id
 	objects map[string]bool     // every object
+	waits   map[string]bool     // objects that may sit under "uncovered": node-local or carried
 	golden  map[string][]string // tag id → the vectors its "golden" column names
 }
 
 func viewOf(r *wire.Registry) *regView {
-	v := &regView{labels: map[string]string{}, tags: map[string]bool{}, objects: map[string]bool{}, golden: map[string][]string{}}
+	v := &regView{labels: map[string]string{}, tags: map[string]bool{}, objects: map[string]bool{}, waits: map[string]bool{}, golden: map[string][]string{}}
 	for _, t := range r.Tags {
 		v.tags[t.ID] = true
 		if t.Class == "A" || t.Class == "B" || t.Class == "C" {
@@ -168,6 +171,9 @@ func viewOf(r *wire.Registry) *regView {
 	}
 	for _, o := range r.Objects {
 		v.objects[o.Name] = true
+		if o.Group == "local" || o.Carried {
+			v.waits[o.Name] = true
+		}
 	}
 	return v
 }
@@ -180,8 +186,10 @@ func checkArtifactShape(where string, a *artifact, retired bool) []string {
 	if !contains(repoNames, a.Repo) {
 		bad("repository %q is not one of %s", a.Repo, strings.Join(repoNames, ", "))
 	}
-	clean := path.Clean(strings.TrimSuffix(a.Path, "/"))
-	if a.Path == "" || path.IsAbs(a.Path) || strings.Contains(a.Path, `\`) || clean != strings.TrimSuffix(a.Path, "/") || clean == "." || strings.HasPrefix(clean, "../") {
+	// fs.ValidPath refuses "", "/x", "x/", "x//y" and every "." or ".." element, so ".." on its
+	// own is refused as well as "../x"; "." is valid there but names the repository, not a vector.
+	p0 := strings.TrimSuffix(a.Path, "/")
+	if !fs.ValidPath(p0) || p0 == "." || strings.Contains(a.Path, `\`) {
 		bad("path %q is not a clean path inside the repository", a.Path)
 	}
 	switch {
@@ -280,8 +288,11 @@ func checkShape(ix *goldenIndex, rv *regView) []string {
 	}
 	listed := map[string]bool{}
 	for _, u := range ix.Uncovered {
-		if !rv.objects[u.Object] {
+		switch {
+		case !rv.objects[u.Object]:
 			bad("uncovered: unknown object %q", u.Object)
+		case !rv.waits[u.Object]:
+			bad("uncovered: %s is new in 0.3.0 and is not a node-local file, so CORE-G1 needs a vector for it; add it to the objects of the vector that covers it", u.Object)
 		}
 		if u.Why == "" {
 			bad("uncovered: %s needs the reason it has no vector", u.Object)
@@ -611,6 +622,7 @@ func TestGoldenIndexCatches(t *testing.T) {
 		labels:  map[string]string{"L1": "anet-one/v1", "L2": "anet.two/1"},
 		tags:    map[string]bool{"L1": true, "L2": true, "L9": true},
 		objects: map[string]bool{"A": true, "B": true, "C": true},
+		waits:   map[string]bool{"C": true},
 		golden:  map[string][]string{"L1": {"V1"}},
 	}
 	baseIndex := func() *goldenIndex {
@@ -752,6 +764,86 @@ func TestGoldenIndexCatches(t *testing.T) {
 		{"unknown repository", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
 			ix.Vectors[3].At[0].Repo = "Other"
 		}, "repository \"Other\" is not one of"},
+		// The shape of the index itself: each rule, broken once.
+		{"wrong format", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Format = "anet-golden-index/2"
+		}, "format is \"anet-golden-index/2\""},
+		{"gens table out of step", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			delete(ix.Gens, "rfc")
+		}, "gens lists [a2a-python go go+python python]"},
+		{"empty vector id", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].ID = ""
+		}, "vector id \"\" is empty or has a space"},
+		{"vector id with a space", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].ID = "V 4"
+		}, "vector id \"V 4\" is empty or has a space"},
+		{"row without owner", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].Owner = ""
+		}, "V4: owner, covers and at must all be given"},
+		{"row without artifacts", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].At = nil
+		}, "V4: owner, covers and at must all be given"},
+		{"label listed twice", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[0].Labels = []string{"L1", "L1"}
+		}, "V1: label L1 twice"},
+		{"object listed twice", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[0].Objects = []string{"A", "A"}
+		}, "V1: object A twice"},
+		{"directory without a glob", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].At[0].Glob = ""
+		}, "a directory (z/testdata/v4/) needs a glob"},
+		{"glob that is not a pattern", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].At[0].Glob = "["
+		}, "glob \"[\": syntax error in pattern"},
+		{"glob on a file", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[0].At[0].Glob = "*.json"
+		}, "glob \"*.json\" is only for a directory"},
+		{"test outside a _test.go file", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[1].At[0].Path = "x/v2.go"
+		}, "test \"TestV2\" must be a Test… function in a _test.go file"},
+		{"test name that is not a Test function", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[1].At[0].Test = "V2"
+		}, "test \"V2\" must be a Test… function"},
+		{"todo and rework together", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[2].At[0].Rework = "v030-todo(XX-3)"
+		}, "todo and rework together"},
+		{"path is the parent directory", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[3].At[0].Path = "../"
+		}, "path \"../\" is not a clean path inside the repository"},
+		{"path with an empty element", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[0].At[0].Path = "x//testdata/v1.json"
+		}, "is not a clean path inside the repository"},
+		{"retired vector without why", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Retired[0].Why = ""
+		}, "R1: a retired vector needs why and at"},
+		{"retired vector without artifacts", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Retired[0].At = nil
+		}, "R1: a retired vector needs why and at"},
+		{"uncovered object unknown", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Uncovered = append(ix.Uncovered, &uncoveredObject{Object: "Nope", Why: "local"})
+		}, "uncovered: unknown object \"Nope\""},
+		{"uncovered object without a reason", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Uncovered[0].Why = ""
+		}, "uncovered: C needs the reason it has no vector"},
+		{"uncovered object listed twice", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Uncovered = append(ix.Uncovered, &uncoveredObject{Object: "C", Why: "again"})
+		}, "uncovered: C is listed twice"},
+		{"new wire object parked under uncovered", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[1].Objects = nil
+			ix.Uncovered = append(ix.Uncovered, &uncoveredObject{Object: "B", Why: "later"})
+		}, "uncovered: B is new in 0.3.0 and is not a node-local file, so CORE-G1 needs a vector for it"},
+		// What must exist and be read.
+		{"reworked vector file no test reads", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
+			ix.Vectors[0].At[0].Rework = "v030-todo(XX-1)"
+			delete(tr["ANetCore"], "x/v1_test.go")
+		}, "V1: no Go test in ANetCore names v1.json"},
+		{"a method with the test's name is not the test", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
+			tr["ANetCore"]["x/v2_test.go"] = &fstest.MapFile{Data: []byte("package x\n\nimport \"testing\"\n\ntype s struct{}\n\nfunc (s) TestV2(t *testing.T) {}\n")}
+		}, "V2: ANetCore/x/v2_test.go#TestV2 is missing"},
+		{"a directory where the vector file belongs", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
+			delete(tr["ANetCore"], "x/testdata/v1.json")
+			tr["ANetCore"]["x/testdata/v1.json/a"] = &fstest.MapFile{Data: []byte("{}")}
+		}, "V1: ANetCore/x/testdata/v1.json is missing"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -790,6 +882,61 @@ func TestGoldenIndexParseIsStrict(t *testing.T) {
 		if _, err := parseIndex([]byte(b)); err == nil {
 			t.Errorf("parseIndex accepted %s", b)
 		}
+	}
+}
+
+// TestGoldenIndexRegistryView: the coverage rules are only as strong as the view they read, so the
+// view is checked on its own: exactly the A, B and C tags are labels CORE-G1 counts, the "golden"
+// column is split into vector ids, and only node-local or carried objects may wait uncovered.
+func TestGoldenIndexRegistryView(t *testing.T) {
+	r := &wire.Registry{
+		Tags: []*wire.Tag{
+			{ID: "L1", Class: "A", Values: []string{"anet.a/1"}, Golden: "V1, V2"},
+			{ID: "L2", Class: "B", Values: []string{"anet-b/v1"}, Golden: "V2 (NUL cases)"},
+			{ID: "L3", Class: "C", Values: []string{"anet-c/v1", "anet-c2/v1"}, Golden: "V3"},
+			{ID: "L4", Class: "D", Golden: "-"},
+			{ID: "L5", Class: "text", Golden: "V5"},
+			{ID: "L6", Class: "type"},
+			{ID: "L7", Class: "file", Golden: "-"},
+			{ID: "L8", Class: "carried", Golden: "unchanged"},
+		},
+		Objects: []*wire.Object{
+			{Name: "New", Group: "seal"},
+			{Name: "Local", Group: "local"},
+			{Name: "Old", Group: "tsir", Carried: true},
+		},
+	}
+	v := viewOf(r)
+	if got := strings.Join(sortedKeys(v.labels), ","); got != "L1,L2,L3" {
+		t.Errorf("labels CORE-G1 counts: %s, want L1,L2,L3 (the A, B and C tags)", got)
+	}
+	if v.labels["L3"] != "anet-c/v1, anet-c2/v1" {
+		t.Errorf("label L3 reads %q", v.labels["L3"])
+	}
+	if len(v.tags) != 8 {
+		t.Errorf("%d tags known, want 8", len(v.tags))
+	}
+	golden := fmt.Sprint(v.golden)
+	if golden != "map[L1:[V1 V2] L2:[V2] L3:[V3] L5:[V5]]" {
+		t.Errorf("golden column read as %s", golden)
+	}
+	if got := strings.Join(sortedKeys(v.objects), ","); got != "Local,New,Old" {
+		t.Errorf("objects %s", got)
+	}
+	if got := strings.Join(sortedKeys(v.waits), ","); got != "Local,Old" {
+		t.Errorf("objects that may wait uncovered: %s, want Local,Old", got)
+	}
+
+	// The real registry: every A, B and C tag is a label, so a registry edit cannot drop one.
+	reg := wire.MustLoad()
+	n := 0
+	for _, tg := range reg.Tags {
+		if tg.Class == "A" || tg.Class == "B" || tg.Class == "C" {
+			n++
+		}
+	}
+	if rv := viewOf(reg); n == 0 || len(rv.labels) != n {
+		t.Errorf("the registry has %d A, B and C tags, the view counts %d", n, len(rv.labels))
 	}
 }
 

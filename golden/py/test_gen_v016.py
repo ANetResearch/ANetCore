@@ -3,6 +3,8 @@
 Run from ANetCore: python3 -B golden/py/test_gen_v016.py (-B keeps __pycache__ out of the tree).
 """
 
+import contextlib
+import io
 import json
 import os
 import random
@@ -66,6 +68,15 @@ class CoreDet(unittest.TestCase):
             g.drop_key(m, 3)
         with self.assertRaises(g.GoldenError):
             g.add_key(m, 1)
+
+    def test_nesting_limit(self):
+        g.uncbor(bytes.fromhex("81" * 64 + "00"))
+        with self.assertRaises(g.GoldenError):
+            g.uncbor(bytes.fromhex("81" * 65 + "00"))
+
+    def test_refuses_keys_that_encode_alike(self):
+        with self.assertRaises(g.GoldenError):
+            g.cbor({g.Raw(b"\x01"): "raw", 1: "int"})
 
     def test_raw_is_copied(self):
         self.assertEqual(g.cbor({1: g.Raw(b"\x18\x18")}), bytes.fromhex("a1011818"))
@@ -182,6 +193,37 @@ class Primitives(unittest.TestCase):
             with self.assertRaises(g.GoldenError):
                 open_(key, n, ct, b"other aad")
 
+    def test_hpke_limits(self):
+        sk, pk = g.SUITE1.derive_key_pair(g.seed("TEST", "r"))
+        _, export_only = g.HPKESuite(aead=0xFFFF).setup_base_s(pk, b"", g.seed("TEST", "e"))
+        self.assertEqual(len(export_only.export(b"x", 32)), 32)
+        for op in (export_only.seal, export_only.open):
+            with self.assertRaises(g.GoldenError):
+                op(b"", b"")
+        _, s = g.SUITE1.setup_base_s(pk, b"", g.seed("TEST", "e"))
+        s.seq = 1 << 96
+        with self.assertRaises(g.GoldenError):
+            s.seal(b"", b"")
+        with self.assertRaises(g.GoldenError):
+            g.HPKESuite(kem=0x0021)
+
+    def test_x25519_small_order_point(self):
+        with self.assertRaises(g.GoldenError):
+            g.x25519(g.seed("TEST", "x"), bytes(32))
+        with self.assertRaises(g.GoldenError):
+            g.SUITE1.setup_base_r(bytes(32), g.seed("TEST", "r"), b"")
+
+    def test_hkdf_output_length(self):
+        prk = g.seed("TEST", "prk")
+        self.assertEqual(len(g.hkdf_expand(prk, b"", 255 * 32)), 255 * 32)
+        self.assertEqual(g.hkdf_expand(prk, b"", 0), b"")
+        for n in (-1, 255 * 32 + 1):
+            with self.subTest(n=n), self.assertRaises(g.GoldenError):
+                g.hkdf_expand(prk, b"", n)
+
+    def test_nfc(self):
+        self.assertEqual(g.nfc("e\u0301"), "\u00e9")
+
     def test_seed_rule(self):
         self.assertEqual(g.seed("RECOVERY-1", "rs"), g.sha256(b"anet-golden/v016/RECOVERY-1/rs"))
 
@@ -196,6 +238,35 @@ class Primitives(unittest.TestCase):
         ):
             with self.subTest(name=name), mock.patch.object(g, name, broken), self.assertRaises(g.GoldenError):
                 g.selftest()
+
+
+class Framework(unittest.TestCase):
+    def test_vector_paths_are_checked(self):
+        for bad in ("Other/x.json", "ANetCore", "ANetCore/../ANet/x.json", "ANetCore/x/"):
+            with self.subTest(path=bad), self.assertRaises(g.GoldenError):
+                g.vector("ZZ-TEST", bad)
+        with self.assertRaises(g.GoldenError):
+            g.vector("ZZ-TEST")
+
+    def test_one_generator_per_vector(self):
+        with mock.patch.dict(g.GENERATORS):
+            g.vector("ZZ-TEST", "ANetCore/x.json")(lambda: {})
+            with self.assertRaises(g.GoldenError):
+                g.vector("ZZ-TEST", "ANetCore/y.json")(lambda: {})
+        self.assertNotIn("ZZ-TEST", g.GENERATORS)
+
+    def test_serialize(self):
+        self.assertEqual(g.serialize({"t": "\u6c34"}), '{\n  "t": "\u6c34"\n}\n'.encode("utf-8"))
+        self.assertEqual(g.serialize(b"\x00\xff"), b"\x00\xff")
+        self.assertEqual(g.serialize("\u00e9"), b"\xc3\xa9")
+        with self.assertRaises(g.GoldenError):
+            g.serialize(1)
+
+    def test_an_error_in_the_script_exits_2(self):
+        err = io.StringIO()
+        with mock.patch.object(g, "check", side_effect=KeyError("id")), contextlib.redirect_stderr(err):
+            self.assertEqual(g.main(["check"]), 2)
+        self.assertIn("internal error, KeyError", err.getvalue())
 
 
 class XCheck(unittest.TestCase):
@@ -291,6 +362,20 @@ class XCheck(unittest.TestCase):
         self.assertEqual(g.write(self.ws, ["V2"], generators=self.gens), ["ANet/y/v2.cbor"])
         self.assertEqual((self.tmp / "ANet/y/v2.cbor").read_bytes(), bytes.fromhex("a10102"))
         self.assertEqual(self.check(all_repos=True)[0], [])
+
+    def test_generator_that_raises_is_a_problem(self):
+        def bug():
+            return {"k": bytes(3)[7]}
+        self.register("V1", ("ANetCore/x/testdata/v1.json",), bug)
+        self.assertProblem("V1: the generator raised IndexError")
+
+    def test_repository_is_known_by_its_module(self):
+        (self.tmp / "ANet").mkdir()
+        (self.tmp / "ANet/go.mod").write_text("module example.com/ANet\n")
+        self.assertIsNone(self.ws.repo("ANet"))
+        (self.tmp / "Refs/ANet").mkdir(parents=True)
+        (self.tmp / "Refs/ANet/go.mod").write_text("module github.com/ANetResearch/ANet\n\ngo 1.26\n")
+        self.assertEqual(self.ws.repo("ANet"), (self.tmp / "Refs/ANet").resolve())
 
     def test_generator_that_fails_is_a_problem(self):
         def boom():

@@ -18,8 +18,10 @@ Commands
   selftest         only the known-answer tests of the primitives
 
 Options
-  --root DIR       the directory that holds ANetCore, ANet and ANetHub (default: the directory
-                   that holds this ANetCore checkout); ANetLink is also looked for in DIR/Refs
+  --root DIR       where to look for ANet, ANetHub and ANetLink: DIR/<name> or DIR/Refs/<name>, a
+                   directory whose go.mod names module github.com/ANetResearch/<name> (default: the
+                   directory that holds this ANetCore checkout). ANetCore, its index and the
+                   generators are always this checkout
   --all-repos      a repository that is not there is an error; without it, the vectors that live
                    in a missing repository are listed as not checked
 
@@ -27,15 +29,17 @@ Environment: Python 3.10 or later and the packages in requirements.txt beside th
 (`python3 -m pip install -r golden/py/requirements.txt`).
 
 Exit status: 0 everything reproduced; 1 a vector or the index disagrees (each problem is printed
-with what to do); 2 the tool could not run (a missing library, a failed known-answer test, bad
-arguments).
+with what to do, including a generator that raised); 2 the tool could not run (a missing library,
+a failed known-answer test, bad arguments, an error in this script).
 
 Adding a vector
   1. Its row is in golden/testdata/index.json already: the id, the files, the labels and objects
      it covers, and "gen" (who produces the bytes). Remove the row's "todo" marker when the file
      is delivered; golden/index_test.go fails while a delivered file still carries one.
-  2. Write a generator below, in the section of its area, and register it with @vector(id, paths):
-     the paths are "<repository>/<path in it>", exactly the files of the index row. It returns the
+  2. Write a generator below, in the section of its area, and register it with @vector(id, paths),
+     written at the start of a line with the id as a string literal (golden/index_test.go reads
+     the ids from this file's text): the paths are "<repository>/<path in it>", exactly the files
+     of the index row. It returns the
      content: a dict or list (written as JSON, two-space indent, one trailing newline), bytes
      (written as they are) or str; with several paths, a dict from path to content.
   3. Every random input comes from seed(vector id, role) = SHA-256("anet-golden/v016/<id>/<role>")
@@ -56,8 +60,11 @@ import json
 import math
 import struct
 import sys
+import traceback
 import unicodedata
 from pathlib import Path
+
+_REQUIREMENTS = Path(__file__).resolve().with_name("requirements.txt")
 
 try:
     import cryptography
@@ -71,7 +78,7 @@ try:
     from cryptography.exceptions import InvalidSignature, InvalidTag
 except ImportError as e:  # pragma: no cover - environment
     print("gen_v016.py: the cryptography package it needs is missing or too old (%s); "
-          "run: python3 -m pip install -r golden/py/requirements.txt" % e, file=sys.stderr)
+          "run: python3 -m pip install -r %s" % (e, _REQUIREMENTS), file=sys.stderr)
     sys.exit(2)
 
 CORE_DIR = Path(__file__).resolve().parents[2]  # this ANetCore checkout
@@ -334,7 +341,10 @@ def x25519_public(sk: bytes) -> bytes:
 
 def x25519(sk: bytes, pk: bytes) -> bytes:
     """X25519(sk, pk); an all-zero result (a small-order point) is refused, as RFC 9180 requires."""
-    out = X25519PrivateKey.from_private_bytes(bytes(sk)).exchange(X25519PublicKey.from_public_bytes(bytes(pk)))
+    try:
+        out = X25519PrivateKey.from_private_bytes(bytes(sk)).exchange(X25519PublicKey.from_public_bytes(bytes(pk)))
+    except ValueError as e:  # the package refuses a small-order point itself, and a wrong length
+        raise GoldenError("x25519: %s" % e) from None
     if out == b"\x00" * 32:
         raise GoldenError("x25519: all-zero shared secret")
     return out
@@ -615,7 +625,7 @@ def _kat_hpke():
         from cryptography.hazmat.primitives import hpke
     except ImportError:
         raise GoldenError("the cryptography package %s has no HPKE to check against; "
-                          "python3 -m pip install -r golden/py/requirements.txt" % cryptography.__version__) from None
+                          "run: python3 -m pip install -r %s" % (cryptography.__version__, _REQUIREMENTS)) from None
     other = hpke.Suite(hpke.KEM.X25519, hpke.KDF.HKDF_SHA256, hpke.AEAD.CHACHA20_POLY1305)
     sk_r, pk_r = SUITE1.derive_key_pair(sha256(b"anet-golden/v016/selftest/recipient"))
     info, pt = b"anet golden self-test", b"opened by another HPKE"
@@ -810,9 +820,22 @@ def render(g: Generator) -> dict[str, bytes]:
     return {p: serialize(out[p]) for p in g.paths}
 
 
+def _module_of(d: Path) -> str:
+    """The module path a go.mod declares, or "" (the same test golden/index_test.go applies)."""
+    try:
+        text = (d / "go.mod").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("module "):
+            return line[len("module "):].strip().strip('"')
+    return ""
+
+
 class Workspace:
-    """Where the repositories are: ANetCore is the checkout this script is in (or root/ANetCore);
-    the others are root/<name>, or root/Refs/<name>."""
+    """Where the repositories are: ANetCore is the checkout this script is in (or core); each
+    other repository is root/<name> or root/Refs/<name>, whichever declares its module."""
 
     def __init__(self, root: Path | None = None, core: Path | None = None):
         self.core = (core or CORE_DIR).resolve()
@@ -822,7 +845,7 @@ class Workspace:
         if name == "ANetCore":
             return self.core
         for d in (self.root / name, self.root / "Refs" / name):
-            if (d / "go.mod").is_file():
+            if _module_of(d) == "github.com/ANetResearch/" + name:
                 return d
         return None
 
@@ -846,6 +869,13 @@ def load_index(ws: Workspace) -> dict:
 def index_files(entry: dict) -> list[tuple[str, dict]]:
     """The file artifacts of an index row as ("<repository>/<path>", artifact)."""
     return [("%s/%s" % (a["repo"], a["path"]), a) for a in entry.get("at", []) if not a.get("test") and not a["path"].endswith("/")]
+
+
+def _where(e: BaseException) -> str:
+    """The exception's type and the line of this script it was raised from."""
+    frames = [f for f in traceback.extract_tb(e.__traceback__) if Path(f.filename).resolve() == Path(__file__).resolve()]
+    at = (" at line %d (%s)" % (frames[-1].lineno, frames[-1].name)) if frames else ""
+    return type(e).__name__ + at
 
 
 def _first_difference(want: bytes, got: bytes) -> str:
@@ -887,6 +917,9 @@ def check(ws: Workspace, generators: dict[str, Generator] | None = None, index: 
             outputs = render(g)
         except GoldenError as e:
             problems.append("%s: the generator failed: %s" % (vid, e))
+            continue
+        except Exception as e:  # a bug in one generator must not hide the others' results
+            problems.append("%s: the generator raised %s; fix it there: %s" % (vid, _where(e), e))
             continue
         for path, want in outputs.items():
             if absent_repo(path, vid):
@@ -1000,7 +1033,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("command", nargs="?", default="check", choices=("check", "write", "list", "selftest"))
     ap.add_argument("ids", nargs="*")
     ap.add_argument("--all", action="store_true", help="write: every registered vector")
-    ap.add_argument("--root", type=Path, help="the directory that holds ANetCore, ANet and ANetHub")
+    ap.add_argument("--root", type=Path, help="where to look for ANet, ANetHub and ANetLink (DIR/<name> or DIR/Refs/<name>)")
     ap.add_argument("--all-repos", action="store_true", help="a missing repository is an error")
     a = ap.parse_args(argv)
     ws = Workspace(root=a.root)
@@ -1023,6 +1056,10 @@ def main(argv: list[str]) -> int:
         problems, notes = check(ws, all_repos=a.all_repos)
     except GoldenError as e:
         print("gen_v016.py: %s" % e, file=sys.stderr)
+        return 2
+    except Exception as e:  # an error in this script: say where, and do not pass for a vector mismatch
+        print("gen_v016.py: internal error, %s: %s; the traceback follows" % (_where(e), e), file=sys.stderr)
+        traceback.print_exc()
         return 2
     for n in notes:
         print("note:", n)
