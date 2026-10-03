@@ -281,9 +281,16 @@ type rawSigned struct {
 	Extra   []byte          `cbor:"4,keyasint,omitempty"`
 }
 
-// rawKEL encodes prefix followed by an event whose bytes are head (signed by k as the bytes
-// are), with extra as key 4 of that event's signed event when it is not nil.
+// rawKEL encodes prefix followed by an event whose bytes are head, signed by k and identified
+// over head itself, with extra as key 4 of that event's signed event when it is not nil.
 func rawKEL(t testing.TB, prefix []SignedEvent, head []byte, k ed25519.PrivateKey, extra []byte) []byte {
+	t.Helper()
+	return rawKELOver(t, prefix, head, head, k, extra)
+}
+
+// rawKELOver is rawKEL with the signature and the event id over signed instead of head: the same
+// event carried in other bytes (CORE-E2).
+func rawKELOver(t testing.TB, prefix []SignedEvent, head, signed []byte, k ed25519.PrivateKey, extra []byte) []byte {
 	t.Helper()
 	var out []rawSigned
 	for _, se := range prefix {
@@ -293,7 +300,7 @@ func rawKEL(t testing.TB, prefix []SignedEvent, head []byte, k ed25519.PrivateKe
 		}
 		out = append(out, rawSigned{Event: b, Sig: se.Sig, EventID: se.EventID})
 	}
-	out = append(out, rawSigned{Event: head, Sig: ed25519.Sign(k, head), EventID: anetcid.MustSum(head), Extra: extra})
+	out = append(out, rawSigned{Event: head, Sig: ed25519.Sign(k, signed), EventID: anetcid.MustSum(signed), Extra: extra})
 	b, err := coredet.Marshal(out)
 	if err != nil {
 		t.Fatal(err)
@@ -515,31 +522,43 @@ func negativeCases(t testing.TB) []negCase {
 	}
 	add(`key 0 is "anet.kel/1"`, wrong("anet.kel/1"), ErrKELv1.Error())
 	add(`key 0 is "anet.kel/2 "`, wrong("anet.kel/2 "), ErrKELv1.Error())
+	headBytes, err := coredet.Marshal(rot1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// with writes rot 1 with key k set to v. A new key is signed as written; another form of a key
+	// the event already has is the same event, so it carries the canonical form's signature and id.
 	with := func(k uint64, v []byte) []byte {
 		mm := rawMap(t, rot1)
+		_, same := mm[k]
 		mm[k] = v
-		return rawKEL(t, icpA, encodeMap(t, mm, sortedKeys(mm)), ka[1], nil)
+		b := encodeMap(t, mm, sortedKeys(mm))
+		if same || k == 12 || k == 9 {
+			return rawKELOver(t, icpA, b, headBytes, ka[1], nil)
+		}
+		return rawKEL(t, icpA, b, ka[1], nil)
 	}
-	add("key 12 written as false", with(12, []byte{0xf4}), ErrNonCanonicalEvent.Error())
-	add("key 9 written as an empty list", with(9, []byte{0x80}), ErrNonCanonicalEvent.Error())
-	add("key 1 written as an empty string", func() []byte {
-		mm := rawMap(t, icpEvent(ka[0], ka[1], hubT0, ToadHub))
+	add("key 12 written as false (same event, non-CoreDet bytes)", with(12, []byte{0xf4}), ErrNonCanonicalEvent.Error())
+	add("key 9 written as an empty list (same event, non-CoreDet bytes)", with(9, []byte{0x80}), ErrNonCanonicalEvent.Error())
+	add("key 1 written as an empty string (same event, non-CoreDet bytes)", func() []byte {
+		icp := icpEvent(ka[0], ka[1], hubT0, ToadHub)
+		canon, err := coredet.Marshal(icp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mm := rawMap(t, icp)
 		mm[1] = []byte{0x60}
-		return rawKEL(t, nil, encodeMap(t, mm, sortedKeys(mm)), ka[0], nil)
+		return rawKELOver(t, nil, encodeMap(t, mm, sortedKeys(mm)), canon, ka[0], nil)
 	}(), ErrNonCanonicalEvent.Error())
 	add("keys out of order (same event, non-CoreDet bytes)", func() []byte {
 		order := sortedKeys(m)
 		order[7], order[8] = order[8], order[7]
-		return rawKEL(t, icpA, encodeMap(t, m, order), ka[1], nil)
+		return rawKELOver(t, icpA, encodeMap(t, m, order), headBytes, ka[1], nil)
 	}(), ErrNonCanonicalEvent.Error())
 	add("seq written in two bytes (same event, non-CoreDet bytes)", with(2, []byte{0x18, 0x01}), ErrNonCanonicalEvent.Error())
 	add("retired key 10 (revoked_since)", with(10, []byte{0x01}), errUnregisteredEventKey.Error())
 	add("reserved key 13", with(13, []byte{0x01}), errUnregisteredEventKey.Error())
 	add("key 64", with(64, []byte{0x01}), errUnregisteredEventKey.Error())
-	headBytes, err := coredet.Marshal(rot1)
-	if err != nil {
-		t.Fatal(err)
-	}
 	add("signed event carries reserved key 4", rawKEL(t, icpA, headBytes, ka[1], []byte{1}), errUnregisteredSignedKey.Error())
 	add("empty KEL", []byte{0x80}, "identity: empty KEL")
 	return cs
