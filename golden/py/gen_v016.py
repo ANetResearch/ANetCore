@@ -1005,6 +1005,347 @@ def gen_rfc9180():
     }
 
 
+# --- HPP: the liability tree (LIAB-1) and the registration proof of work (REGPOW-1) ------------
+
+U64 = 1 << 64
+MAX_SUM = (1 << 63) - 1
+
+
+def u64be(n: int) -> bytes:
+    return struct.pack(">Q", n % U64)
+
+
+class Stream:
+    """The test random source: SHA-256(UTF-8(label) || u64be(i)) for i = 0, 1, …, concatenated."""
+
+    def __init__(self, label: str):
+        self.label = label.encode("utf-8")
+        self.i = 0
+        self.buf = b""
+
+    def read(self, n: int) -> bytes:
+        while len(self.buf) < n:
+            self.buf += sha256(self.label + u64be(self.i))
+            self.i += 1
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+
+def aid_for(vector_id: str, role: str) -> str:
+    """A stand-in AID: CIDv1, dag-cbor (0x71), sha2-256, base32 lower without padding, whose digest
+    is seed(vector id, "aid/<role>")."""
+    raw = bytes([0x01, 0x71, 0x12, 0x20]) + seed(vector_id, "aid/" + role)
+    return "b" + base64.b32encode(raw).decode("ascii").lower().rstrip("=")
+
+
+LEAF_LABEL = b"anet-liab-leaf/v1"
+NODE_LABEL = b"anet-liab-node/v1"
+
+
+def liab_content(aid, to_day, balance):
+    return cbor({1: aid, 2: to_day, 3: balance})
+
+
+def liab_leaf_preimage(aid, to_day, balance, salt):
+    return LEAF_LABEL + b"\x00" + salt + liab_content(aid, to_day, balance)
+
+
+def liab_leaf(aid, to_day, balance, salt):
+    return sha256(liab_leaf_preimage(aid, to_day, balance, salt))
+
+
+def liab_node_preimage(l, r):
+    (lh, ls), (rh, rs) = l, r
+    return NODE_LABEL + b"\x00" + lh + u64be(ls) + rh + u64be(rs)
+
+
+def liab_node(l, r):
+    return sha256(liab_node_preimage(l, r))
+
+
+def uniform(rnd, m):
+    """Uniform integer in [0, m): 8 bytes big-endian, read again while x >= 2^64 - (2^64 mod m)."""
+    limit = U64 - (U64 % m)
+    while True:
+        x = struct.unpack(">Q", rnd.read(8))[0]
+        if x < limit:
+            return x % m
+
+
+def liab_build(accounts, to_day, rnd, min_leaves=16):
+    """Pad, shuffle (Fisher-Yates, i = n-1 … 1, j = uniform(i+1)), then one salt per position."""
+    size = min_leaves
+    while size < len(accounts):
+        size *= 2
+    entries = [[a, b] for a, b in accounts] + [["", 0] for _ in range(size - len(accounts))]
+    for i in range(size - 1, 0, -1):
+        j = uniform(rnd, i + 1)
+        entries[i], entries[j] = entries[j], entries[i]
+    return [(a, b, rnd.read(32)) for a, b in entries]
+
+
+def liab_levels(entries, to_day, wrap=False):
+    """Every level, leaves first, of (hash, sum). Sums above 2^63-1 raise unless wrap is set; with
+    wrap the sums are taken mod 2^64, which is how a tree that hides a debt by overflow is made."""
+    cur = [(liab_leaf(a, to_day, b, s), b) for a, b, s in entries]
+    levels = [cur]
+    while len(cur) > 1:
+        nxt = []
+        for i in range(0, len(cur), 2):
+            l, r = cur[i], cur[i + 1]
+            total = l[1] + r[1]
+            if wrap:
+                total %= U64
+            elif l[1] > MAX_SUM or r[1] > MAX_SUM or total > MAX_SUM:
+                raise GoldenError("liability tree: a sum over 2^63-1")
+            nxt.append((liab_node(l, r), total))
+        levels.append(nxt)
+        cur = nxt
+    return levels
+
+
+def liab_fold(p):
+    """The (hash, sum) a proof's leaf and path reach under L25 and L26."""
+    h = liab_leaf(p["aid"], p["to_day"], p["balance"], bytes.fromhex(p["salt"]))
+    cur = (h, p["balance"])
+    for st in p["path"]:
+        sib = (bytes.fromhex(st["h"]), st["sum"])
+        l, r = (sib, cur) if st["side"] == "L" else (cur, sib)
+        cur = (liab_node(l, r), l[1] + r[1])
+    return cur
+
+
+def liab_proof(entries, levels, to_day, index):
+    a, b, s = entries[index]
+    path = []
+    i = index
+    for lvl in range(len(levels) - 1):
+        sib, side = (i + 1, "R") if i % 2 == 0 else (i - 1, "L")
+        h, sm = levels[lvl][sib]
+        path.append({"h": b16(h), "sum": sm, "side": side})
+        i //= 2
+    return {"to_day": to_day, "aid": a, "balance": b, "salt": b16(s), "path": path}
+
+
+def copy_proof(p):
+    return json.loads(json.dumps(p))
+
+
+@vector("LIAB-1", "ANetCore/liabtree/testdata/vec-liab-1.json")
+def gen_liab_1():
+    V = "LIAB-1"
+    to_day = 20454  # 2026-01-01
+    balances = [120, 0, 7919, 1000000, 42]
+    accounts = [(aid_for(V, "account-%d" % (i + 1)), b) for i, b in enumerate(balances)]
+    rand_label = "anet-golden/v016/%s/rand" % V
+
+    # the two hashes, alone
+    leaf_salt = seed(V, "salt/leaf")
+    a3, b3 = accounts[2]
+    pad_salt = seed(V, "salt/padding")
+    lnode = (seed(V, "node/left"), 5)
+    rnode = (seed(V, "node/right"), 7)
+
+    entries = liab_build(accounts, to_day, Stream(rand_label))
+    levels = liab_levels(entries, to_day)
+    root, outstanding = levels[-1][0]
+    assert outstanding == sum(balances)
+    third = next(i for i, e in enumerate(entries) if e[0] == a3)
+    proof = liab_proof(entries, levels, to_day, third)
+
+    neg = []
+
+    # moved sums on one path: take k from one sibling's sum and add it to another's. The root sum is
+    # the same, so a node hash that covers no sums at all would accept. (A hash over a node's total
+    # alone still refuses this single path; moved_split below is the case it misses.)
+    moved = copy_proof(proof)
+    i = next(n for n, st in enumerate(moved["path"]) if st["sum"] >= 1)
+    j = next(n for n in range(len(moved["path"])) if n != i)
+    moved["path"][i]["sum"] -= 1
+    moved["path"][j]["sum"] += 1
+    neg.append({"name": "moved_sum", "note": "path[%d].sum - 1 and path[%d].sum + 1: the root sum is unchanged, the root hash is not" % (i, j),
+                "proof": moved, "error": "root"})
+
+    for name, note, edit in [
+        ("balance_changed", "the leaf's balance - 1", lambda p: p.__setitem__("balance", p["balance"] - 1)),
+        ("salt_changed", "one byte of the salt", lambda p: p.__setitem__("salt", ("%02x" % (int(p["salt"][:2], 16) ^ 1)) + p["salt"][2:])),
+        ("day_changed", "to_day + 1", lambda p: p.__setitem__("to_day", p["to_day"] + 1)),
+        ("aid_changed", "another account's AID", lambda p: p.__setitem__("aid", accounts[0][0])),
+        ("sibling_hash_changed", "one byte of path[1].h", lambda p: p["path"][1].__setitem__("h", ("%02x" % (int(p["path"][1]["h"][:2], 16) ^ 1)) + p["path"][1]["h"][2:])),
+        ("sibling_sum_changed", "path[2].sum + 1, which also changes the root sum", lambda p: p["path"][2].__setitem__("sum", p["path"][2]["sum"] + 1)),
+        ("side_flipped", "path[0].side swapped", lambda p: p["path"][0].__setitem__("side", "L" if p["path"][0]["side"] == "R" else "R")),
+    ]:
+        q = copy_proof(proof)
+        edit(q)
+        neg.append({"name": name, "note": note, "proof": q, "error": "root"})
+
+    short = copy_proof(proof)
+    short["path"] = short["path"][:-1]
+    neg.append({"name": "path_short", "note": "the last step dropped", "proof": short, "error": "malformed"})
+    neg.append({"name": "depth_mismatch", "note": "depth 5 for a tree of depth 4", "proof": copy_proof(proof), "depth": 5, "error": "malformed"})
+    neg.append({"name": "outstanding_mismatch", "note": "the record's outstanding is the true sum + 1",
+                "proof": copy_proof(proof), "outstanding": outstanding + 1, "error": "sum"})
+    pad = copy_proof(proof)
+    pad["aid"] = ""
+    neg.append({"name": "padding_aid", "note": "the empty AID marks a padding leaf, which is nobody's", "proof": pad, "error": "malformed"})
+
+    # Sum overflow: a tree in which one leaf holds 2^64 - 3, so with sums taken mod 2^64 the
+    # victim's subtree adds up to 5 + 2^64 - 3 = 2 and the debt disappears from the total. Every
+    # hash is consistent; only the sum check refuses it.
+    victim = (accounts[0][0], 5, seed(V, "overflow/victim"))
+    giant = (aid_for(V, "overflow-giant"), U64 - 3, seed(V, "overflow/giant"))
+    others = [("", 0, seed(V, "overflow/pad-%d" % k)) for k in range(14)]
+    ov_entries = [victim, giant] + others
+    ov_levels = liab_levels(ov_entries, to_day, wrap=True)
+    ov_root, ov_sum = ov_levels[-1][0]
+    assert ov_sum == 2
+    neg.append({"name": "sum_wraps", "note": "a sibling sum of 2^64 - 3: taken mod 2^64 the root sum is 2, and every hash matches",
+                "proof": liab_proof(ov_entries, ov_levels, to_day, 0), "root": b16(ov_root), "outstanding": ov_sum, "depth": 4, "error": "overflow"})
+
+    big = (aid_for(V, "overflow-big"), 1 << 63, seed(V, "overflow/big"))
+    big_entries = [victim, big] + others
+    big_levels = liab_levels(big_entries, to_day, wrap=True)
+    big_root, big_sum = big_levels[-1][0]
+    neg.append({"name": "sum_over_max", "note": "a sibling sum of 2^63: no wrap, but the sums and the outstanding are over 2^63 - 1",
+                "proof": liab_proof(big_entries, big_levels, to_day, 0), "root": b16(big_root), "outstanding": big_sum, "depth": 4, "error": "overflow"})
+
+    # Moved split: two sibling accounts (30 and 12) under one parent. A hub that hashed only a
+    # node's total could store that parent with the sum 30, hiding 12, and show each account a
+    # different split of it: a sees (30, 0), b sees (18, 12), one side minus 12 and the other plus
+    # 12. Both paths would reach one root. Under L26 the two parents differ, so the paths reach
+    # different roots and at most one of them can match the record.
+    hidden = 12
+    sa = (aid_for(V, "split-a"), 30, seed(V, "split/a"))
+    sb = (aid_for(V, "split-b"), 12, seed(V, "split/b"))
+    sp_entries = [sa, sb] + [("", 0, seed(V, "split/pad-%d" % k)) for k in range(14)]
+    sp_levels = liab_levels(sp_entries, to_day)
+    pa = liab_proof(sp_entries, sp_levels, to_day, 0)
+    pb = liab_proof(sp_entries, sp_levels, to_day, 1)
+    pa["path"][0]["sum"] -= hidden
+    pb["path"][0]["sum"] -= hidden
+    ra, sum_a = liab_fold(pa)
+    rb, sum_b = liab_fold(pb)
+    assert sum_a == sum_b == sa[1] + sb[1] - hidden and ra != rb
+    split = {"note": "sibling accounts of 30 and 12 under a parent stored with the sum 30: a is shown (30, 0), b is shown (18, 12); each path reaches its own root, and each is refused against the other's",
+             "hidden": hidden, "proofs": [pa, pb], "roots": [b16(ra), b16(rb)], "sum": sum_a, "depth": 4}
+
+    return {
+        "id": V,
+        "description": "Liability tree: the L25 leaf and L26 node hashes; 5 accounts padded to 16 leaves with a fixed random source; the root, outstanding and depth; the third account's proof in its response form; refused proofs; two sibling accounts shown different splits of one parent sum (moved_split).",
+        "labels": {"leaf": LEAF_LABEL.decode(), "node": NODE_LABEL.decode()},
+        "leaf": {"aid": a3, "to_day": to_day, "balance": b3, "salt": b16(leaf_salt),
+                 "content": b16(liab_content(a3, to_day, b3)),
+                 "preimage": b16(liab_leaf_preimage(a3, to_day, b3, leaf_salt)),
+                 "hash": b16(liab_leaf(a3, to_day, b3, leaf_salt))},
+        "padding_leaf": {"aid": "", "to_day": to_day, "balance": 0, "salt": b16(pad_salt),
+                         "content": b16(liab_content("", to_day, 0)),
+                         "preimage": b16(liab_leaf_preimage("", to_day, 0, pad_salt)),
+                         "hash": b16(liab_leaf("", to_day, 0, pad_salt))},
+        "node": {"left": {"h": b16(lnode[0]), "sum": lnode[1]}, "right": {"h": b16(rnode[0]), "sum": rnode[1]},
+                 "preimage": b16(liab_node_preimage(lnode, rnode)), "hash": b16(liab_node(lnode, rnode)), "sum": lnode[1] + rnode[1]},
+        "build": {
+            "rand": "SHA-256(UTF-8(rand_label) || u64be(i)) for i = 0, 1, ..., concatenated; consumed by liabtree.Build",
+            "rand_label": rand_label,
+            "to_day": to_day,
+            "accounts": [{"aid": a, "balance": b} for a, b in accounts],
+            "leaves": len(entries),
+            "depth": len(levels) - 1,
+            "entries": [{"aid": a, "balance": b, "salt": b16(s), "hash": b16(levels[0][k][0])} for k, (a, b, s) in enumerate(entries)],
+            "root": b16(root),
+            "outstanding": outstanding,
+        },
+        "proof": proof,
+        "negatives": neg,
+        "moved_split": split,
+    }
+
+
+POW_LABEL = b"anet-regpow/v1"
+SEED_LABEL = b"anet-regpow-seed/v1"
+HOUR_MS = 3600000
+
+
+def pow_seed(key, hour):
+    return hmac_sha256(key, SEED_LABEL + u64be(hour))
+
+
+def pow_prefix(hub_aid, aid, hour_seed):
+    return POW_LABEL + b"\x00" + hub_aid.encode("utf-8") + b"\x00" + aid.encode("utf-8") + b"\x00" + hour_seed
+
+
+def zero_bits(h):
+    n = int.from_bytes(h, "big")
+    return 256 - n.bit_length()
+
+
+def pow_search(prefix, accept):
+    """The smallest counter c whose nonce u64be(c) gives a hash accepted by accept(zero bits). The
+    search keeps the SHA-256 state after the prefix (hashlib, for speed: millions of tries); every
+    hash written to the vector is computed again with sha256() above."""
+    base = hashlib.sha256(prefix)
+    c = 0
+    while True:
+        h = base.copy()
+        h.update(u64be(c))
+        if accept(zero_bits(h.digest())):
+            return c
+        c += 1
+
+
+@vector("REGPOW-1", "ANetCore/regpow/testdata/vec-regpow-1.json")
+def gen_regpow_1():
+    V = "REGPOW-1"
+    bits = 22
+    key = seed(V, "pow_key")
+    ms = 1767225600000 + 5400000  # 2026-01-01T01:30:00Z
+    hour = ms // HOUR_MS
+    hour_seed = pow_seed(key, hour)
+    hub = aid_for(V, "hub")
+    aid = aid_for(V, "agent")
+    pre = pow_prefix(hub, aid, hour_seed)
+
+    def solution(name, c, note):
+        nonce = u64be(c)
+        h = sha256(pre + nonce)
+        z = zero_bits(h)
+        return {"name": name, "note": note, "counter": c, "nonce": b16(nonce), "preimage": b16(pre + nonce), "hash": b16(h), "zero_bits": z,
+                "check": {str(b): z >= b for b in (8, 21, 22, 23)}}
+
+    c22 = pow_search(pre, lambda z: z >= 22)
+    c21 = pow_search(pre, lambda z: z == 21)
+    c8 = pow_search(pre, lambda z: z >= 8)
+    nonce22 = u64be(c22)
+    prev_seed = pow_seed(key, hour - 1)
+    other_hub = aid_for(V, "other-hub")
+    return {
+        "id": V,
+        "description": "Registration proof of work: the L24 seed of an hour under a fixed pow_key; the L23 hash; the smallest counters whose 8-byte big-endian nonce passes 22 bits, has exactly 21 bits, and passes 8 bits; refused inputs.",
+        "labels": {"hash": POW_LABEL.decode(), "seed": SEED_LABEL.decode()},
+        "bits": bits,
+        "seed": {"pow_key": b16(key), "ms": ms, "hour": hour, "message": b16(SEED_LABEL + u64be(hour)), "seed": b16(hour_seed), "not_after": (hour + 2) * HOUR_MS},
+        "hub_aid": hub,
+        "aid": aid,
+        "prefix": b16(pre),
+        "solutions": [
+            solution("pass_22", c22, "the first nonce with at least 22 leading zero bits"),
+            solution("fail_21", c21, "the first nonce with exactly 21 leading zero bits: passes 21, fails 22"),
+            solution("fast_8", c8, "the first nonce with at least 8 leading zero bits"),
+        ],
+        "negatives": [
+            {"name": "previous_hour_seed", "note": "pass_22's nonce against the previous hour's seed", "hub_aid": hub, "aid": aid,
+             "seed": b16(prev_seed), "nonce": b16(nonce22), "hash": b16(sha256(pow_prefix(hub, aid, prev_seed) + nonce22)), "error": ""},
+            {"name": "other_hub", "note": "pass_22's nonce for another hub", "hub_aid": other_hub, "aid": aid,
+             "seed": b16(hour_seed), "nonce": b16(nonce22), "hash": b16(sha256(pow_prefix(other_hub, aid, hour_seed) + nonce22)), "error": ""},
+            {"name": "empty_nonce", "note": "a nonce is 1 to 32 bytes", "hub_aid": hub, "aid": aid, "seed": b16(hour_seed), "nonce": "", "error": "nonce"},
+            {"name": "nonce_33_bytes", "note": "a nonce is 1 to 32 bytes", "hub_aid": hub, "aid": aid, "seed": b16(hour_seed), "nonce": "00" * 33, "error": "nonce"},
+            {"name": "hub_aid_nul", "note": "U+0000 in hub_aid (CORE-E9)", "hub_aid": hub[:8] + "\u0000" + hub[8:], "aid": aid, "seed": b16(hour_seed), "nonce": b16(nonce22), "error": "nul"},
+            {"name": "aid_nul", "note": "U+0000 in aid (CORE-E9)", "hub_aid": hub, "aid": aid[:8] + "\u0000" + aid[8:], "seed": b16(hour_seed), "nonce": b16(nonce22), "error": "nul"},
+            {"name": "boundary_moved", "note": "hub_aid + U+0000 + the start of aid, then the rest of aid: the same hash input bytes as aid_nul with the boundary moved; both refused (CORE-E9)",
+             "hub_aid": hub + "\u0000" + aid[:8], "aid": aid[8:], "seed": b16(hour_seed), "nonce": b16(nonce22), "error": "nul"},
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------------------------
 
 def _list(ws: Workspace) -> int:

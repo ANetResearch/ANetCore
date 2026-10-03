@@ -233,7 +233,7 @@
       "covers": "leaf and node hashes; a tree of 16 leaves; path verification; a path that moves a sum fails",
       "labels": ["L25", "L26"],
       "objects": ["LiabLeafContent"],
-      "at": [{"repo": "ANetCore", "path": "liabtree/testdata/vec-liab-1.json", "todo": "v030-todo(PAY-1)"}]
+      "at": [{"repo": "ANetCore", "path": "liabtree/testdata/vec-liab-1.json"}]
     },
     {
       "id": "REGPOW-1",
@@ -242,7 +242,7 @@
       "covers": "the PoW seed; the PoW hash; a nonce with 22 leading zero bits and one with 21",
       "labels": ["L23", "L24"],
       "objects": [],
-      "at": [{"repo": "ANetCore", "path": "regpow/testdata/vec-regpow-1.json", "todo": "v030-todo(PAY-1)"}]
+      "at": [{"repo": "ANetCore", "path": "regpow/testdata/vec-regpow-1.json"}]
     },
     {
       "id": "SUPPLY-EPOCH-1",
