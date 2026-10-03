@@ -13,11 +13,12 @@ import (
 // RELAYAUTH-3 (label L22): for every relayauth action of the wire registry, the exact PreimageV2
 // bytes of one request and the Ed25519 signature over them; and the retired actions are refused.
 //
-// The pinned preimages and signatures were computed independently of Go (golden/py/
-// gen_session_dir.py --relayauth3: Python hashlib, base64 and the cryptography package's
-// Ed25519). A change to the prefix, a separator, the digest input, the digest's alphabet or
-// padding, or an action's name fails here — and a hub and a daemon that disagree on any of those
-// bytes lock every node out of its own mailbox.
+// The pinned preimages and signatures were computed independently of Go: relayauth3_pins in
+// golden/py/gen_v016.py (Python on the cryptography package's SHA-256 and Ed25519), which
+// golden/py/test_gen_v016.py compares with the literals of ra3Rows in the CI job golden-xcheck. A
+// change to the prefix, a separator, the digest input, the digest's alphabet or padding, or an
+// action's name fails here — and a hub and a daemon that disagree on any of those bytes lock
+// every node out of its own mailbox.
 //
 // Signer keys: Ed25519 seeds SHA-256("anet-golden/v016/RELAYAUTH-3/agent") for the agent rows and
 // SHA-256("anet-golden/v016/RELAYAUTH-3/peer-hub") for the /fed/v3 rows (a peer hub signs those).
@@ -106,7 +107,7 @@ func ra3Key(role string) (string, ed25519.PrivateKey) {
 	return aid, ed25519.NewKeyFromSeed(s[:])
 }
 
-func TestRELAYAUTH3Preimages(t *testing.T) {
+func TestRELAYAUTH_3(t *testing.T) {
 	for _, r := range ra3Rows {
 		t.Run(r.action, func(t *testing.T) {
 			if !relayauth.ValidAction(r.action) {

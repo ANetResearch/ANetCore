@@ -17,9 +17,9 @@ import (
 )
 
 // sessionVector is relayauth/testdata/vec-session-1.json (SESSION-1). It was made by
-// golden/py/gen_session_dir.py, which shares no code with this package: an HPKE sender written
-// on top of a separate X25519 and ChaCha20-Poly1305, and Python's own HMAC. Go only opens and
-// recomputes; it cannot seal with a chosen ephemeral key.
+// golden/py/gen_v016.py, which shares no code with this package: an HPKE sender written on top of
+// a separate X25519 and ChaCha20-Poly1305, and a separate HMAC. Go only opens and recomputes; it
+// cannot seal with a chosen ephemeral key.
 type sessionVector struct {
 	ID          string `json:"id"`
 	KeyDelivery struct {

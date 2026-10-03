@@ -143,7 +143,7 @@
       "covers": "PreimageV2 bytes and signature for every relayauth action (fed_* included); retired actions refused",
       "labels": ["L22"],
       "objects": [],
-      "at": [{"repo": "ANetCore", "path": "golden/relayauth_v3_test.go", "test": "TestRELAYAUTH_3", "todo": "v030-todo(SS-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/relayauth_v3_test.go", "test": "TestRELAYAUTH_3"}]
     },
     {
       "id": "SESSION-1",
@@ -152,7 +152,7 @@
       "covers": "the session MAC input and output; the receiving side of a session key delivery (fixed skR, recorded enc and ct)",
       "labels": ["L7", "L8"],
       "objects": [],
-      "at": [{"repo": "ANetCore", "path": "relayauth/testdata/vec-session-1.json", "todo": "v030-todo(SS-2)"}]
+      "at": [{"repo": "ANetCore", "path": "relayauth/testdata/vec-session-1.json"}]
     },
     {
       "id": "DIR-1",
@@ -161,7 +161,7 @@
       "covers": "the directory hash h and box key K; a box under a fixed nonce; opening it; a wrong AID does not open it",
       "labels": ["L9", "L10"],
       "objects": ["DirEntry"],
-      "at": [{"repo": "ANetCore", "path": "dirbox/testdata/vec-dir-1.json", "todo": "v030-todo(SS-2)"}]
+      "at": [{"repo": "ANetCore", "path": "dirbox/testdata/vec-dir-1.json"}]
     },
     {
       "id": "DELEGATE-3",
@@ -413,7 +413,7 @@
       {"repo": "ANetCore", "path": "seal/golden_test.go", "test": "TestVEC_SEALED_1", "todo": "v030-todo(CORE-2)"},
       {"repo": "ANetCore", "path": "seal/testdata/vec-sealed-1.json", "todo": "v030-todo(CORE-2)"}
     ]},
-    {"id": "VEC_RELAYAUTH_1", "why": "the v1 relayauth preimage is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RELAYAUTH_1", "todo": "v030-todo(SS-2)"}]},
+    {"id": "VEC_RELAYAUTH_1", "why": "the v1 relayauth preimage is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RELAYAUTH_1"}]},
     {"id": "VEC_KEL_SUPERSEDE_1", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_1", "todo": "v030-todo(KEL-1)"}]},
     {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2", "todo": "v030-todo(KEL-1)"}]}
   ],

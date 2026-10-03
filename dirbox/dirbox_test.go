@@ -14,8 +14,8 @@ import (
 	"github.com/ANetResearch/ANetCore/wire"
 )
 
-// dirVector is dirbox/testdata/vec-dir-1.json (DIR-1), made by golden/py/gen_session_dir.py with
-// its own SHA-256, HKDF, ChaCha20-Poly1305 and CBOR encoder. Go must reproduce h, K, the plaintext
+// dirVector is dirbox/testdata/vec-dir-1.json (DIR-1), made by golden/py/gen_v016.py with its
+// own SHA-256, HKDF, ChaCha20-Poly1305 and CBOR encoder. Go must reproduce h, K, the plaintext
 // and the box byte for byte, open every case, and refuse every refused box for the recorded reason.
 type dirVector struct {
 	ID    string `json:"id"`
