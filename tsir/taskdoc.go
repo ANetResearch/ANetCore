@@ -17,12 +17,16 @@ import (
 )
 
 // VersionPair is the TaskDoc typed version {major, minor} (tsir-spec §2.1).
+//
+//anet:wire VersionPair
 type VersionPair struct {
 	Major uint64 `cbor:"1,keyasint"`
 	Minor uint64 `cbor:"2,keyasint,omitempty"`
 }
 
 // MetaEntry is a name/value metadata pair (tsir-spec §2.1).
+//
+//anet:wire MetaEntry
 type MetaEntry struct {
 	Name  string `cbor:"1,keyasint"`
 	Value string `cbor:"2,keyasint"`
@@ -30,6 +34,8 @@ type MetaEntry struct {
 
 // Link is a typed reference; rel ∈ supersedes/derived-from/related/template/parent/contract
 // (tsir-spec §2.1/§2.5). A "template" link references an AET; "contract" references an ACC.
+//
+//anet:wire Link
 type Link struct {
 	Rel   string `cbor:"1,keyasint"`
 	Href  string `cbor:"2,keyasint"`
@@ -37,6 +43,8 @@ type Link struct {
 }
 
 // Intent is the task goal (tsir-spec §2.1).
+//
+//anet:wire Intent
 type Intent struct {
 	Summary string `cbor:"1,keyasint,omitempty"`
 	Format  string `cbor:"2,keyasint,omitempty"` // "text" / "markdown"
@@ -44,6 +52,8 @@ type Intent struct {
 }
 
 // Require is a capability requirement (tsir-spec §2.1).
+//
+//anet:wire Require
 type Require struct {
 	ID          string `cbor:"1,keyasint"`
 	Type        string `cbor:"2,keyasint,omitempty"` // skill/tool/protocol/resource
@@ -52,17 +62,23 @@ type Require struct {
 }
 
 // Output / Schema describe an acceptance artifact (tsir-spec §2.1).
+//
+//anet:wire Output
 type Output struct {
 	Format  string `cbor:"1,keyasint"` // media-type shape (contains "/")
 	MaxSize string `cbor:"2,keyasint,omitempty"`
 	Name    string `cbor:"3,keyasint,omitempty"`
 }
+
+//anet:wire Schema
 type Schema struct {
 	Type string `cbor:"1,keyasint"` // json-schema / regex
 	Body string `cbor:"2,keyasint"`
 }
 
 // Accept is a success-criterion entry; type ∈ artifact/test/quantitative/qualitative.
+//
+//anet:wire Accept
 type Accept struct {
 	Type        string   `cbor:"1,keyasint"`
 	Description string   `cbor:"2,keyasint,omitempty"`
@@ -71,6 +87,8 @@ type Accept struct {
 }
 
 // Context is supplementary key/value with visibility (tsir-spec §2.1).
+//
+//anet:wire Context
 type Context struct {
 	Key        string `cbor:"1,keyasint"`
 	Value      string `cbor:"2,keyasint,omitempty"`
@@ -80,6 +98,8 @@ type Context struct {
 }
 
 // Task is one task unit (tsir-spec §2.1).
+//
+//anet:wire Task
 type Task struct {
 	ID            string     `cbor:"1,keyasint,omitempty"`
 	Intent        Intent     `cbor:"10,keyasint"`
@@ -92,6 +112,8 @@ type Task struct {
 }
 
 // TaskDoc is the canonical task-contract object (tsir-spec §2.1).
+//
+//anet:wire TaskDoc
 type TaskDoc struct {
 	Version  VersionPair `cbor:"1,keyasint"`
 	Meta     []MetaEntry `cbor:"2,keyasint,omitempty"`
@@ -111,10 +133,12 @@ type TaskDoc struct {
 // for registered cid_significant labels — with no meta registry yet, all meta is treated as
 // unregistered/cosmetic and excluded (baseline; the registry-flag rule is a follow-up).
 
+//anet:wire VersionMajor
 type versionMajor struct {
 	Major uint64 `cbor:"1,keyasint"`
 }
 
+//anet:wire TaskDocPreimage
 type taskDocPreimage struct {
 	Version versionMajor `cbor:"1,keyasint"`
 	Links   []Link       `cbor:"3,keyasint,omitempty"`

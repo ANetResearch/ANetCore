@@ -1,0 +1,33 @@
+{
+  "format": "anet-wire-registry/1",
+  "release": "fx",
+  "objects": [
+    {"name": "Thing", "group": "fx", "class": "A", "tag": "anet.fx-thing/1", "keyspace": "closed", "owner": "-", "desc": "fixture",
+     "keys": [
+      {"n": 0, "name": "t", "type": "tstr", "value": "anet.fx-thing/1", "req": "must", "status": "active", "aliases": ["type"]},
+      {"n": 1, "name": "a", "type": "tstr", "req": "must", "status": "active"},
+      {"n": 2, "name": "b", "type": "uint", "req": "may", "status": "active"},
+      {"n": 3, "status": "retired", "was": "c"},
+      {"n": 4, "name": "inner", "type": "<Part>", "req": "may", "status": "active"}
+     ]},
+    {"name": "Part", "group": "fx", "class": "plain", "keyspace": "closed", "owner": "-", "desc": "fixture",
+     "keys": [{"n": 1, "name": "n", "type": "uint", "req": "must", "status": "active"}]},
+    {"name": "Outer", "group": "fx", "class": "plain", "keyspace": "critical", "owner": "-", "desc": "fixture",
+     "keys": [{"n": 1, "name": "v", "type": "uint", "req": "must", "status": "active"}, {"n": 2, "name": "to", "type": "tstr", "req": "must", "status": "active"}]}
+  ],
+  "tags": [
+    {"id": "L1", "values": ["anet.fx-thing/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "-", "key": "-", "owner": "-", "golden": "-"},
+    {"id": "L2", "values": ["anet-fx-relay/v2/"], "class": "text", "kind": "carried", "since": "0.2.1", "build": "-", "key": "-", "owner": "-", "golden": "-"}
+  ],
+  "relayauth": {"prefix": "anet-fx-relay/v2/", "actions": [
+    {"name": "poll", "route": "-", "signer": "agent", "status": "active", "owner": "-"},
+    {"name": "keys", "route": "-", "signer": "agent", "status": "active", "owner": "-"},
+    {"name": "send", "route": "-", "signer": "-", "status": "retired", "owner": "-"}
+  ]},
+  "reasons": {"user": [{"code": "busy"}, {"code": "denied"}], "hub": [{"code": "busy", "http": 429, "class": "relay"}], "shared": ["busy"]},
+  "strings": [],
+  "exempt": [{"class": "prose", "match": "regexp", "value": "[\\s%]", "note": "-"}],
+  "signers": {"methods": ["(*example.com/fx/identity.Controller).Sign", "(example.com/fx/identity.Signer).Sign"], "calls": [{"repo": "ANetCore", "func": "(*thing.Thing).Sign", "signs": "Thing"}]},
+  "scan": {"pattern": "^anet[-./]", "consts": [{"repo": "ANetCore", "pkg": "seal", "prefix": "outerKey", "object": "Outer"}],
+           "actions": {"repo": "ANetCore", "pkg": "relayauth", "prefix": "Action", "param": "action"}}
+}

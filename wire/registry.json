@@ -1,0 +1,2844 @@
+{
+  "format": "anet-wire-registry/1",
+  "release": "0.3.0",
+  "about": "Machine-readable register of anet 0.3.0 wire keys, labels, relayauth actions, reason codes, hub API and control fields, metadata keys and events. Frozen with the 0.3.0 core design: any change goes in one commit together with the design and the affected golden vectors. Checked by wire/registry_test.go and, against the code of each repository, by wire/scan; docs/wire-keys.md is generated from it by wire/gen.",
+  "versions": [
+    {"id": "V1", "layer": "release", "value": "ANetCore v0.16.0; anet 0.3.0; ANetHub 0.3.0; ANetLink 0.2.0 (C1 v1)", "where": "Go module tags, go.mod", "const": "ANetHub internal/aghub RequiredAnet = \"0.3.0\""},
+    {"id": "V2", "layer": "hub wire", "value": "X-ANet-Wire: 3", "where": "request and response header", "const": "ANetHub wireVersion = 3; ANet hubapi.WireVersion = 3"},
+    {"id": "V3", "layer": "outer envelope", "value": "v = 2: key 7 access required, key 8 exp optional", "where": "outer key 1", "const": "seal.EnvelopeVersion = 2"},
+    {"id": "V4", "layer": "HPKE info label", "value": "anet-seal/v2; second layer anet-ix/v2", "where": "info map key 1", "const": "seal.HPKELabel, seal.IXLabel"},
+    {"id": "V5", "layer": "layer-1 plaintext", "value": "Wrap (with or without a second layer)", "where": "Wrap", "const": "seal"},
+    {"id": "V6", "layer": "inner", "value": "adds 11 notice, 14 grant, 15 rk; 21 retired; 10 and 12 conditional; preimage v2", "where": "SealedInner", "const": "seal.SigLabel"},
+    {"id": "V7", "layer": "encryption key set", "value": "anet.enckeys/2: <= 32 keys, each <= 2 days, key 5 mbox required", "where": "key set key 0", "const": "seal.EncKeySetType"},
+    {"id": "V8", "layer": "KEL", "value": "KEL v2: key 0 anet.kel/2; icp, rot, dip only; keys 9, 11, 12; every identity re-incepted", "where": "event key 0", "const": "identity.KELType"},
+    {"id": "V9", "layer": "identity file", "value": "anet.identity/2", "where": "file key 0", "const": "identity"},
+    {"id": "V10", "layer": "new signed objects", "value": "anet.cap/1, anet.ksn/1, anet.receipt/2, anet.review/2, anet.review-att/1", "where": "body key 0", "const": "-"},
+    {"id": "V11", "layer": "relayauth", "value": "preimage anet-relay/v2/ unchanged; the action set of relayauth.actions; replay rule RC1", "where": "X-ANet-* headers", "const": "relayauth"},
+    {"id": "V12", "layer": "p2p frames", "value": "v: 3: adds dack, addr; removes not_delivered, reach, reachable", "where": "frame v", "const": "ANet module/p2p WireVersion = 3; tools/anetpeer"},
+    {"id": "V13", "layer": "C1 (ANet <-> ANetLink)", "value": "v1: CBOR only, /v1/*", "where": "URL path prefix", "const": "ANet provider/anetlink; ANetLink northbound/c1serv"},
+    {"id": "V14", "layer": "A2A card", "value": "anet-relay/v2 binding; anet-p2p/v1 and anet-pricing/v1 removed; anet-price/v1 (extended card only), anet-preview/v1", "where": "card URIs", "const": "a2acard.BindingRelayURI; ANet module/card.go"},
+    {"id": "V15", "layer": "evidence and payment", "value": "evidence v2; supply chain v2 (anet.supply.epoch, ael VersionMajor2); vouchers removed", "where": "body key 0; ael EventType", "const": "evidence, ael"},
+    {"id": "V16", "layer": "local data", "value": "PRAGMA user_version = 3 (interactions.db, hub.db); enc_keys.cbor v = 2; removed config.json keys refuse to start", "where": "SQLite header; file key", "const": "ANet internal/runtime/interactions; ANetHub internal/aghub"},
+    {"id": "V17", "layer": "local A2A", "value": "A2A 1.0; error detail domain agentnetwork.org.cn", "where": "-", "const": "module/a2a"}
+  ],
+  "objects": [
+    {
+      "name": "SealedEnvelope",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "critical",
+      "owner": "CORE",
+      "desc": "Outer sealed envelope v2, the only part a hub sees. Keys 0-63 must be understood; >= 64 are kept and digested.",
+      "carried": true,
+      "keys": [
+        {"n": 0, "status": "reserved"},
+        {"n": 1, "name": "v", "type": "uint", "value": "2", "req": "must", "status": "active", "v02": "uint", "note": "outer version; anything but 2 is bad-version"},
+        {"n": 2, "name": "to", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "recipient AID"},
+        {"n": 3, "name": "suite", "type": "uint", "req": "must", "status": "active", "v02": "uint", "note": "1 = DHKEM-X25519 / HKDF-SHA256 / ChaCha20-Poly1305; 2 reserved for a post-quantum suite"},
+        {"n": 4, "name": "kid", "type": "bstr", "size": 16, "req": "must", "status": "active", "v02": "bstr", "note": "kid of one of the recipient's encryption epoch keys; never an interaction key"},
+        {"n": 5, "name": "enc", "type": "bstr", "req": "must", "status": "active", "v02": "bstr", "note": "layer-1 HPKE enc, Nenc bytes"},
+        {"n": 6, "name": "ct", "type": "bstr", "req": "must", "status": "active", "v02": "bstr", "note": "layer-1 ciphertext; the plaintext is Wrap"},
+        {"n": 7, "name": "access", "type": "<Access>", "req": "must", "status": "active", "note": "delivery credential; outside the HPKE info, the inner signature and env_digest"},
+        {"n": 8, "name": "exp", "type": "uint", "req": "may", "status": "active", "note": "expiry of a one-shot envelope; when present it equals inner key 8 (else exp-mismatch); queued envelopes never carry it"},
+        {"n": 9, "status": "reserved", "to": 63, "note": "unknown-critical-field; the hub answers 400 bad_envelope"}
+      ]
+    },
+    {
+      "name": "Access",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "Delivery credential in outer key 7.",
+      "keys": [
+        {"n": 1, "name": "kind", "type": "uint", "req": "must", "status": "active", "note": "0 = first-contact session; 1 = capability; 2 reserved for an anonymous first-contact token (refused in 0.3.0)"},
+        {"n": 2, "name": "cap", "type": "<Cap>", "req": "cond", "cond": "kind = 1; forbidden when kind = 0", "status": "active"},
+        {"n": 3, "name": "proof", "type": "bstr", "size": 64, "req": "cond", "cond": "kind = 1; forbidden when kind = 0", "status": "active", "note": "proof of possession, Ed25519 by the holder key (L5)"}
+      ]
+    },
+    {
+      "name": "Cap",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "Capability as carried on the wire.",
+      "keys": [
+        {"n": 1, "name": "body", "type": "bstr<CapBody>", "req": "must", "status": "active", "note": "coredet(CapBody)"},
+        {"n": 2, "name": "sig", "type": "bstr", "size": 64, "req": "must", "status": "active", "note": "Ed25519 over body by the mailbox signing key"}
+      ]
+    },
+    {
+      "name": "CapBody",
+      "group": "envelope",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "Signed body of a capability issued by the recipient.",
+      "tag": "anet.cap/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.cap/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "owner", "type": "tstr", "req": "must", "status": "active", "note": "issuer AID; must equal outer to"},
+        {"n": 2, "name": "epoch", "type": "uint", "req": "must", "status": "active", "note": "must equal the owner's current mbox.epoch (>= 1)"},
+        {"n": 3, "name": "cap_id", "type": "bstr", "size": 16, "req": "must", "status": "active", "note": "random"},
+        {"n": 4, "name": "class", "type": "uint", "req": "must", "status": "active", "note": "1 = contact; 2 = stranger"},
+        {"n": 5, "name": "cap_exp", "type": "uint", "req": "must", "status": "active", "note": "expiry; accepted window now - 5 min <= cap_exp <= now + 31 days"},
+        {"n": 6, "name": "holder", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "holder Ed25519 public key, new for every capability"}
+      ]
+    },
+    {
+      "name": "Wrap",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "critical",
+      "owner": "FS",
+      "desc": "Layer-1 plaintext. Unknown keys 0-63 are bad-wrap; >= 64 are ignored.",
+      "keys": [
+        {"n": 0, "status": "reserved"},
+        {"n": 1, "name": "ikid", "type": "bstr", "size": 16, "req": "cond", "cond": "present exactly when there is a second layer, together with key 2", "status": "active", "note": "KID(suite2, rk.pub)"},
+        {"n": 2, "name": "enc2", "type": "bstr", "req": "cond", "cond": "with key 1", "status": "active", "note": "layer-2 HPKE enc"},
+        {"n": 3, "name": "body", "type": "bstr", "req": "must", "status": "active", "note": "layer-2 ciphertext, or coredet(SealedInner) when there is no second layer"},
+        {"n": 4, "status": "reserved", "to": 20},
+        {"n": 21, "name": "pad", "type": "bstr", "req": "must", "status": "active", "note": "all-zero Padme padding: len(coredet(Wrap)) falls on a Padme step"},
+        {"n": 22, "status": "reserved", "to": 63}
+      ]
+    },
+    {
+      "name": "SealedInner",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "critical",
+      "owner": "CORE",
+      "desc": "Inner signed message v2 (no version field; it takes effect with outer v = 2).",
+      "carried": true,
+      "keys": [
+        {"n": 0, "status": "forbidden", "note": "preimage only (label)"},
+        {"n": 1, "name": "from", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "sender AID; no U+0000"},
+        {"n": 2, "name": "key_state_seq", "type": "uint", "req": "must", "status": "active", "v02": "uint", "aliases": ["seq"], "note": "key state the signature uses"},
+        {"n": 3, "name": "to", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "must equal outer to; no U+0000"},
+        {"n": 4, "name": "type", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "inner type (L39)"},
+        {"n": 5, "name": "ix", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "interaction id; no U+0000"},
+        {"n": 6, "name": "mid", "type": "bstr", "size": 16, "req": "must", "status": "active", "v02": "bstr", "note": "message id; (from, mid) is the replay key"},
+        {"n": 7, "name": "ts", "type": "uint", "req": "must", "status": "active", "v02": "uint", "note": "send time"},
+        {"n": 8, "name": "exp", "type": "uint", "req": "must", "status": "active", "v02": "uint", "note": "exp - ts <= 15 days"},
+        {"n": 9, "name": "body", "type": "bstr", "req": "must", "status": "active", "v02": "bstr", "note": "body; the signature preimage holds its SHA-256"},
+        {"n": 10, "name": "kel", "type": "bstr", "req": "cond", "cond": "forbidden in preview frames, required in every other type", "status": "active", "v02": "bstr", "note": "sender KEL v2, <= 256 events, <= 64 KiB"},
+        {"n": 11, "name": "notice", "type": "[bstr<NoticeWire>]", "req": "cond", "cond": "present exactly when key 10 is", "status": "active", "note": "witness notices; exactly one in 0.3.0; each <= 1024 bytes"},
+        {"n": 12, "name": "keys", "type": "bstr<SignedEncKeySet>", "req": "cond", "cond": "forbidden in preview frames, required in every other type", "status": "active", "v02": "bstr"},
+        {"n": 13, "status": "reserved", "note": "proposed once for a witness KEL; not adopted"},
+        {"n": 14, "name": "grant", "type": "<Grant>", "req": "may", "status": "active", "note": "forbidden in preview frames, after-the-fact refusal notices and anet.card/1"},
+        {"n": 15, "name": "rk", "type": "<RK>", "req": "cond", "cond": "while the sender still holds its interaction key for this interaction", "status": "active", "note": "sender's interaction public key"},
+        {"n": 16, "status": "reserved", "to": 19},
+        {"n": 20, "name": "sig", "type": "bstr", "size": 64, "req": "must", "status": "active", "v02": "bstr", "note": "Ed25519 over the v2 signature preimage (L3)"},
+        {"n": 21, "status": "retired", "was": "pad", "v02": "bstr", "note": "unknown-critical-field"},
+        {"n": 22, "status": "reserved", "to": 29},
+        {"n": 30, "status": "forbidden", "to": 34, "note": "preimage only (enc1, kid, suite, ikid, enc2)"},
+        {"n": 35, "status": "reserved", "to": 63}
+      ]
+    },
+    {
+      "name": "Grant",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "Capability handed to the recipient inside the sealed message (inner key 14).",
+      "keys": [
+        {"n": 1, "name": "cap", "type": "<Cap>", "req": "must", "status": "active"},
+        {"n": 2, "name": "holder_seed", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "holder Ed25519 private seed"},
+        {"n": 3, "name": "home", "type": "tstr", "req": "must", "status": "active", "note": "issuer's hub AID (a routing hint, not a URL)"},
+        {"n": 4, "name": "ix", "type": "tstr", "req": "may", "status": "active", "note": "present: a one-shot capability for this interaction only; must equal inner ix"},
+        {"n": 5, "name": "p2p", "type": "tstr", "req": "may", "status": "active", "note": "issuer's direct address host:port; only with class = 1 and no key 4"},
+        {"n": 6, "name": "pay", "type": "bool", "req": "may", "status": "active", "note": "true: the issuer prices a capability; only without key 4"}
+      ]
+    },
+    {
+      "name": "RK",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "Interaction public key (inner key 15).",
+      "keys": [
+        {"n": 1, "name": "suite", "type": "uint", "value": "1", "req": "must", "status": "active"},
+        {"n": 2, "name": "pub", "type": "bstr", "req": "must", "status": "active", "note": "32 bytes for suite 1"}
+      ]
+    },
+    {
+      "name": "InnerSigPreimage",
+      "group": "envelope",
+      "class": "A",
+      "keyspace": "derived",
+      "owner": "CORE",
+      "desc": "Signature preimage v2 M: the inner fields except 20 as received, key 9 replaced by coredet(bstr(SHA-256(body))), plus keys 0 and 30-34. Built, never decoded.",
+      "tag": "anet-relay-sig/v2",
+      "keys": [
+        {"n": 0, "name": "label", "type": "tstr", "value": "anet-relay-sig/v2", "req": "must", "status": "active"},
+        {"n": 30, "name": "enc", "type": "bstr", "req": "must", "status": "active", "aliases": ["enc1"], "note": "outer key 5"},
+        {"n": 31, "name": "kid", "type": "bstr", "req": "must", "status": "active", "note": "outer key 4"},
+        {"n": 32, "name": "suite", "type": "uint", "req": "must", "status": "active", "note": "outer key 3"},
+        {"n": 33, "name": "ikid", "type": "bstr|null", "req": "must", "status": "active", "note": "Wrap key 1, CBOR null for a single layer"},
+        {"n": 34, "name": "enc2", "type": "bstr|null", "req": "must", "status": "active", "note": "Wrap key 2, CBOR null for a single layer"}
+      ]
+    },
+    {
+      "name": "HPKEInfo",
+      "group": "envelope",
+      "class": "plain",
+      "keyspace": "derived",
+      "owner": "FS",
+      "desc": "HPKE info map of layer 1 (L1) and layer 2 (L2). Built, never decoded.",
+      "keys": [
+        {"n": 1, "name": "label", "type": "tstr", "req": "must", "status": "active", "note": "anet-seal/v2 (layer 1) or anet-ix/v2 (layer 2)"},
+        {"n": 2, "name": "to", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 3, "name": "suite", "type": "uint", "req": "must", "status": "active"},
+        {"n": 4, "name": "kid", "type": "bstr", "size": 16, "req": "must", "status": "active", "aliases": ["ikid"], "note": "outer kid (layer 1) or ikid (layer 2)"}
+      ]
+    },
+    {
+      "name": "DelegateReq",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CUX",
+      "desc": "Body of anet.delegate/1.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "taskdoc", "type": "bstr", "req": "must", "status": "active", "v02": "bstr", "note": "signed TaskDoc bytes"},
+        {"n": 2, "name": "envelope", "type": "<aobj.Envelope>", "req": "must", "status": "active", "v02": "<aobj.Envelope>", "note": "detached TaskDoc signature"},
+        {"n": 3, "status": "retired", "was": "kel", "v02": "bstr", "note": "the KEL travels only in inner key 10"},
+        {"n": 4, "name": "interaction_id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "must equal inner ix; no U+0000"},
+        {"n": 5, "name": "attachments", "type": "[<Attachment>]", "req": "may", "status": "active", "v02": "[<Attachment>]", "note": "order is the order of $files"},
+        {"n": 6, "status": "retired", "was": "payment", "v02": "bstr", "note": "prepayment, removed with the gateway"},
+        {"n": 7, "name": "context_id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 8, "name": "metadata", "type": "bstr", "req": "may", "status": "active", "v02": "bstr", "note": "JSON object"}
+      ]
+    },
+    {
+      "name": "Attachment",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CUX",
+      "desc": "A file attached to a delegation or message.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "name", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "mime", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "size", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 4, "name": "cid", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 5, "name": "data", "type": "bstr", "req": "may", "status": "active", "v02": "bstr"}
+      ]
+    },
+    {
+      "name": "ChatMsg",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CUX",
+      "desc": "Body of anet.message/1. Keys 4-7 and 11-13 only in kind = stream_preview (else bad-body).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "kind", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "text, end_request, cancel, stream_preview; end_accept retired"},
+        {"n": 2, "name": "body", "type": "tstr", "req": "may", "status": "active", "v02": "tstr", "note": "in a preview frame the tail window, <= 8192 bytes"},
+        {"n": 3, "name": "attachments", "type": "[<Attachment>]", "req": "may", "status": "active", "v02": "[<Attachment>]", "note": "forbidden in preview frames"},
+        {"n": 4, "name": "stream_seq", "type": "uint", "req": "cond", "cond": "preview frames only, required there", "status": "active", "v02": "uint"},
+        {"n": 5, "name": "stream_at_ms", "type": "int", "req": "cond", "cond": "preview frames only, required there", "status": "active", "v02": "int"},
+        {"n": 6, "name": "reasoning_body", "type": "tstr", "req": "cond", "cond": "preview frames only, optional", "status": "active", "v02": "tstr"},
+        {"n": 7, "name": "reasoning_at_ms", "type": "int", "req": "cond", "cond": "preview frames only, optional", "status": "active", "v02": "int", "aliases": ["reasoning_stream_at_ms"]},
+        {"n": 8, "status": "reserved", "note": "never assigned"},
+        {"n": 9, "name": "msg_id", "type": "tstr", "req": "cond", "cond": "required in preview frames, optional otherwise", "status": "active", "v02": "tstr"},
+        {"n": 10, "name": "metadata", "type": "bstr", "req": "may", "status": "active", "v02": "bstr", "note": "JSON; forbidden in preview frames"},
+        {"n": 11, "name": "omitted", "type": "uint", "req": "cond", "cond": "preview frames only, optional", "status": "active"},
+        {"n": 12, "name": "reasoning_omitted", "type": "uint", "req": "cond", "cond": "preview frames only, optional", "status": "active"},
+        {"n": 13, "name": "answers", "type": "tstr", "req": "cond", "cond": "preview frames only, required there", "status": "active"}
+      ]
+    },
+    {
+      "name": "ResultResp",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CUX",
+      "desc": "Body of anet.result/1.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "status", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "done or failed (queued never on the wire)"},
+        {"n": 2, "name": "deliverable", "type": "bstr", "req": "may", "status": "active", "v02": "bstr"},
+        {"n": 3, "name": "receipt", "type": "bstr<ReceiptWire>", "req": "may", "status": "active", "v02": "bstr"},
+        {"n": 4, "status": "retired", "was": "kel", "v02": "bstr"},
+        {"n": 5, "name": "metadata", "type": "bstr", "req": "may", "status": "active", "v02": "bstr", "note": "JSON"},
+        {"n": 6, "name": "reply", "type": "<ReplyMsg>", "req": "cond", "cond": "text task with status = done: optional; capability task: forbidden", "status": "active"}
+      ]
+    },
+    {
+      "name": "ReplyMsg",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CUX",
+      "desc": "The reply folded into a text task's result: a subset of ChatMsg; any other key is bad-body.",
+      "keys": [
+        {"n": 1, "name": "kind", "type": "tstr", "value": "text", "req": "must", "status": "active"},
+        {"n": 2, "name": "body", "type": "tstr", "req": "may", "status": "active"},
+        {"n": 3, "name": "attachments", "type": "[<Attachment>]", "req": "may", "status": "active"},
+        {"n": 9, "name": "msg_id", "type": "tstr", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "StatusMsg",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CUX",
+      "desc": "Body of anet.status/1.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "state", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "text", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "metadata", "type": "bstr", "req": "may", "status": "active", "v02": "bstr"},
+        {"n": 4, "name": "at", "type": "uint", "req": "must", "status": "active", "v02": "uint"}
+      ]
+    },
+    {"name": "CardGet", "group": "body", "class": "plain", "keyspace": "closed", "owner": "HPP", "desc": "Body of anet.card.get/1: the empty map (the type string carries the version).", "keys": []},
+    {
+      "name": "CardResp",
+      "group": "body",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Body of anet.card/1: exactly one of the two keys.",
+      "keys": [
+        {"n": 1, "name": "card", "type": "bstr", "req": "cond", "cond": "exactly one of 1 and 2", "status": "active", "note": "the provider-signed extended card bytes, <= 64 KiB"},
+        {"n": 2, "name": "error", "type": "tstr", "req": "cond", "cond": "exactly one of 1 and 2", "status": "active", "note": "not_configured or busy"}
+      ]
+    },
+    {
+      "name": "EncKeySet",
+      "group": "keys",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "Encryption key set anet.enckeys/2.",
+      "tag": "anet.enckeys/2",
+      "carried": true,
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.enckeys/2", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag", "v02": "tstr"},
+        {"n": 1, "name": "aid", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "seq", "type": "uint", "req": "must", "status": "active", "v02": "uint", "note": "publication sequence, unix-ms scale; the hub's prev_seq compare-and-swap uses it"},
+        {"n": 3, "name": "keys", "type": "[<EncKey>]", "req": "must", "status": "active", "v02": "[<EncKey>]", "note": "1..32 keys, ascending not_before"},
+        {"n": 4, "name": "issued_at", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 5, "name": "mbox", "type": "<Mbox>", "req": "must", "status": "active", "note": "mailbox signing key"}
+      ]
+    },
+    {
+      "name": "EncKey",
+      "group": "keys",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "One encryption key; not_after - not_before <= 2 days.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "kid", "type": "bstr", "size": 16, "req": "must", "status": "active", "v02": "bstr"},
+        {"n": 2, "name": "suite", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "pub", "type": "bstr", "req": "must", "status": "active", "v02": "bstr"},
+        {"n": 4, "name": "not_before", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 5, "name": "not_after", "type": "uint", "req": "must", "status": "active", "v02": "uint"}
+      ]
+    },
+    {
+      "name": "Mbox",
+      "group": "keys",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "Mailbox signing key in a key set.",
+      "keys": [
+        {"n": 1, "name": "epoch", "type": "uint", "req": "must", "status": "active", "note": ">= 1; +1 only when the key changes"},
+        {"n": 2, "name": "pub", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "Ed25519 public key"}
+      ]
+    },
+    {
+      "name": "SignedEncKeySet",
+      "group": "keys",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "A key set and the identity signature over it.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "set", "type": "bstr<EncKeySet>", "req": "must", "status": "active", "v02": "bstr"},
+        {"n": 2, "name": "key_state_seq", "type": "uint", "req": "must", "status": "active", "v02": "uint", "note": "must be the active tip of the KEL"},
+        {"n": 3, "name": "sig", "type": "bstr", "size": 64, "req": "must", "status": "active", "v02": "bstr"}
+      ]
+    },
+    {
+      "name": "KeyEvent",
+      "group": "kel",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "KEL v2 event. AID = CID(icp preimage); the icp preimage and stored form carry no key 1.",
+      "tag": "anet.kel/2",
+      "carried": true,
+      "keys": [
+        {"n": 0, "name": "t_obj", "type": "tstr", "value": "anet.kel/2", "req": "must", "status": "active", "aliases": ["type_obj", "kel_type"], "note": "v2 marker and domain separation; a missing or wrong key 0 makes the KEL unreplayable"},
+        {"n": 1, "name": "aid", "type": "tstr", "req": "cond", "cond": "absent in the icp preimage, required otherwise", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "seq", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "prev", "type": "tstr", "req": "cond", "cond": "absent in icp, required otherwise", "status": "active", "v02": "tstr", "note": "previous event id"},
+        {"n": 4, "name": "t", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "aliases": ["type"], "note": "icp, rot or dip"},
+        {"n": 5, "name": "keys", "type": "[bstr]", "req": "must", "status": "active", "v02": "[bstr]", "note": "exactly one 32-byte key: k0 for icp, the revealed key for rot and dip"},
+        {"n": 6, "name": "next", "type": "bstr", "size": 32, "req": "cond", "cond": "icp and rot; forbidden in dip", "status": "active", "v02": "bstr", "aliases": ["next_digest"], "note": "SHA-256 of the next public key"},
+        {"n": 7, "name": "kt", "type": "uint", "value": "1", "req": "must", "status": "active", "v02": "uint", "aliases": ["threshold"]},
+        {"n": 8, "name": "ts", "type": "uint", "req": "must", "status": "active", "v02": "uint", "aliases": ["timestamp"], "note": "> 0"},
+        {"n": 9, "name": "witnesses", "type": "[tstr]", "req": "cond", "cond": "icp and rot may carry it; forbidden in dip", "status": "active", "note": "0 or 1 witness hub AID"},
+        {"n": 10, "status": "retired", "was": "revoked_since", "note": "never used"},
+        {"n": 11, "name": "toad", "type": "uint", "req": "cond", "cond": "icp and rot, written even when 0; forbidden in dip", "status": "active", "note": "0 for a hub, 1 for an agent"},
+        {"n": 12, "name": "emergency", "type": "bool", "req": "cond", "cond": "rot only, and only true", "status": "active", "note": "emergency rotation: zero grace"},
+        {"n": 13, "status": "reserved", "to": 63}
+      ]
+    },
+    {
+      "name": "SignedEvent",
+      "group": "kel",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "A KEL event with its signature. The raw event bytes must equal coredet(decoded event).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "event", "type": "<KeyEvent>", "req": "must", "status": "active", "v02": "<KeyEvent>"},
+        {"n": 2, "name": "sig", "type": "bstr", "size": 64, "req": "must", "status": "active", "v02": "bstr"},
+        {"n": 3, "name": "event_id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr", "note": "CID of the preimage"},
+        {"n": 4, "status": "reserved", "note": "kept for multi-witness receipts"}
+      ]
+    },
+    {
+      "name": "NoticeBody",
+      "group": "kel",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "Witness notice (key state notice) body.",
+      "tag": "anet.ksn/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.ksn/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "aid", "type": "tstr", "req": "must", "status": "active", "note": "the AID the notice is about"},
+        {"n": 2, "name": "seq", "type": "uint", "req": "must", "status": "active", "note": "tip seq of the KEL the witness holds"},
+        {"n": 3, "name": "head", "type": "tstr", "req": "must", "status": "active", "note": "tip event id"},
+        {"n": 4, "name": "observed_at", "type": "uint", "req": "must", "status": "active", "note": "the witness hub's clock"},
+        {"n": 5, "name": "witness", "type": "tstr", "req": "must", "status": "active", "note": "the signing witness hub AID"}
+      ]
+    },
+    {
+      "name": "NoticeWire",
+      "group": "kel",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "Witness notice on the wire.",
+      "keys": [
+        {"n": 1, "name": "body", "type": "bstr<NoticeBody>", "req": "must", "status": "active"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "note": "signer_aid must equal witness"}
+      ]
+    },
+    {
+      "name": "IdentityFile",
+      "group": "local",
+      "class": "file",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "identity.kel in the data directory (also the hub identity file), 0600.",
+      "tag": "anet.identity/2",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.identity/2", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "kel", "type": "bstr", "req": "must", "status": "active", "note": "events accepted by the witness (MarshalKEL)"},
+        {"n": 2, "name": "cur", "type": "bstr", "size": 32, "req": "cond", "cond": "absent while a recover is waiting to publish", "status": "active", "note": "current signing key seed"},
+        {"n": 3, "name": "hot_next", "type": "bstr", "size": 32, "req": "cond", "cond": "only while the KEL has one event", "status": "active", "note": "hot key seed committed by icp"},
+        {"n": 4, "name": "pending", "type": "<IdentityPending>", "req": "may", "status": "active"},
+        {"n": 5, "name": "witnesses_to_push", "type": "[<WitnessPush>]", "req": "may", "status": "active"},
+        {"n": 6, "name": "state", "type": "tstr", "req": "must", "status": "active", "note": "ok, stopped or deactivated; anything else is refused"},
+        {"n": 7, "name": "local_commit", "type": "bstr", "size": 32, "req": "may", "status": "active", "note": "next_digest derived from the RS of the unprotected recovery file when joined without a terminal; written once, never deleted; public"}
+      ]
+    },
+    {
+      "name": "IdentityPending",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "An identity event being built or published (IdentityFile key 4).",
+      "keys": [
+        {"n": 1, "name": "kind", "type": "tstr", "req": "must", "status": "active", "note": "witness, rot or dip"},
+        {"n": 2, "name": "revealed", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "seed of the key this event reveals"},
+        {"n": 3, "name": "next", "type": "bstr", "size": 32, "req": "cond", "cond": "absent for dip", "status": "active"},
+        {"n": 4, "name": "hub_url", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 5, "name": "emergency", "type": "bool", "req": "must", "status": "active"},
+        {"n": 6, "name": "event", "type": "bstr", "req": "may", "status": "active", "note": "the built SignedEvent bytes"},
+        {"n": 7, "name": "since", "type": "uint", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "WitnessPush",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "A witness the identity still has to push to (IdentityFile key 5).",
+      "keys": [
+        {"n": 1, "name": "hub_aid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "hub_url", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 3, "name": "acked_seq", "type": "uint", "req": "must", "status": "active"},
+        {"n": 4, "name": "next_try", "type": "uint", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "RecoveryBlob",
+      "group": "local",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "The base64 block of a recovery file. aad = coredet(RecoveryBlob without key 7).",
+      "tag": "anet.recovery/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.recovery/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "aid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "kdf", "type": "<RecoveryKDF>", "req": "must", "status": "active", "note": "exactly one of two shapes: passphrase (argon2id) or local (unprotected file)"},
+        {"n": 3, "name": "aead", "type": "tstr", "value": "xchacha20poly1305", "req": "must", "status": "active"},
+        {"n": 4, "name": "nonce", "type": "bstr", "size": 24, "req": "must", "status": "active"},
+        {"n": 5, "name": "hub", "type": "tstr", "req": "must", "status": "active", "note": "witness hub URL at creation (a hint)"},
+        {"n": 6, "name": "commits", "type": "tuple(uint,bstr)", "req": "must", "status": "active", "note": "[seq, next_digest] this RS commits to; public"},
+        {"n": 7, "name": "ct", "type": "bstr", "req": "must", "status": "active", "note": "XChaCha20-Poly1305 of RS"}
+      ]
+    },
+    {
+      "name": "RecoveryKDF",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "Key derivation of a recovery file (RecoveryBlob key 2).",
+      "keys": [
+        {"n": 1, "name": "alg", "type": "tstr", "req": "must", "status": "active", "note": "argon2id or local"},
+        {"n": 2, "name": "t", "type": "uint", "value": "3", "req": "cond", "cond": "argon2id only", "status": "active"},
+        {"n": 3, "name": "m_kib", "type": "uint", "value": "65536", "req": "cond", "cond": "argon2id only", "status": "active"},
+        {"n": 4, "name": "p", "type": "uint", "value": "4", "req": "cond", "cond": "argon2id only", "status": "active"},
+        {"n": 5, "name": "salt", "type": "bstr", "size": 16, "req": "cond", "cond": "argon2id only", "status": "active"}
+      ],
+      "shapes": [
+        {"when": "alg = argon2id: passphrase-protected recovery file", "keys": [1, 2, 3, 4, 5]},
+        {"when": "alg = local: unprotected recovery file, AEAD key = the 32 bytes of recovery_local.key", "keys": [1]}
+      ]
+    },
+    {
+      "name": "KeyStateNoticeFile",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "key_state_notice.cbor in the data directory, 0600.",
+      "keys": [
+        {"n": 1, "name": "notice", "type": "bstr<NoticeWire>", "req": "must", "status": "active"},
+        {"n": 2, "name": "saved_at", "type": "uint", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "DirEntry",
+      "group": "directory",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "Plaintext of a directory box. An entry with an unknown key, or one that does not open, is skipped.",
+      "keys": [
+        {"n": 1, "name": "aid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "home", "type": "tstr", "req": "must", "status": "active", "note": "hub AID"},
+        {"n": 3, "name": "kel", "type": "bstr", "req": "must", "status": "active"},
+        {"n": 4, "name": "keys", "type": "bstr<SignedEncKeySet>", "req": "must", "status": "active"},
+        {"n": 5, "name": "card", "type": "bstr", "req": "may", "status": "active", "note": "A2A card bytes"},
+        {"n": 6, "name": "notice", "type": "bstr<NoticeWire>", "req": "may", "status": "active"}
+      ]
+    },
+    {
+      "name": "ReceiptBody",
+      "group": "evidence",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Evidence receipt v2 body.",
+      "tag": "anet.receipt/2",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.receipt/2", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "ix_commit", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "L27"},
+        {"n": 2, "name": "requester_commit", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "L28"},
+        {"n": 3, "name": "review_key", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "one-time review public key"},
+        {"n": 4, "name": "provider", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 5, "name": "request_cid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 6, "name": "result_cid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 7, "name": "completed_day", "type": "uint", "req": "must", "status": "active", "note": "UTC day number"}
+      ]
+    },
+    {
+      "name": "ReceiptWire",
+      "group": "evidence",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Receipt v2 on the wire.",
+      "keys": [
+        {"n": 1, "name": "body", "type": "bstr<ReceiptBody>", "req": "must", "status": "active"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "note": "provider identity signature"}
+      ]
+    },
+    {
+      "name": "ReviewBody",
+      "group": "evidence",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Review v2 body.",
+      "tag": "anet.review/2",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.review/2", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "receipt_cid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "subject", "type": "tstr", "req": "must", "status": "active", "note": "reviewed AID"},
+        {"n": 3, "name": "rating", "type": "uint", "req": "must", "status": "active", "note": "1..5"},
+        {"n": 4, "name": "comment", "type": "tstr", "req": "may", "status": "active", "note": "<= 280 Unicode characters"},
+        {"n": 5, "name": "created_day", "type": "uint", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "ReviewWire",
+      "group": "evidence",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Review v2 on the wire.",
+      "keys": [
+        {"n": 1, "name": "body", "type": "bstr<ReviewBody>", "req": "must", "status": "active"},
+        {"n": 2, "name": "pub", "type": "bstr", "size": 32, "req": "must", "status": "active", "note": "must equal the receipt's review_key"},
+        {"n": 3, "name": "sig", "type": "bstr", "size": 64, "req": "must", "status": "active", "note": "Ed25519(review_sk, body)"}
+      ]
+    },
+    {
+      "name": "ReviewAttBody",
+      "group": "evidence",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Hub attestation of a stored review.",
+      "tag": "anet.review-att/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.review-att/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "review_cid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "receipt_cid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 3, "name": "subject", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 4, "name": "tag", "type": "bstr", "size": 16, "req": "must", "status": "active", "note": "L31"},
+        {"n": 5, "name": "tag_key_id", "type": "uint", "req": "must", "status": "active"},
+        {"n": 6, "name": "day", "type": "uint", "req": "must", "status": "active"},
+        {"n": 7, "name": "hub", "type": "tstr", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "ReviewAttWire",
+      "group": "evidence",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Review attestation on the wire.",
+      "keys": [
+        {"n": 1, "name": "body", "type": "bstr<ReviewAttBody>", "req": "must", "status": "active"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "note": "hub identity signature"}
+      ]
+    },
+    {
+      "name": "LiabLeafContent",
+      "group": "evidence",
+      "class": "plain",
+      "keyspace": "derived",
+      "owner": "HPP",
+      "desc": "Content of a liability tree leaf (hashed under L25).",
+      "keys": [
+        {"n": 1, "name": "aid", "type": "tstr", "req": "must", "status": "active", "note": "empty for a padding leaf"},
+        {"n": 2, "name": "to_day", "type": "uint", "req": "must", "status": "active"},
+        {"n": 3, "name": "balance", "type": "uint", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "aobj.Envelope",
+      "group": "carried",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Detached signature envelope of signed objects (unchanged since 0.2.1).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "signer_aid", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "key_state_seq", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "alg", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 4, "name": "sig", "type": "bstr", "req": "must", "status": "active", "v02": "bstr"},
+        {"n": 5, "name": "preimage_ref", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "PaymentAuthorization",
+      "group": "carried",
+      "class": "D",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "x402 anet-credit payment authorization (signed preimage; unchanged). Key 8 is PayBind.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "payer", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "pay_to", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "amount", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 4, "name": "network", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 5, "name": "nonce", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 6, "name": "issued_at", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 7, "name": "not_after", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 8, "name": "interaction_id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr", "note": "PayBind (L34)"}
+      ]
+    },
+    {
+      "name": "PaymentAuthorizationWire",
+      "group": "carried",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Payment authorization on the wire (unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "auth", "type": "<PaymentAuthorization>", "req": "must", "status": "active", "v02": "<PaymentAuthorization>"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "v02": "<aobj.Envelope>", "aliases": ["envelope"]}
+      ]
+    },
+    {
+      "name": "PaymentReceipt",
+      "group": "carried",
+      "class": "D",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Hub settlement receipt (signed preimage; unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "auth_id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "payer", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "pay_to", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "amount", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 5, "name": "network", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 6, "name": "settle_at", "type": "int", "req": "must", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "PaymentReceiptWire",
+      "group": "carried",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "HPP",
+      "desc": "Settlement receipt on the wire (unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "receipt", "type": "<PaymentReceipt>", "req": "must", "status": "active", "v02": "<PaymentReceipt>"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "v02": "<aobj.Envelope>", "aliases": ["envelope"]}
+      ]
+    },
+    {
+      "name": "AELRecord",
+      "group": "carried",
+      "class": "D",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Evidence event log record (unchanged; the supply epoch record uses version_major 2).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "chain_did", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "seq", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "prev_id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "event_type", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 5, "name": "version_major", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 6, "name": "payload", "type": "any", "req": "must", "status": "active", "v02": "any"},
+        {"n": 7, "name": "timestamp", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 8, "name": "signer_aid", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 9, "name": "key_state_seq", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 10, "name": "critical_extensions", "type": "[tstr]", "req": "may", "status": "active", "v02": "[tstr]"},
+        {"n": 11, "name": "id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 12, "name": "sig", "type": "bstr", "req": "may", "status": "active", "v02": "bstr"},
+        {"n": 13, "name": "version_minor", "type": "uint", "req": "may", "status": "active", "v02": "uint"},
+        {"n": 14, "name": "corr_id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "AELHeadAttestation",
+      "group": "carried",
+      "class": "D",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Witness attestation of an ael chain head (signed preimage; unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "chain_did", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "seq", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "head_id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "observed_at", "type": "int", "req": "must", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "AELHeadAttestationWire",
+      "group": "carried",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Head attestation on the wire (unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "body", "type": "<AELHeadAttestation>", "req": "must", "status": "active", "v02": "<AELHeadAttestation>"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "v02": "<aobj.Envelope>", "aliases": ["envelope"]}
+      ]
+    },
+    {
+      "name": "EffectEvidence",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "Capability-effect evidence (C1 InvokeResp key 4; unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "requested", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "protocol", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "native_ack", "type": "bool", "req": "may", "status": "active", "v02": "bool"},
+        {"n": 4, "name": "observed_state", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 5, "name": "latency_ms", "type": "int", "req": "may", "status": "active", "v02": "int"},
+        {"n": 6, "name": "verify_trust", "type": "uint", "req": "may", "status": "active", "v02": "uint"},
+        {"n": 7, "name": "auth_trust", "type": "uint", "req": "may", "status": "active", "v02": "uint"},
+        {"n": 8, "name": "quirk", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Effect",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Result of a capability invocation in the kernel (unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "status", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "record", "type": "<EffectRecord>", "req": "may", "status": "active", "v02": "<EffectRecord>"},
+        {"n": 3, "name": "message", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "evidence", "type": "<EffectEvidence>", "req": "may", "status": "active", "v02": "<EffectEvidence>"}
+      ]
+    },
+    {
+      "name": "CapList",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1: capabilities the adapter serves.",
+      "keys": [
+        {"n": 1, "name": "caps", "type": "[<CapEntry>]", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "CapEntry",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1: one capability.",
+      "keys": [
+        {"n": 1, "name": "id", "type": "tstr", "req": "must", "status": "active", "note": "<cap>@<adapter>/<device>; the daemon does not parse it"},
+        {"n": 2, "name": "remote", "type": "uint", "req": "must", "status": "active", "note": "0 = none; 1 = relay"}
+      ]
+    },
+    {
+      "name": "Describe",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1: describe answer.",
+      "keys": [
+        {"n": 1, "name": "cid", "type": "tstr", "req": "must", "status": "active", "note": "empty: no description object"}
+      ]
+    },
+    {
+      "name": "InvokeReq",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1 invoke request (CBOR only, /v1/*).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "capability", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "args", "type": "map", "req": "may", "status": "active", "v02": "map"},
+        {"n": 3, "name": "call_id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 4, "status": "retired", "was": "caller_aid", "v02": "tstr", "note": "v0 caller as a string"},
+        {"n": 5, "name": "caller", "type": "<Caller>", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "Caller",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1 caller, verified by the daemon.",
+      "keys": [
+        {"n": 1, "name": "via", "type": "uint", "req": "must", "status": "active", "note": "0 = local; 1 = relay; 2 retired (v0 voucher)"},
+        {"n": 2, "name": "aid", "type": "tstr", "req": "cond", "cond": "required when via = 1; forbidden when via = 0", "status": "active"},
+        {"n": 3, "status": "reserved", "note": "kept for a later non-witness mode"}
+      ]
+    },
+    {
+      "name": "InvokeResp",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1 invoke answer (fields as in v0).",
+      "keys": [
+        {"n": 1, "name": "status", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "metrics", "type": "map", "req": "may", "status": "active"},
+        {"n": 3, "name": "message", "type": "tstr", "req": "may", "status": "active"},
+        {"n": 4, "name": "evidence", "type": "<EffectEvidence>", "req": "may", "status": "active"}
+      ]
+    },
+    {
+      "name": "Refusal",
+      "group": "c1",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "LEC",
+      "desc": "C1 v1 refusal.",
+      "keys": [
+        {"n": 1, "name": "reason", "type": "tstr", "req": "must", "status": "active", "note": "a C1 reason code"}
+      ]
+    },
+    {
+      "name": "TaskDoc",
+      "group": "tsir",
+      "class": "D",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Task document (unchanged). Its signature is a detached aobj envelope over TaskDocPreimage.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "version", "type": "<VersionPair>", "req": "must", "status": "active", "v02": "<VersionPair>"},
+        {"n": 2, "name": "meta", "type": "[<MetaEntry>]", "req": "may", "status": "active", "v02": "[<MetaEntry>]"},
+        {"n": 3, "name": "links", "type": "[<Link>]", "req": "may", "status": "active", "v02": "[<Link>]"},
+        {"n": 4, "name": "tasks", "type": "[<Task>]", "req": "must", "status": "active", "v02": "[<Task>]"},
+        {"n": 7, "name": "critical", "type": "[uint]", "req": "may", "status": "active", "v02": "[uint]"}
+      ]
+    },
+    {
+      "name": "TaskDocPreimage",
+      "group": "tsir",
+      "class": "D",
+      "keyspace": "derived",
+      "owner": "CORE",
+      "desc": "The part of a TaskDoc the signature covers.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "version", "type": "<VersionMajor>", "req": "must", "status": "active", "v02": "<VersionMajor>"},
+        {"n": 3, "name": "links", "type": "[<Link>]", "req": "may", "status": "active", "v02": "[<Link>]"},
+        {"n": 4, "name": "tasks", "type": "[<Task>]", "req": "must", "status": "active", "v02": "[<Task>]"}
+      ]
+    },
+    {
+      "name": "VersionPair",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "TaskDoc version.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "major", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 2, "name": "minor", "type": "uint", "req": "may", "status": "active", "v02": "uint"}
+      ]
+    },
+    {
+      "name": "VersionMajor",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "derived",
+      "owner": "CORE",
+      "desc": "TaskDoc version as signed.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "major", "type": "uint", "req": "must", "status": "active", "v02": "uint"}
+      ]
+    },
+    {
+      "name": "MetaEntry",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "TaskDoc meta entry.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "name", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "value", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Link",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "TaskDoc link.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "rel", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "href", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "title", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Task",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "One task of a TaskDoc.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 10, "name": "intent", "type": "<Intent>", "req": "must", "status": "active", "v02": "<Intent>"},
+        {"n": 11, "name": "requires", "type": "[<Require>]", "req": "may", "status": "active", "v02": "[<Require>]"},
+        {"n": 12, "name": "accepts", "type": "[<Accept>]", "req": "may", "status": "active", "v02": "[<Accept>]"},
+        {"n": 13, "name": "contexts", "type": "[<Context>]", "req": "may", "status": "active", "v02": "[<Context>]"},
+        {"n": 14, "name": "positive_scope", "type": "<Predicate>", "req": "may", "status": "active", "v02": "<Predicate>"},
+        {"n": 15, "name": "negative_scope", "type": "<Predicate>", "req": "may", "status": "active", "v02": "<Predicate>"},
+        {"n": 16, "name": "coupling_hint", "type": "int", "req": "may", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "Intent",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Task intent.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "summary", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "format", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "body", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Require",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Task requirement.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "type", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "necessity", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "description", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Output",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Accepted output.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "format", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "max_size", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "name", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Schema",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Output schema.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "type", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "body", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Accept",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Acceptance criteria.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "type", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "description", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "outputs", "type": "[<Output>]", "req": "may", "status": "active", "v02": "[<Output>]"},
+        {"n": 4, "name": "schema", "type": "<Schema>", "req": "may", "status": "active", "v02": "<Schema>"}
+      ]
+    },
+    {
+      "name": "Context",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Task context entry (anet's keys: see taskdoc_contexts).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "key", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "value", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "src", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "format", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 5, "name": "visibility", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "Predicate",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Scope predicate.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "op", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 2, "name": "children", "type": "[<Predicate>]", "req": "may", "status": "active", "v02": "[<Predicate>]"},
+        {"n": 10, "name": "artifact", "type": "<ArtifactClause>", "req": "may", "status": "active", "v02": "<ArtifactClause>"},
+        {"n": 11, "name": "test", "type": "<TestClause>", "req": "may", "status": "active", "v02": "<TestClause>"},
+        {"n": 12, "name": "thresh", "type": "<ThresholdClause>", "req": "may", "status": "active", "v02": "<ThresholdClause>"},
+        {"n": 13, "name": "scope", "type": "<ScopeClause>", "req": "may", "status": "active", "v02": "<ScopeClause>"}
+      ]
+    },
+    {
+      "name": "ArtifactClause",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Predicate clause on an artifact.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "path_glob", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "exists", "type": "bool", "req": "may", "status": "active", "v02": "bool"},
+        {"n": 3, "name": "min_size_bytes", "type": "uint", "req": "may", "status": "active", "v02": "uint"},
+        {"n": 4, "name": "schema_ref", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 5, "name": "contains", "type": "[tstr]", "req": "may", "status": "active", "v02": "[tstr]"}
+      ]
+    },
+    {
+      "name": "TestClause",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Predicate clause on a test.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "test_id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "expect", "type": "int", "req": "must", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "ThresholdClause",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Predicate clause on a metric.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "metric", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "op", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 3, "name": "value", "type": "float", "req": "must", "status": "active", "v02": "float"}
+      ]
+    },
+    {
+      "name": "ScopeClause",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Predicate clause on a resource.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "verb", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 2, "name": "kind", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 3, "name": "match", "type": "<ResourceMatch>", "req": "must", "status": "active", "v02": "<ResourceMatch>"},
+        {"n": 4, "name": "merge_class", "type": "int", "req": "may", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "ResourceMatch",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Resource matcher.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "kind", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 2, "name": "val", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "EffectRecord",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Observed effects of a task.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "artifacts", "type": "[<Artifact>]", "req": "may", "status": "active", "v02": "[<Artifact>]"},
+        {"n": 2, "name": "tests", "type": "[<TestResult>]", "req": "may", "status": "active", "v02": "[<TestResult>]"},
+        {"n": 3, "name": "metrics", "type": "map", "req": "may", "status": "active", "v02": "map"},
+        {"n": 4, "name": "resources", "type": "[<ResourceRef>]", "req": "may", "status": "active", "v02": "[<ResourceRef>]"},
+        {"n": 5, "name": "effects", "type": "[<EffectRef>]", "req": "may", "status": "active", "v02": "[<EffectRef>]"}
+      ]
+    },
+    {
+      "name": "Artifact",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "A produced artifact.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "path", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "size_bytes", "type": "uint", "req": "must", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "content_cid", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"},
+        {"n": 4, "name": "media_type", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    },
+    {
+      "name": "TestResult",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "A test result.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 2, "name": "status", "type": "int", "req": "must", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "ResourceRef",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "A resource reference.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "kind", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 2, "name": "id", "type": "tstr", "req": "must", "status": "active", "v02": "tstr"},
+        {"n": 3, "name": "merge_class", "type": "int", "req": "must", "status": "active", "v02": "int"}
+      ]
+    },
+    {
+      "name": "EffectRef",
+      "group": "tsir",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "An effect on a resource.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "verb", "type": "int", "req": "must", "status": "active", "v02": "int"},
+        {"n": 2, "name": "resource", "type": "<ResourceRef>", "req": "must", "status": "active", "v02": "<ResourceRef>"}
+      ]
+    },
+    {
+      "name": "MboxKeyFile",
+      "group": "local",
+      "class": "file",
+      "keyspace": "closed",
+      "owner": "SS",
+      "desc": "mbox.key in the data directory, 0600.",
+      "tag": "anet.mbox/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.mbox/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "epoch", "type": "uint", "req": "must", "status": "active"},
+        {"n": 2, "name": "seed", "type": "bstr", "size": 32, "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "EncKeyFile",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "enc_keys.cbor v2 in the data directory, 0600; a v other than 2 refuses to start.",
+      "keys": [
+        {"n": 1, "name": "v", "type": "uint", "value": "2", "req": "must", "status": "active"},
+        {"n": 2, "name": "aid", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 3, "name": "last_seq", "type": "uint", "req": "must", "status": "active", "note": "largest key-set seq this ring signed"},
+        {"n": 4, "name": "keys", "type": "[<RingKey>]", "req": "must", "status": "active"},
+        {"n": 5, "name": "signed", "type": "bstr<SignedEncKeySet>", "req": "may", "status": "active", "note": "last SignedEncKeySet signed"},
+        {"n": 6, "name": "last_wall", "type": "uint", "req": "must", "status": "active", "note": "local wall clock at the last maintenance"},
+        {"n": 7, "name": "rollback", "type": "<RollbackMark>", "req": "may", "status": "active", "note": "last local state rollback"},
+        {"n": 8, "name": "regen_tag", "type": "uint", "req": "may", "status": "active"},
+        {"n": 9, "name": "unverified_run", "type": "uint", "req": "must", "status": "active", "note": "run time with the hub gate closed; 0 when open or without a hub"}
+      ]
+    },
+    {
+      "name": "RingKey",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "One key of the epoch key ring.",
+      "keys": [
+        {"n": 1, "name": "pair", "type": "<KeyPair>", "req": "must", "status": "active"},
+        {"n": 2, "name": "removed_at", "type": "uint", "req": "must", "status": "active", "note": "0 while still in the hub's registered set"},
+        {"n": 3, "name": "retired", "type": "bool", "req": "must", "status": "active"}
+      ]
+    },
+    {
+      "name": "KeyPair",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "An encryption key pair (seal.KeyPair; unchanged).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "public", "type": "<EncKey>", "req": "must", "status": "active", "v02": "<EncKey>"},
+        {"n": 2, "name": "private", "type": "bstr", "req": "must", "status": "active", "v02": "bstr", "note": "32 bytes for suite 1"}
+      ]
+    },
+    {
+      "name": "RollbackMark",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "FS",
+      "desc": "A detected local state rollback.",
+      "keys": [
+        {"n": 1, "name": "at", "type": "uint", "req": "must", "status": "active"},
+        {"n": 2, "name": "stored_seq", "type": "uint", "req": "must", "status": "active"},
+        {"n": 3, "name": "tasks", "type": "uint", "req": "must", "status": "active", "note": "in-flight interactions ended"},
+        {"n": 4, "name": "logged", "type": "bool", "req": "must", "status": "active"},
+        {"n": 5, "name": "prev_at", "type": "uint", "req": "must", "status": "active", "note": "at of the previous mark; 0 = none"},
+        {"n": 6, "name": "silent", "type": "bool", "req": "must", "status": "active", "note": "a silent adoption: not shown, no evidence"}
+      ]
+    },
+    {
+      "name": "OrgGenesis",
+      "group": "module",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Organization genesis; not signed, its CID is the org_id (L41).",
+      "tag": "anet.org-genesis/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.org-genesis/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "governance_root", "type": "[tstr]", "req": "must", "status": "active", "note": "founder AIDs, byte-sorted and deduplicated"},
+        {"n": 2, "name": "m", "type": "uint", "req": "must", "status": "active", "note": "governance threshold, 1 <= m <= founders"},
+        {"n": 3, "name": "nonce", "type": "tstr", "req": "may", "status": "active"}
+      ]
+    },
+    {
+      "name": "OrgCredBody",
+      "group": "module",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Organization membership credential body.",
+      "tag": "anet.org-cred/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.org-cred/1", "req": "must", "status": "active", "aliases": ["type"], "note": "type tag"},
+        {"n": 1, "name": "org_id", "type": "tstr", "req": "must", "status": "active", "note": "CID(coredet(OrgGenesis))"},
+        {"n": 2, "name": "subject", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 3, "name": "role", "type": "tstr", "req": "must", "status": "active", "note": "admin, member or guest"},
+        {"n": 4, "name": "epoch", "type": "uint", "req": "may", "status": "active", "note": "0.3.0 accepts only the default (0)"},
+        {"n": 5, "name": "issued_at", "type": "int", "req": "must", "status": "active", "note": "unix ms"},
+        {"n": 6, "name": "not_after", "type": "int", "req": "must", "status": "active", "note": "unix ms, > issued_at"}
+      ]
+    },
+    {
+      "name": "SignedCredential",
+      "group": "module",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Credential on the wire (unchanged form).",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "cred", "type": "bstr<OrgCredBody>", "req": "must", "status": "active", "v02": "bstr"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "v02": "<aobj.Envelope>", "aliases": ["envelope"]}
+      ]
+    },
+    {
+      "name": "CogUnitBody",
+      "group": "module",
+      "class": "A",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Blackboard cognitive unit body; its CID is the unit id.",
+      "tag": "anet.cogunit/1",
+      "keys": [
+        {"n": 0, "name": "t", "type": "tstr", "value": "anet.cogunit/1", "req": "must", "status": "active", "aliases": ["tag"], "note": "type tag"},
+        {"n": 1, "name": "author", "type": "tstr", "req": "must", "status": "active", "note": "must equal env.signer_aid"},
+        {"n": 2, "name": "task_id", "type": "tstr", "req": "may", "status": "active"},
+        {"n": 3, "name": "scope", "type": "tstr", "req": "may", "status": "active"},
+        {"n": 4, "name": "type", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 5, "name": "stamp", "type": "<HLC>", "req": "must", "status": "active"},
+        {"n": 6, "name": "body", "type": "bstr", "req": "may", "status": "active", "note": "inline small payload"},
+        {"n": 7, "name": "body_cid", "type": "tstr", "req": "may", "status": "active"}
+      ]
+    },
+    {
+      "name": "CogUnitWire",
+      "group": "module",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Cognitive unit on the wire (the envelope moved from key 8 of the same map into a bstr-carried body).",
+      "keys": [
+        {"n": 1, "name": "body", "type": "bstr<CogUnitBody>", "req": "must", "status": "active"},
+        {"n": 2, "name": "env", "type": "<aobj.Envelope>", "req": "must", "status": "active", "aliases": ["envelope"]}
+      ]
+    },
+    {
+      "name": "HLC",
+      "group": "module",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "CORE",
+      "desc": "Hybrid logical clock stamp.",
+      "carried": true,
+      "keys": [
+        {"n": 1, "name": "wall", "type": "int", "req": "must", "status": "active", "v02": "int", "note": "unix ms"},
+        {"n": 2, "name": "logical", "type": "uint", "req": "may", "status": "active", "v02": "uint"},
+        {"n": 3, "name": "node_id", "type": "tstr", "req": "may", "status": "active", "v02": "tstr"}
+      ]
+    }
+  ],
+  "tags": [
+    {"id": "L1", "values": ["anet-seal/v2"], "class": "C", "kind": "label", "since": "0.3.0", "build": "layer-1 HPKE info = coredet({1: \"anet-seal/v2\", 2: to, 3: suite, 4: kid}); aad empty", "key": "recipient encryption epoch key", "owner": "FS, SS", "golden": "SEALED-2A, SEALED-2B"},
+    {"id": "L2", "values": ["anet-ix/v2"], "class": "C", "kind": "label", "since": "0.3.0", "build": "layer-2 HPKE info = coredet({1: \"anet-ix/v2\", 2: to, 3: suite2, 4: ikid}); aad empty", "key": "recipient interaction key", "owner": "FS", "golden": "SEALED-2B"},
+    {"id": "L3", "values": ["anet-relay-sig/v2"], "class": "A", "kind": "label", "since": "0.3.0", "build": "inner signature preimage v2 (InnerSigPreimage)", "key": "sender identity current key", "owner": "FS, SS, CORE", "golden": "SEALED-2A, SEALED-2B, SEALED-2C"},
+    {"id": "L4", "values": ["anet-env/v2"], "class": "B", "kind": "label", "since": "0.3.0", "build": "env_digest = SHA-256(\"anet-env/v2\" || 0x00 || coredet(outer field map without key 7)), field values as received", "key": "-", "owner": "SS", "golden": "ACCESS-1, SEALED-2B"},
+    {"id": "L5", "values": ["anet-access/v2"], "class": "B", "kind": "label", "since": "0.3.0", "build": "proof = Ed25519(holder_sk, \"anet-access/v2\" || 0x00 || cap_id(16) || env_digest(32))", "key": "holder key", "owner": "SS", "golden": "ACCESS-1"},
+    {"id": "L6", "values": ["anet.cap/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "Cap.sig = Ed25519(mbox_sk, coredet(CapBody))", "key": "mailbox signing key", "owner": "SS", "golden": "ACCESS-1"},
+    {"id": "L7", "values": ["anet-sess-key/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "session key delivery: HPKE base, suite 1, pkR = epk, info = \"anet-sess-key/v1\" || 0x00 || hubAID || 0x00 || sid(16); aad empty; plaintext k_sess(32)", "key": "one-time epk", "owner": "SS", "golden": "SESSION-1"},
+    {"id": "L8", "values": ["anet-sess-mac/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "MAC = HMAC-SHA256(k_sess, \"anet-sess-mac/v1\" || 0x00 || sid(16) || 0x00 || ts(decimal) || 0x00 || method || 0x00 || pathAndQuery || 0x00 || X-ANet-Home or empty || 0x00 || SHA-256(body))", "key": "k_sess", "owner": "SS", "golden": "SESSION-1"},
+    {"id": "L9", "values": ["anet-dir-hash/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "h = SHA-256(\"anet-dir-hash/v1\" || 0x00 || UTF-8(aid))", "key": "-", "owner": "SS", "golden": "DIR-1"},
+    {"id": "L10", "values": ["anet-dir-box/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "K = HKDF-SHA256(ikm = UTF-8(aid), salt = empty, info = \"anet-dir-box/v1\", L = 32); box = nonce(12) || ChaCha20-Poly1305(K, nonce, aad = h, pt = coredet(DirEntry))", "key": "derived from the AID", "owner": "SS", "golden": "DIR-1"},
+    {"id": "L11", "values": ["anet-dack/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "ack_key = HPKE.Export(layer-1 context, exporter_context = \"anet-dack/v1\", L = 32)", "key": "layer-1 HPKE", "owner": "DLV", "golden": "DACK-1, rfc9180"},
+    {"id": "L12", "values": ["anet-dack-handle/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "handle = HMAC-SHA256(ack_key, \"anet-dack-handle/v1\")[0:16]", "key": "ack_key", "owner": "DLV", "golden": "DACK-1"},
+    {"id": "L13", "values": ["anet-dack-tok/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "tok(o) = HMAC-SHA256(ack_key, \"anet-dack-tok/v1\" || u8(o))[0:16]", "key": "ack_key", "owner": "DLV", "golden": "DACK-1"},
+    {"id": "L14", "values": ["anet-dack-note/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "note_key = HMAC-SHA256(ack_key, \"anet-dack-note/v1\"); the note AEAD aad is tok(o)", "key": "ack_key", "owner": "DLV", "golden": "DACK-1"},
+    {"id": "L15", "values": ["anet-enc-kid/v1"], "class": "B", "kind": "carried", "since": "0.2.1", "build": "KID = SHA-256(\"anet-enc-kid/v1\" || u8(suite) || pub)[0:16] (no 0x00; epoch and interaction keys alike)", "key": "-", "owner": "FS", "golden": "ENCKEYS-2"},
+    {"id": "L16", "values": ["anet.enckeys/2"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "SignedEncKeySet.sig = Ed25519(identity key, coredet(EncKeySet))", "key": "identity current key", "owner": "FS", "golden": "ENCKEYS-2"},
+    {"id": "L17", "values": ["anet.kel/2"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "SignedEvent.sig = Ed25519(k, coredet(KeyEvent)); icp by k0, rot and dip by the key the event reveals", "key": "identity key", "owner": "KEL", "golden": "KEL-2A, KEL-2B, KEL-2N"},
+    {"id": "L18", "values": ["anet.ksn/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "aobj envelope signature over coredet(NoticeBody)", "key": "witness hub identity key", "owner": "KEL", "golden": "KSN-1"},
+    {"id": "L19", "values": ["anet-kel-next/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "seed(aid, seq) = HKDF-SHA256(ikm = RS, salt = \"anet-kel-next/v1\", info = UTF-8(aid) || 0x00 || u64be(seq), L = 32)", "key": "recovery seed RS", "owner": "KEL", "golden": "RECOVERY-1"},
+    {"id": "L20", "values": ["anet.recovery/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "ct = XChaCha20-Poly1305(key, nonce, RS, aad = coredet(RecoveryBlob without key 7)); key = argon2id(NFC(passphrase), salt, t = 3, m = 64 MiB, p = 4, 32) when kdf = argon2id, or the 32 bytes of recovery_local.key when kdf = {1: \"local\"}; kdf is inside the aad, so neither mode passes for the other", "key": "passphrase-derived key; local recovery key", "owner": "KEL", "golden": "RECOVERY-1"},
+    {"id": "L21", "values": ["anet.identity/2", "anet.mbox/1"], "class": "file", "kind": "typetag", "since": "0.3.0", "build": "local file type tags; not signed", "key": "-", "owner": "KEL, SS", "golden": "-"},
+    {"id": "L22", "values": ["anet-relay/v2/"], "class": "text", "kind": "carried", "since": "0.2.1", "build": "\"anet-relay/v2/\" + action + \"/\" + aid + \"/\" + hubAID + \"/\" + decimal(ts) + \"/\" + base64url(SHA-256(method || 0x00 || pathAndQuery || 0x00 || body)); agents and peer hubs alike", "key": "signer identity current key", "owner": "CORE", "golden": "RELAYAUTH-3"},
+    {"id": "L23", "values": ["anet-regpow/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "pow_hash = SHA-256(\"anet-regpow/v1\" || 0x00 || hub_aid || 0x00 || aid || 0x00 || seed(32) || nonce(<= 32)); >= 22 leading zero bits", "key": "-", "owner": "HPP", "golden": "REGPOW-1"},
+    {"id": "L24", "values": ["anet-regpow-seed/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "seed = HMAC-SHA256(pow_key, \"anet-regpow-seed/v1\" || u64be(floor(ms / 3 600 000)))", "key": "pow_key (hub process memory only)", "owner": "HPP", "golden": "REGPOW-1"},
+    {"id": "L25", "values": ["anet-liab-leaf/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "leaf = SHA-256(\"anet-liab-leaf/v1\" || 0x00 || salt(32) || coredet(LiabLeafContent))", "key": "-", "owner": "HPP", "golden": "LIAB-1"},
+    {"id": "L26", "values": ["anet-liab-node/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "node = SHA-256(\"anet-liab-node/v1\" || 0x00 || L.h || u64be(L.sum) || R.h || u64be(R.sum))", "key": "-", "owner": "HPP", "golden": "LIAB-1"},
+    {"id": "L27", "values": ["anet-receipt-ix/v2"], "class": "B", "kind": "label", "since": "0.3.0", "build": "ix_commit = SHA-256(\"anet-receipt-ix/v2\" || 0x00 || ix || 0x00 || anet.nonce); neither holds U+0000", "key": "-", "owner": "HPP", "golden": "EV2-1"},
+    {"id": "L28", "values": ["anet-receipt-requester/v2"], "class": "B", "kind": "label", "since": "0.3.0", "build": "requester_commit = SHA-256(\"anet-receipt-requester/v2\" || 0x00 || requester_aid || 0x00 || rsalt(32))", "key": "-", "owner": "HPP", "golden": "EV2-1"},
+    {"id": "L29", "values": ["anet.receipt/2"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "provider aobj envelope signature over coredet(ReceiptBody)", "key": "provider identity current key", "owner": "HPP", "golden": "EV2-1"},
+    {"id": "L30", "values": ["anet.review/2"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "ReviewWire.sig = Ed25519(review_sk, coredet(ReviewBody))", "key": "one-time review key", "owner": "HPP", "golden": "REVIEW-2"},
+    {"id": "L31", "values": ["anet-review-tag/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "tag = HMAC-SHA256(hub_tag_key, \"anet-review-tag/v1\" || 0x00 || reviewer_aid || 0x00 || subject_aid)[0:16]", "key": "hub_tag_key", "owner": "HPP", "golden": "REVIEW-2"},
+    {"id": "L32", "values": ["anet.review-att/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "hub aobj envelope signature over coredet(ReviewAttBody)", "key": "hub identity key", "owner": "HPP", "golden": "REVIEW-2"},
+    {"id": "L33", "values": ["anet-settle-guard/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "h = SHA-256(\"anet-settle-guard/v1\" || 0x00 || payer || 0x00 || pay_bind) (hub local)", "key": "-", "owner": "HPP", "golden": "EV2-1"},
+    {"id": "L34", "values": ["anet/x402-bind/v1"], "class": "B", "kind": "carried", "since": "0.2.1", "build": "PayBind = hex(SHA-256(\"anet/x402-bind/v1\" || 0x00 || ix || 0x00 || taskNonce)); an ix or taskNonce holding 0x00 is an error", "key": "-", "owner": "HPP", "golden": "EV2-1 (NUL cases)"},
+    {"id": "L35", "values": ["anet-local/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "local encrypted field: 0x01 || nonce(12) || AES-256-GCM(aead_key, nonce, plaintext, aad = coredet({1: \"anet-local/v1\", 2: ix, 3: \"<table>.<column>\"}))", "key": "aead_key derived from ix_dek (L36)", "owner": "FS", "golden": "LOCAL-1", "local": true},
+    {"id": "L36", "values": ["anet-local-aead/v1", "anet-local-mac/v1"], "class": "C", "kind": "label", "since": "0.3.0", "build": "aead_key = HKDF-SHA256(ikm = ix_dek, salt = empty, info = \"anet-local-aead/v1\", L = 32); mac_key = HKDF-SHA256(ikm = ix_dek, salt = empty, info = \"anet-local-mac/v1\", L = 32)", "key": "ix_dek", "owner": "FS, CUX", "golden": "LOCAL-1", "local": true},
+    {"id": "L37", "values": ["anet-client-key/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "client_key = SHA-256(\"anet-client-key/v1\" || 0x00 || messageId)", "key": "-", "owner": "CUX", "golden": "LOCAL-1", "local": true},
+    {"id": "L38", "values": ["anet-client-msg/v1"], "class": "B", "kind": "label", "since": "0.3.0", "build": "client_digest = HMAC-SHA256(mac_key, \"anet-client-msg/v1\" || 0x00 || canon(normalized content)); canon: members sorted (RFC 8785 3.2.3), strings escaped (3.2.2.2), no whitespace, numbers kept as the client wrote them", "key": "mac_key derived from ix_dek", "owner": "CUX", "golden": "LOCAL-1", "local": true},
+    {"id": "L39", "values": ["anet.delegate/1", "anet.message/1", "anet.status/1", "anet.result/1", "anet.card.get/1", "anet.card/1"], "class": "type", "kind": "typetag", "since": "0.3.0", "build": "inner type (key 4); not a signing label; inside the signature preimage", "key": "-", "owner": "-", "golden": "SEALED-2A, CARD-1"},
+    {"id": "L40", "values": ["anet/localpeer-key/v1", "anet-release/1", "anet-release/2", "anet-official/1", "anet-suite-identity-v1/cur", "anet-suite-identity-v1/nxt", "anet-suite-test-key-v1"], "class": "carried", "kind": "carried", "since": "0.2.1", "build": "unchanged", "key": "-", "owner": "-", "golden": "unchanged"},
+    {"id": "L41", "values": ["anet.org-genesis/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "org_id = CID(coredet(OrgGenesis)); not signed", "key": "-", "owner": "CORE", "golden": "MODOBJ-1"},
+    {"id": "L42", "values": ["anet.org-cred/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "SignedCredential.env signs coredet(OrgCredBody)", "key": "issuer identity current key", "owner": "CORE", "golden": "MODOBJ-1"},
+    {"id": "L43", "values": ["anet.cogunit/1"], "class": "A", "kind": "typetag", "since": "0.3.0", "build": "CogUnitWire.env signs coredet(CogUnitBody)", "key": "author identity current key", "owner": "CORE", "golden": "MODOBJ-1"}
+  ],
+  "relayauth": {
+    "prefix": "anet-relay/v2/",
+    "actions": [
+      {"name": "poll", "route": "POST /relay/poll", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "ack", "route": "POST /relay/ack", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "register", "route": "POST /register", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "profile", "route": "POST /profile", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "visibility", "route": "POST /visibility", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "deregister", "route": "POST /deregister", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "balance", "route": "GET /agents/{aid}/balance", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "ledger", "route": "GET /agents/{aid}/ledger", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "redemptions", "route": "GET /agents/{aid}/redemptions", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "keys", "route": "POST /agents/{aid}/keys", "signer": "agent", "status": "active", "owner": "CORE"},
+      {"name": "session", "route": "POST /relay/session", "signer": "agent", "status": "active", "owner": "SS"},
+      {"name": "revoke", "route": "POST /mailbox/revoke", "signer": "agent", "status": "active", "owner": "SS"},
+      {"name": "review", "route": "POST /reviews", "signer": "agent (the reviewer)", "status": "active", "owner": "HPP"},
+      {"name": "liab_proof", "route": "GET /agents/{aid}/liability-proof", "signer": "agent (itself)", "status": "active", "owner": "HPP"},
+      {"name": "fed_forward", "route": "POST /fed/v3/forward", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "fed_bucket", "route": "POST /fed/v3/directory:bucket", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "fed_status", "route": "POST /fed/v3/relay-status", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "fed_settle", "route": "POST /fed/v3/settle", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "fed_reviews", "route": "GET /fed/v3/reviews", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "fed_cards", "route": "GET /fed/v3/cards", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "fed_clear", "route": "POST /fed/v3/clear", "signer": "peer hub", "status": "active", "owner": "CORE"},
+      {"name": "send", "route": "-", "signer": "-", "status": "retired", "owner": "SS"},
+      {"name": "p2p", "route": "-", "signer": "-", "status": "retired", "owner": "SS"},
+      {"name": "fedkeys", "route": "-", "signer": "-", "status": "retired", "owner": "SS"}
+    ]
+  },
+  "hub_api": {
+    "wire": 3,
+    "headers": [
+      {"name": "X-ANet-Wire", "dir": "request and response", "where": "every hub request and response", "value": "3", "owner": "CORE"},
+      {"name": "X-ANet-AID", "dir": "request", "where": "relayauth routes, /fed/v3/* included", "value": "signer AID", "owner": "CORE, HPP"},
+      {"name": "X-ANet-TS", "dir": "request", "where": "relayauth routes; kind-0 /relay/send", "value": "unix ms", "owner": "CORE, HPP"},
+      {"name": "X-ANet-Seq", "dir": "request", "where": "relayauth routes", "value": "key_state_seq", "owner": "CORE, HPP"},
+      {"name": "X-ANet-Sig", "dir": "request", "where": "relayauth routes", "value": "signature over the L22 preimage", "owner": "CORE, HPP"},
+      {"name": "X-ANet-Access", "dir": "request", "where": "/relay/send, /fed/v3/forward", "value": "base64url(coredet(Access)), byte-equal to outer key 7, <= 1 KiB", "owner": "SS"},
+      {"name": "X-ANet-Session", "dir": "request", "where": "kind-0 /relay/send", "value": "sid, 16 bytes, base64url", "owner": "SS"},
+      {"name": "X-ANet-MAC", "dir": "request", "where": "kind-0 /relay/send", "value": "session MAC, 32 bytes, base64url (L8)", "owner": "SS"},
+      {"name": "X-ANet-Home", "dir": "request", "where": "/relay/send, optional", "value": "hub AID", "owner": "SS"},
+      {"name": "X-ANet-TS-Floor", "dir": "response", "where": "401 ts_stale only, after the signature verified", "value": "unix ms", "owner": "HPP"},
+      {"name": "Retry-After", "dir": "response", "where": "429, 502, 503 and refusals that wait", "value": "seconds", "owner": "CORE"},
+      {"name": "Content-Type", "dir": "request", "where": "/relay/send, /fed/v3/forward", "value": "application/vnd.anet.envelope+cbor", "owner": "SS"}
+    ],
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/relay/session",
+        "auth": "relayauth session",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "epk", "type": "b64url", "req": "must", "note": "32 bytes"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "sid", "type": "b64url", "req": "must"},
+            {"name": "exp", "type": "uint", "req": "must"},
+            {"name": "enc", "type": "b64url", "req": "must"},
+            {"name": "ct", "type": "b64url", "req": "must"}
+          ]
+        },
+        "reasons": ["admission_required"],
+        "owner": "SS"
+      },
+      {
+        "method": "POST",
+        "path": "/relay/send",
+        "auth": "kind 0: session MAC; kind 1: none (the capability)",
+        "request": {"raw": "application/vnd.anet.envelope+cbor: the envelope bytes"},
+        "response": {
+          "fields": [
+            {"name": "status", "type": "enum", "req": "must", "values": ["queued", "duplicate"]},
+            {"name": "rid", "type": "b64url", "req": "must"},
+            {"name": "via_hub", "type": "string", "req": "may", "note": "when the envelope was queued at another hub"},
+            {"name": "recipient_quiet", "type": "bool", "req": "must"}
+          ]
+        },
+        "owner": "SS, DLV, CUX",
+        "note": "refusals: the relay codes of reasons.hub; checks in a fixed order (envelope parse with outer key 8, access, kid in the queueing transaction)"
+      },
+      {
+        "method": "POST",
+        "path": "/relay/poll",
+        "auth": "relayauth poll",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "limit", "type": "uint", "req": "may"},
+            {"name": "after_id", "type": "uint", "req": "may"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {
+              "name": "messages",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "id", "type": "uint", "req": "must"},
+                {"name": "envelope", "type": "b64url", "req": "must"},
+                {"name": "accepted_at", "type": "uint", "req": "must"}
+              ]
+            },
+            {"name": "more", "type": "bool", "req": "must"},
+            {"name": "key_state_notice", "type": "b64url", "req": "may", "note": "NoticeWire bytes"},
+            {"name": "key_state_notice_error", "type": "enum", "req": "may", "values": ["quarantine", "not_admitted", "not_witness"]}
+          ]
+        },
+        "owner": "FS, KEL, CUX",
+        "note": "no rid; rows with exp <= now are not returned"
+      },
+      {
+        "method": "POST",
+        "path": "/relay/ack",
+        "auth": "relayauth ack",
+        "request": {
+          "strict": true,
+          "fields": [
+            {
+              "name": "items",
+              "type": "array",
+              "req": "must",
+              "note": "<= 1000",
+              "fields": [
+                {"name": "id", "type": "uint", "req": "must"},
+                {"name": "handle", "type": "b64url", "req": "cond", "note": "with dack"},
+                {"name": "dack", "type": "b64url", "req": "cond", "note": "with handle"}
+              ]
+            }
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "acked", "type": "uint", "req": "must"},
+            {"name": "stored", "type": "uint", "req": "must"}
+          ]
+        },
+        "reasons": ["bad_ack_item"],
+        "owner": "DLV"
+      },
+      {
+        "method": "POST",
+        "path": "/relay/status",
+        "auth": "none (anonymous side)",
+        "request": {
+          "strict": true,
+          "fields": [
+            {
+              "name": "items",
+              "type": "array",
+              "req": "must",
+              "note": "1-64 items, one via_hub for all, <= 16 KiB",
+              "fields": [
+                {"name": "rid", "type": "b64url", "req": "must"},
+                {"name": "handle", "type": "b64url", "req": "must"},
+                {"name": "via_hub", "type": "string", "req": "may"}
+              ]
+            }
+          ]
+        },
+        "response": {
+          "fields": [
+            {
+              "name": "items",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "state", "type": "enum", "req": "must", "values": ["queued", "done", "unknown"]},
+                {"name": "dack", "type": "b64url", "req": "may"}
+              ]
+            }
+          ]
+        },
+        "reasons": ["bad_status_query", "rate_limited", "home_unreachable"],
+        "owner": "DLV"
+      },
+      {
+        "method": "POST",
+        "path": "/mailbox/revoke",
+        "auth": "relayauth revoke",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "cap_ids", "type": "array", "req": "must", "note": "<= 1000 cap_id values, b64url"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "revoked", "type": "uint", "req": "must"},
+            {"name": "total", "type": "uint", "req": "must"}
+          ]
+        },
+        "reasons": ["revocation_list_full"],
+        "owner": "SS"
+      },
+      {
+        "method": "POST",
+        "path": "/directory:bucket",
+        "auth": "none (anonymous side)",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "prefix", "type": "b64url", "req": "must"},
+            {"name": "bits", "type": "uint", "req": "must"},
+            {"name": "cursor", "type": "string", "req": "may"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "max_bits", "type": "uint", "req": "must"},
+            {
+              "name": "entries",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "h", "type": "b64url", "req": "must"},
+                {"name": "box", "type": "b64url", "req": "must"}
+              ]
+            },
+            {"name": "next", "type": "string", "req": "may"},
+            {"name": "partial", "type": "bool", "req": "may", "note": "present only when true: a peer hub did not answer and no cached answer exists; a target missing from a partial bucket is 'temporarily unavailable', never recipient_unknown"}
+          ]
+        },
+        "reasons": ["bucket_too_narrow", "rate_limited"],
+        "owner": "SS"
+      },
+      {
+        "method": "POST",
+        "path": "/register",
+        "auth": "relayauth register",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "aid", "type": "string", "req": "must"},
+            {"name": "kel", "type": "b64url", "req": "must"},
+            {"name": "name", "type": "string", "req": "may"},
+            {"name": "caps", "type": "array", "req": "may"},
+            {"name": "summary", "type": "string", "req": "may"},
+            {"name": "readme", "type": "string", "req": "may"},
+            {"name": "enc_keys", "type": "b64url", "req": "may"},
+            {"name": "prev_seq", "type": "uint", "req": "cond", "note": "required with enc_keys"},
+            {"name": "a2a_card", "type": "object", "req": "may"},
+            {
+              "name": "pow",
+              "type": "object",
+              "req": "may",
+              "fields": [
+                {"name": "seed", "type": "b64url", "req": "must"},
+                {"name": "nonce", "type": "b64url", "req": "must"}
+              ]
+            },
+            {"name": "check_only", "type": "bool", "req": "may"}
+          ]
+        },
+        "response": {
+          "alt": [
+            {
+              "fields": [
+                {"name": "aid", "type": "string", "req": "must"},
+                {"name": "status", "type": "enum", "req": "must", "values": ["registered"]},
+                {"name": "keys_status", "type": "string", "req": "must"},
+                {"name": "keys_error", "type": "string", "req": "may"},
+                {"name": "card_status", "type": "string", "req": "must"},
+                {"name": "card_error", "type": "string", "req": "may", "note": "price_in_public_card among others"},
+                {"name": "probation_until", "type": "uint", "req": "may"},
+                {"name": "trial", "type": "uint", "req": "may"},
+                {"name": "revocations", "type": "array", "req": "must"},
+                {"name": "key_state_notice", "type": "b64url", "req": "may", "note": "NoticeWire bytes"},
+                {"name": "key_state_notice_error", "type": "enum", "req": "may", "values": ["quarantine", "not_admitted", "not_witness"]}
+              ],
+              "when": "registration"
+            },
+            {
+              "fields": [
+                {"name": "status", "type": "enum", "req": "must", "values": ["admitted", "open"]}
+              ],
+              "when": "check_only: nothing is written"
+            }
+          ]
+        },
+        "reasons": ["admission_required", "pow_required", "registration_quota", "invite_removed", "witness_not_this_hub", "aid_deactivated", "kel_invalid", "kel_fork", "kel_rollback", "kel_ts_out_of_window", "keys_rollback"],
+        "owner": "HPP, LEC, KEL, FS, SS",
+        "note": "admission_required carries aid; pow_required carries challenge {seed, bits, not_after}; check_only does not check witness_not_this_hub"
+      },
+      {
+        "method": "POST",
+        "path": "/agents/{aid}/keys",
+        "auth": "relayauth keys",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "keys", "type": "b64url", "req": "must"},
+            {"name": "prev_seq", "type": "uint", "req": "must"}
+          ]
+        },
+        "response": {"partial": true, "fields": []},
+        "reasons": ["keys_rollback"],
+        "owner": "FS",
+        "note": "keys_rollback carries stored_seq"
+      },
+      {
+        "method": "POST",
+        "path": "/agents/kel:push",
+        "auth": "none; rate limited per client address (IPv4 address, IPv6 /64): 60/min, burst 20 (KELPushRate)",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "aid", "type": "string", "req": "must"},
+            {"name": "kel", "type": "b64url", "req": "must"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "aid", "type": "string", "req": "must"},
+            {"name": "seq", "type": "uint", "req": "must"},
+            {"name": "head", "type": "string", "req": "must"},
+            {"name": "unchanged", "type": "bool", "req": "must"}
+          ]
+        },
+        "reasons": ["unknown_aid", "kel_fork", "kel_rollback", "kel_invalid", "kel_ts_out_of_window", "rate_limited"],
+        "owner": "KEL"
+      },
+      {
+        "method": "GET",
+        "path": "/hub/identity",
+        "auth": "none",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "wire", "type": "uint", "req": "must", "note": "3"},
+            {"name": "dir_max_bits", "type": "uint", "req": "must"}
+          ]
+        },
+        "owner": "CORE, SS"
+      },
+      {
+        "method": "GET",
+        "path": "/hub/kels",
+        "auth": "none",
+        "response": {
+          "fields": [
+            {
+              "name": "hubs",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "aid", "type": "string", "req": "must"},
+                {"name": "kel", "type": "b64url", "req": "must"}
+              ]
+            }
+          ]
+        },
+        "owner": "KEL",
+        "note": "Cache-Control: max-age=300"
+      },
+      {
+        "method": "GET",
+        "path": "/agents/{aid}/kel",
+        "auth": "none",
+        "response": {
+          "fields": [
+            {"name": "aid", "type": "string", "req": "must"},
+            {"name": "kel", "type": "b64url", "req": "must"},
+            {"name": "registered", "type": "bool", "req": "must", "note": "false: the AID is only in departed_kel"}
+          ]
+        },
+        "reasons": ["unknown_aid"],
+        "owner": "KEL, HPP"
+      },
+      {
+        "method": "GET",
+        "path": "/a2a/v1/agents",
+        "auth": "none (anonymous side)",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "kel", "type": "b64url", "req": "must"},
+            {"name": "keys", "type": "b64url", "req": "must"},
+            {"name": "key_state_notice", "type": "b64url", "req": "may"}
+          ]
+        },
+        "owner": "SS, KEL, HPP",
+        "note": "per entry; lastSeen cut to the hour, quiet only a boolean, registered_at cut to the UTC day, pricing removed"
+      },
+      {
+        "method": "GET",
+        "path": "/agents",
+        "auth": "none (anonymous side)",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "kel", "type": "b64url", "req": "must"},
+            {"name": "keys", "type": "b64url", "req": "must"},
+            {"name": "key_state_notice", "type": "b64url", "req": "may"}
+          ]
+        },
+        "owner": "SS, KEL, HPP",
+        "note": "as /a2a/v1/agents"
+      },
+      {
+        "method": "GET",
+        "path": "/agents/{aid}/balance",
+        "auth": "relayauth balance",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "probation_until", "type": "uint", "req": "may"},
+            {"name": "trial", "type": "uint", "req": "may"}
+          ]
+        },
+        "owner": "HPP"
+      },
+      {
+        "method": "GET",
+        "path": "/agents/{aid}/ledger",
+        "auth": "relayauth ledger",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "window_days", "type": "uint", "req": "must", "note": "always 14"},
+            {"name": "oldest_seq", "type": "uint", "req": "must", "note": "earliest row in the window; 0 when empty"}
+          ]
+        },
+        "owner": "HPP",
+        "note": "only rows inside the ledger window"
+      },
+      {
+        "method": "GET",
+        "path": "/agents/{aid}/redemptions",
+        "auth": "relayauth redemptions",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "window_days", "type": "uint", "req": "must"},
+            {"name": "oldest_seq", "type": "uint", "req": "must"}
+          ]
+        },
+        "owner": "HPP",
+        "note": "as /ledger"
+      },
+      {
+        "method": "GET",
+        "path": "/agents/{aid}/liability-proof",
+        "auth": "relayauth liab_proof",
+        "response": {
+          "fields": [
+            {"name": "to_day", "type": "uint", "req": "must"},
+            {"name": "from_day", "type": "uint", "req": "must"},
+            {"name": "aid", "type": "string", "req": "must"},
+            {"name": "balance", "type": "uint", "req": "must"},
+            {"name": "salt", "type": "hex", "req": "must"},
+            {
+              "name": "path",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "h", "type": "hex", "req": "must"},
+                {"name": "sum", "type": "uint", "req": "must"},
+                {"name": "side", "type": "string", "req": "must"}
+              ]
+            },
+            {"name": "ledger_hw", "type": "uint", "req": "must"},
+            {"name": "record", "type": "object", "req": "must"}
+          ]
+        },
+        "reasons": ["proof_unavailable"],
+        "owner": "HPP",
+        "note": "optional ?to_day=N"
+      },
+      {
+        "method": "POST",
+        "path": "/reviews",
+        "auth": "relayauth review",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "receipt", "type": "b64url", "req": "must"},
+            {"name": "review", "type": "b64url", "req": "must"},
+            {"name": "rsalt", "type": "b64url", "req": "must"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "status", "type": "enum", "req": "must", "values": ["stored"]},
+            {"name": "attestation", "type": "b64url", "req": "must"}
+          ]
+        },
+        "reasons": ["probation", "review_exists", "requester_commit_mismatch", "receipt_not_reviewable", "review_window_closed"],
+        "owner": "HPP",
+        "note": "<= 16 KiB"
+      },
+      {"method": "GET", "path": "/agents/{aid}/reputation", "auth": "none", "owner": "HPP"},
+      {"method": "GET", "path": "/graph", "auth": "none", "owner": "HPP", "note": "edges removed"},
+      {"method": "GET", "path": "/x402/supply", "auth": "none", "owner": "HPP", "note": "published epochs only"},
+      {"method": "GET", "path": "/x402/issuance", "auth": "none", "owner": "HPP", "note": "published epochs only"},
+      {"method": "GET", "path": "/x402/issuance/head", "auth": "none", "owner": "HPP", "note": "published epochs only"},
+      {"method": "POST", "path": "/x402/verify", "auth": "as before", "owner": "HPP", "note": "x402 standard; errorReason adds payee_not_local, auth_window_too_long"},
+      {"method": "POST", "path": "/x402/settle", "auth": "as before", "owner": "HPP", "note": "x402 standard; errorReason adds payee_not_local, auth_window_too_long"},
+      {"method": "GET", "path": "/x402/resource/*", "auth": "-", "reasons": ["gateway_removed"], "owner": "HPP", "note": "410 tombstone"},
+      {
+        "method": "POST",
+        "path": "/fed/v3/forward",
+        "auth": "relayauth fed_forward, peer hubs only",
+        "request": {"raw": "the envelope bytes, with X-ANet-Access"},
+        "response": {
+          "fields": [
+            {"name": "status", "type": "enum", "req": "must", "values": ["queued", "duplicate"]},
+            {"name": "rid", "type": "b64url", "req": "must"},
+            {"name": "recipient_quiet", "type": "bool", "req": "must"}
+          ]
+        },
+        "reasons": ["not_peer", "unknown_destination", "source_rate", "access_invalid", "kid_stale", "expired", "bad_exp"],
+        "owner": "SS",
+        "note": "success is always 200"
+      },
+      {
+        "method": "POST",
+        "path": "/fed/v3/directory:bucket",
+        "auth": "relayauth fed_bucket",
+        "request": {
+          "strict": true,
+          "fields": [
+            {"name": "prefix", "type": "b64url", "req": "must"},
+            {"name": "bits", "type": "uint", "req": "must"},
+            {"name": "cursor", "type": "string", "req": "may"}
+          ]
+        },
+        "response": {
+          "fields": [
+            {"name": "max_bits", "type": "uint", "req": "must"},
+            {
+              "name": "entries",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "h", "type": "b64url", "req": "must"},
+                {"name": "box", "type": "b64url", "req": "must"}
+              ]
+            },
+            {"name": "next", "type": "string", "req": "may"}
+          ]
+        },
+        "reasons": ["not_peer"],
+        "owner": "SS",
+        "note": "no partial: a peer answers for its own entries only"
+      },
+      {
+        "method": "POST",
+        "path": "/fed/v3/relay-status",
+        "auth": "relayauth fed_status",
+        "request": {
+          "strict": true,
+          "fields": [
+            {
+              "name": "items",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "rid", "type": "b64url", "req": "must"},
+                {"name": "handle", "type": "b64url", "req": "must"}
+              ]
+            }
+          ]
+        },
+        "response": {
+          "fields": [
+            {
+              "name": "items",
+              "type": "array",
+              "req": "must",
+              "fields": [
+                {"name": "state", "type": "enum", "req": "must", "values": ["queued", "done", "unknown"]},
+                {"name": "dack", "type": "b64url", "req": "may"}
+              ]
+            }
+          ]
+        },
+        "reasons": ["not_peer", "rate_limited"],
+        "owner": "DLV"
+      },
+      {
+        "method": "POST",
+        "path": "/fed/v3/settle",
+        "auth": "relayauth fed_settle",
+        "request": {"raw": "x402 FacilitatorRequest"},
+        "response": {"raw": "x402 SettlementResponse"},
+        "owner": "HPP",
+        "note": "x402 errorReason; payee is this hub's own account: payee_mismatch"
+      },
+      {
+        "method": "GET",
+        "path": "/fed/v3/reviews",
+        "auth": "relayauth fed_reviews",
+        "response": {
+          "fields": [
+            {"name": "format", "type": "enum", "req": "must", "values": ["review/2"]},
+            {"name": "receipt", "type": "b64url", "req": "must"},
+            {"name": "review", "type": "b64url", "req": "must"},
+            {"name": "attestation", "type": "b64url", "req": "must"},
+            {"name": "provider_kel", "type": "b64url", "req": "must"},
+            {"name": "fed_seq", "type": "uint", "req": "must"}
+          ]
+        },
+        "reasons": ["not_peer"],
+        "owner": "HPP",
+        "note": "per entry; ?cursor="
+      },
+      {
+        "method": "GET",
+        "path": "/fed/v3/cards",
+        "auth": "relayauth fed_cards",
+        "response": {
+          "partial": true,
+          "fields": [
+            {"name": "kel", "type": "b64url", "req": "must"},
+            {"name": "keys", "type": "b64url", "req": "must"},
+            {"name": "key_state_notice", "type": "b64url", "req": "may"}
+          ]
+        },
+        "reasons": ["not_peer"],
+        "owner": "SS, KEL",
+        "note": "per entry, otherwise the /fed/v2/cards entry shape; ?cursor="
+      },
+      {
+        "method": "POST",
+        "path": "/fed/v3/clear",
+        "auth": "relayauth fed_clear",
+        "request": {"partial": true, "fields": []},
+        "response": {"partial": true, "fields": []},
+        "reasons": ["not_peer"],
+        "owner": "HPP",
+        "note": "body of the former /federation/clear"
+      }
+    ],
+    "removed": ["/fed/v1/*", "/fed/v2/* (with /fed/v2/keys/{aid})", "/federation/clear (moved to /fed/v3/clear)", "POST /agents/keys:lookup", "POST /agents/kel:lookup", "POST /a2a/v1/agents/card:lookup", "POST/GET /agents/{aid}/p2p", "GET /p2p/peers", "GET /agents/{aid}/card (ADP card)", "GET /x402/resource/{aid}/{capability} (410 tombstone)", "the federation fallback of GET /agents/{aid}/keys", "request fields: /register invite, pricing, card; /profile pricing; /relay/send to_aid and base64 body; /relay/ack ids; /relay/send response id and warning"]
+  },
+  "p2p": {
+    "version": 3,
+    "frames": [
+      {"op": "hello", "dir": "both", "fields": ["v", "self"]},
+      {"op": "send", "dir": "daemon -> local anetpeer", "fields": ["v", "id", "to", "envelope", "addr"], "note": "addr from the p2p field of a contact-class grant"},
+      {"op": "send", "dir": "anetpeer -> remote anetpeer", "fields": ["v", "id", "to", "envelope"]},
+      {"op": "send answer", "dir": "remote anetpeer -> anetpeer; anetpeer -> daemon", "fields": ["v", "id"], "may": ["dack", "error"], "note": "dack is 107 characters; error only goes to logs"},
+      {"op": "recv", "dir": "anetpeer -> local daemon", "fields": ["v", "id", "envelope"]},
+      {"op": "ack", "dir": "daemon -> anetpeer", "fields": ["v", "id"], "may": ["dack"]},
+      {"op": "nack", "dir": "daemon -> anetpeer", "fields": ["v", "id", "error"]},
+      {"op": "error", "dir": "either", "fields": ["v"], "may": ["id", "error"]}
+    ],
+    "removed": ["reach frame", "reachable", "not_delivered"]
+  },
+  "control": [
+    {
+      "route": "error body",
+      "response": {
+        "partial": true,
+        "fields": [
+          {"name": "error", "type": "string", "req": "must", "note": "one sentence in the user's language"},
+          {"name": "reason", "type": "string", "req": "must", "note": "user reason code"},
+          {"name": "next", "type": "string", "req": "may", "note": "a command to copy; omitted when there is none"},
+          {"name": "hub_code", "type": "string", "req": "may", "note": "hub_refused only: the hub's code"}
+        ]
+      },
+      "owner": "UX",
+      "note": "every control-plane error; MCP tool error text = error"
+    },
+    {
+      "route": "/status",
+      "response": {
+        "partial": true,
+        "fields": [
+          {
+            "name": "summary",
+            "type": "array",
+            "req": "must",
+            "fields": [
+              {"name": "topic", "type": "string", "req": "must"},
+              {"name": "level", "type": "string", "req": "must"},
+              {"name": "text", "type": "string", "req": "must"},
+              {"name": "next", "type": "string", "req": "may"}
+            ]
+          }
+        ]
+      },
+      "owner": "UX",
+      "note": "summary from a2ashape.StatusSummary; MCP node_status.summary passes it through"
+    },
+    {
+      "route": "/tasks/events delivery",
+      "response": {
+        "fields": [
+          {"name": "delivery", "type": "string", "req": "must"},
+          {"name": "detail", "type": "string", "req": "must"},
+          {"name": "wait", "type": "string", "req": "must"},
+          {"name": "text", "type": "string", "req": "must"}
+        ]
+      },
+      "owner": "UX, DLV",
+      "note": "sent when anet.delivery, anet.delivery_detail or anet.delivery_wait changes; does not change anet.state_seq; not in the A2A stream"
+    },
+    {
+      "route": "/identity/status",
+      "request": {"fields": []},
+      "response": {
+        "fields": [
+          {"name": "aid", "type": "string", "req": "must"},
+          {"name": "name", "type": "string", "req": "must"},
+          {"name": "state", "type": "enum", "req": "must", "values": ["no_hub", "publishing", "ok", "notice_stale", "stopped", "deactivated"]},
+          {"name": "reason", "type": "string", "req": "must"},
+          {"name": "message", "type": "string", "req": "must"},
+          {"name": "next", "type": "string", "req": "may"},
+          {"name": "key_seq", "type": "uint", "req": "must"},
+          {"name": "commitment", "type": "base64", "req": "must", "note": "key 6 of the latest stored event, 32 bytes"},
+          {"name": "last_rotation", "type": "object", "req": "must", "note": "{at, mode} or null; mode witness, scheduled, emergency or recover"},
+          {"name": "witness", "type": "object", "req": "must", "note": "{url, aid} or null"},
+          {"name": "notice", "type": "object", "req": "must", "note": "{observed_at, age_s} or null"},
+          {"name": "pending", "type": "object", "req": "must", "note": "{kind, since} or null"},
+          {
+            "name": "old_witness_unacked",
+            "type": "array",
+            "req": "must",
+            "fields": [
+              {"name": "url", "type": "string", "req": "must"},
+              {"name": "since", "type": "string", "req": "must"},
+              {"name": "next_try", "type": "string", "req": "must"}
+            ]
+          },
+          {
+            "name": "recovery",
+            "type": "object",
+            "req": "must",
+            "fields": [
+              {"name": "state", "type": "enum", "req": "must", "values": ["none", "unprotected", "protected"]},
+              {"name": "message", "type": "string", "req": "may"},
+              {"name": "next", "type": "string", "req": "may"}
+            ],
+            "note": "an extra attribute, not a state: none, unprotected (with message and next) or protected"
+          }
+        ]
+      },
+      "owner": "KEL",
+      "note": "= MCP node_status.identity"
+    },
+    {
+      "route": "/hub-register",
+      "request": {
+        "fields": [
+          {"name": "hub", "type": "string", "req": "must"},
+          {"name": "name", "type": "string", "req": "may"},
+          {"name": "caps", "type": "array", "req": "may"},
+          {"name": "next_digest", "type": "base64", "req": "may"},
+          {"name": "unprotected", "type": "bool", "req": "may", "note": "only with next_digest: it comes from the unprotected recovery file"},
+          {"name": "dry_run", "type": "bool", "req": "may"}
+        ]
+      },
+      "response": {
+        "alt": [
+          {
+            "fields": [
+              {"name": "hub", "type": "string", "req": "must"},
+              {"name": "aid", "type": "string", "req": "must"},
+              {"name": "state", "type": "enum", "req": "must", "values": ["registered", "pending_admission", "retrying", "refused"]},
+              {"name": "reason", "type": "string", "req": "must"},
+              {"name": "message", "type": "string", "req": "must"},
+              {"name": "next", "type": "string", "req": "may"},
+              {"name": "next_attempt_at", "type": "string", "req": "may"},
+              {
+                "name": "recovery",
+                "type": "object",
+                "req": "may",
+                "fields": [
+                  {"name": "state", "type": "enum", "req": "must", "values": ["none", "unprotected", "protected"]},
+                  {"name": "message", "type": "string", "req": "may"},
+                  {"name": "next", "type": "string", "req": "may"}
+                ]
+              },
+              {"name": "hub_code", "type": "string", "req": "may"},
+              {"name": "hub_error", "type": "string", "req": "may"}
+            ],
+            "when": "joined, updated or refused"
+          },
+          {
+            "fields": [
+              {"name": "hub", "type": "string", "req": "must"},
+              {"name": "hub_aid", "type": "string", "req": "must"},
+              {"name": "action", "type": "enum", "req": "must", "values": ["join", "update", "switch"]},
+              {"name": "recovery_needed", "type": "bool", "req": "must"}
+            ],
+            "when": "dry_run"
+          }
+        ]
+      },
+      "owner": "LEC, KEL",
+      "note": "a first join without next_digest is 400 config_invalid; recovery_setup_required is not a join state"
+    },
+    {
+      "route": "/payments/status",
+      "response": {
+        "partial": true,
+        "fields": [
+          {"name": "spent_today", "type": "uint", "req": "must"},
+          {"name": "agent_spent_today", "type": "uint", "req": "must"},
+          {"name": "left_today", "type": "uint", "req": "must"},
+          {"name": "agent_left_today", "type": "uint", "req": "must"},
+          {"name": "payees", "type": "uint", "req": "must"}
+        ]
+      },
+      "owner": "HPP",
+      "note": "spent_24h and agent_spent_24h renamed; payees_file and payees_restricted removed"
+    },
+    {
+      "route": "/agents/card",
+      "response": {
+        "partial": true,
+        "fields": [
+          {"name": "charge", "type": "enum", "req": "must", "values": ["free", "partial", "paid"]},
+          {"name": "key_state", "type": "string", "req": "must"},
+          {"name": "prices", "type": "array", "req": "may"},
+          {"name": "pricesFetchedAt", "type": "string", "req": "may"},
+          {"name": "priceNote", "type": "string", "req": "may"}
+        ]
+      },
+      "owner": "HPP, KEL",
+      "note": "charge from the card shown (the verified extended card, else the public card)"
+    },
+    {
+      "route": "/agents/list",
+      "response": {
+        "partial": true,
+        "fields": [
+          {"name": "charge", "type": "enum", "req": "must", "values": ["free", "partial", "paid"]},
+          {"name": "key_state", "type": "string", "req": "must"}
+        ]
+      },
+      "owner": "HPP, KEL",
+      "note": "per entry; public card only; never fetches an extended card"
+    }
+  ],
+  "metadata": [
+    {"key": "anet.reason", "where": ["e2e", "local"], "value_type": "string", "status": "active", "owner": "all", "note": "a user reason code (StatusMsg, ResultResp, Task, Message)"},
+    {"key": "anet.retry_after_ms", "where": ["e2e", "local"], "value_type": "uint", "status": "active", "owner": "all", "note": "required with budget"},
+    {"key": "anet.preview_mode", "where": ["e2e"], "value_type": "string", "values": ["on", "with_reasoning"], "status": "active", "owner": "CUX", "note": "first DelegateReq.metadata or a follow-up ChatMsg.metadata"},
+    {"key": "anet.a2aError", "where": ["e2e"], "value_type": "string", "status": "active", "owner": "-", "note": "an A2A error name in a status message"},
+    {"key": "anet.state", "where": ["e2e"], "value_type": "string", "status": "active", "owner": "-", "note": "the task state a provider message or result asks for; a final reply no longer carries working"},
+    {"key": "anet.inbound", "where": ["e2e", "local"], "value_type": "string", "status": "active", "owner": "-", "note": "inbound-policy outcome, e.g. pending_approval"},
+    {"key": "anet.final", "where": [], "value_type": "bool", "status": "deleted", "owner": "CUX", "note": "removed"},
+    {"key": "anet.delivery", "where": ["local"], "value_type": "string", "values": ["pending", "confirmed", "unconfirmed"], "local_only": true, "status": "active", "owner": "DLV"},
+    {"key": "anet.delivery_detail", "where": ["local"], "value_type": "string", "values": ["not_sent", "sent", "queued_at_hub"], "local_only": true, "status": "active", "owner": "DLV", "note": "only with pending or unconfirmed"},
+    {"key": "anet.delivery_wait", "where": ["local"], "value_type": "string", "local_only": true, "status": "active", "owner": "DLV, SS, KEL", "note": "a waiting hub code, session_unavailable, rotation_pending, notice_stale or credential_refused"},
+    {"key": "anet.content_expires_at", "where": ["local"], "value_type": "string", "local_only": true, "status": "active", "owner": "FS", "note": "RFC 3339, Task"},
+    {"key": "anet.payment_note", "where": ["local"], "value_type": "string", "local_only": true, "status": "active", "owner": "HPP", "note": "one sentence, Task"},
+    {"key": "anet.spend_check", "where": ["local"], "value_type": "object", "local_only": true, "status": "active", "owner": "CUX", "note": "{who, amount, reason, reason_tier?, reason_limit?}; reason_tier auto, agent or manual"},
+    {"key": "anet.deduplicated", "where": ["local"], "value_type": "bool", "local_only": true, "status": "active", "owner": "CUX", "note": "only on the answer judged a retry; true"},
+    {"key": "anet.preview", "where": ["local", "artifact"], "value_type": "bool", "local_only": true, "status": "active", "owner": "CUX", "note": "preview artifacts and TaskArtifactUpdateEvent; true"},
+    {"key": "anet.identity_note", "where": ["local"], "value_type": "string", "local_only": true, "status": "active", "owner": "KEL", "note": "one sentence (identity.unprotected or its .resume variant) on tasks this node projects (local A2A, control /tasks/*, MCP), only while the identity has no recovery passphrase"},
+    {"key": "anet.receipt_verified", "where": ["local"], "value_type": "string", "values": ["verified", "unverified", "unknown", "mismatch"], "status": "active", "owner": "CUX"},
+    {"key": "anet.effect_status", "where": ["local"], "value_type": "string", "status": "active", "owner": "-", "note": "capability effect status: OK, UNVERIFIED, FAILED, UNAVAILABLE, PAYMENT_REQUIRED"},
+    {"key": "anet.request_cid", "where": ["local"], "value_type": "string", "status": "active", "owner": "-"},
+    {"key": "anet.result_cid", "where": ["local"], "value_type": "string", "status": "active", "owner": "-"},
+    {"key": "anet.peer_aid", "where": ["local"], "value_type": "string", "status": "active", "owner": "-"},
+    {"key": "anet.role", "where": ["local"], "value_type": "string", "status": "active", "owner": "-", "note": "requester or provider"},
+    {"key": "anet.skill", "where": ["local"], "value_type": "string", "status": "active", "owner": "-", "note": "capability of a capability task; on an incoming SendMessage it asks for a capability call"},
+    {"key": "anet.state_seq", "where": ["local"], "value_type": "uint", "status": "active", "owner": "-", "note": "increases with every state write"},
+    {"key": "anet.trust", "where": ["local"], "value_type": "string", "status": "active", "owner": "-", "note": "how an inbound task was admitted"},
+    {"key": "anet.receipt", "where": ["local"], "value_type": "object", "status": "active", "owner": "-", "note": "the provider's signed receipt and its check"},
+    {"key": "anet.cancel_requested", "where": ["local"], "value_type": "bool", "status": "active", "owner": "-"},
+    {"key": "anet.trusted", "where": ["local"], "value_type": "bool", "status": "active", "owner": "-", "note": "tells a provider-side backend whether the peer is trusted"},
+    {"key": "anet.payment.accept", "where": ["local"], "value_type": "object", "status": "active", "owner": "-", "note": "the payment option a local client chose"},
+    {"key": "anet.quote_expires_at", "where": ["local"], "value_type": "uint", "status": "active", "owner": "-", "note": "unix ms"},
+    {"key": "anet.unverified_receipts", "where": ["local"], "value_type": "array", "status": "active", "owner": "-"},
+    {"key": "anet.auth_id", "where": ["local"], "value_type": "string", "status": "active", "owner": "-"},
+    {"key": "anet.wait", "where": ["local"], "value_type": "string", "status": "active", "owner": "-", "note": "control-plane wait hint"},
+    {"key": "anet.args", "where": ["local"], "value_type": "object", "status": "active", "owner": "-", "note": "capability arguments on a local message"},
+    {"key": "anet.official", "where": ["local"], "value_type": "bool", "status": "active", "owner": "-", "note": "marks an agent the official manifest lists"},
+    {"key": "anet.cid", "where": ["part", "local"], "value_type": "string", "status": "active", "owner": "-", "note": "file part: the attachment's content id"},
+    {"key": "anet.size", "where": ["part", "local"], "value_type": "uint", "status": "active", "owner": "-", "note": "file part: size"},
+    {"key": "anet.attachment_cid", "where": ["part", "local"], "value_type": "string", "status": "active", "owner": "-", "note": "file part carrying only metadata"},
+    {"key": "anet.truncated", "where": ["part", "local"], "value_type": "bool", "status": "active", "owner": "-", "note": "what a stream event cut"},
+    {"key": "anet.settlement.receipt", "where": ["extension"], "value_type": "any", "status": "active", "owner": "HPP", "note": "x402 SettlementResponse extension: the hub's signed receipt"},
+    {"key": "anet.replayed", "where": ["extension"], "value_type": "any", "status": "active", "owner": "HPP", "note": "x402 SettlementResponse extension"},
+    {"key": "anet.original_transaction", "where": ["extension"], "value_type": "any", "status": "active", "owner": "HPP", "note": "x402 SettlementResponse extension"},
+    {"key": "anet.error_detail", "where": ["extension"], "value_type": "any", "status": "active", "owner": "HPP", "note": "x402 SettlementResponse extension"},
+    {"key": "anet.settlement_verified", "where": ["extension"], "value_type": "any", "status": "active", "owner": "HPP", "note": "x402 SettlementResponse extension: the requester's verdict"},
+    {"key": "anet.settlement.voucher", "where": ["extension"], "value_type": "any", "status": "deleted", "owner": "HPP", "note": "vouchers removed"},
+    {"key": "anet.pricing", "where": ["card"], "value_type": "any", "status": "deleted", "owner": "HPP", "note": "public price list removed"}
+  ],
+  "a2a_uris": [
+    {"uri": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v2", "where": "public card protocolBinding", "status": "active", "owner": "SS", "note": "replaces v1"},
+    {"uri": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1", "where": "-", "status": "deleted", "owner": "SS"},
+    {"uri": "https://agentnetwork.org.cn/a2a/bindings/anet-p2p/v1", "where": "-", "status": "deleted", "owner": "SS", "note": "cards no longer contribute a direct interface"},
+    {"uri": "https://agentnetwork.org.cn/a2a/ext/anet-card/v1", "where": "public and extended card", "status": "active", "owner": "-"},
+    {"uri": "https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1", "where": "public card", "status": "active", "owner": "-"},
+    {"uri": "https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1", "where": "-", "status": "deleted", "owner": "HPP", "note": "a hub refuses a public card carrying it"},
+    {"uri": "https://agentnetwork.org.cn/a2a/ext/anet-price/v1", "where": "provider-signed extended card only", "status": "active", "owner": "HPP", "note": "params {network, asset, prices: [{skillId, amount}]}; a hub refuses a public card carrying it"},
+    {"uri": "https://agentnetwork.org.cn/a2a/ext/anet-origin/v1", "where": "local proxy card", "status": "active", "owner": "HPP, KEL", "note": "params add originExtendedCard and keyState"},
+    {"uri": "https://agentnetwork.org.cn/a2a/ext/anet-preview/v1", "where": "public card when stream_preview is not off; the proxy card only when the remote public card declares it", "status": "active", "owner": "CUX", "note": "never required; no params"},
+    {"uri": "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2", "where": "public card", "status": "active", "owner": "-", "note": "a2a-x402"}
+  ],
+  "taskdoc_contexts": [
+    {"key": "args", "format": "json", "visibility": "as before", "req": "cond", "owner": "CUX", "note": "required for a capability call; top-level keys starting with $ are anet's; 0.3.0 defines only $files"},
+    {"key": "anet.nonce", "format": "text", "visibility": "private", "req": "must", "owner": "HPP", "note": "no U+0000"},
+    {"key": "anet.requester_commit", "format": "text", "visibility": "private", "req": "must", "owner": "HPP", "note": "32 bytes, base64url"},
+    {"key": "anet.review_key", "format": "text", "visibility": "private", "req": "must", "owner": "HPP", "note": "32 bytes, base64url"}
+  ],
+  "events": [
+    {"type": "anet.delivery.expired", "status": "active", "payload": ["handed", "reason"], "owner": "DLV", "note": "reason in undeliverable, delivery_unconfirmed, withdrawn, recipient_unknown, too_large, too_large_for_stranger, bad_envelope; expired and refused removed"},
+    {"type": "anet.local_state.lost", "status": "active", "payload": ["hub_seq", "local_seq", "failed_tasks"], "owner": "FS"},
+    {"type": "anet.retention.changed", "status": "active", "payload": ["from", "to", "deleted_interactions"], "owner": "FS"},
+    {"type": "anet.interaction.pruned", "status": "active", "payload": ["trust"], "owner": "FS", "note": "trust covers every class"},
+    {"type": "anet.identity.rotated", "status": "active", "payload": ["seq", "mode", "witness"], "owner": "KEL", "note": "mode witness, scheduled, emergency or recover"},
+    {"type": "anet.autoreply.invoked", "status": "active", "payload": ["mode", "sandbox", "exit", "unavailable", "egress"], "owner": "LEC", "note": "mode direct, sandbox or openai; sandbox bwrap, seatbelt or empty"},
+    {"type": "anet.hub.admission", "status": "active", "payload": ["hub", "state", "reason"], "owner": "LEC"},
+    {"type": "anet.policy.changed", "status": "active", "owner": "LEC", "note": "covers auto_reply.trusted, auto_reply.sandbox.egress_allow, runs_per_day, runs_per_peer_per_day, api_key_set"},
+    {"type": "anet.capability.effect", "status": "active", "owner": "CUX, FS", "note": "observed_state is recorded as a CID only"},
+    {"type": "anet.supply.proof", "status": "active", "payload": ["to_day", "root", "balance", "result"], "owner": "HPP"},
+    {"type": "anet.review.uploaded", "status": "active", "payload": ["ix", "subject", "rating", "day"], "owner": "HPP"},
+    {"type": "anet.credit.redeemed", "status": "active", "owner": "HPP", "note": "the redeemer's permanent local record"},
+    {"type": "anet.issuance.head_seen", "status": "active", "payload": ["hub", "seq", "id"], "owner": "HPP", "note": "payload is the epoch chain head"},
+    {"type": "anet.voucher.redeemed", "status": "deleted", "owner": "HPP"},
+    {"type": "anet.voucher.refused", "status": "deleted", "owner": "HPP"},
+    {"type": "anet.delegation.sent", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.delegation.received", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.delegation.refused_summary", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.result.accepted", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.interaction.receipt", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.payment.settled", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.payment.authorized", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.payment.quoted", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.shell.command", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.shell.refused", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.backend.forwarded", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.backend.failed", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.task.no_response", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.evidence.gap", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.message.sent", "status": "active", "owner": "-", "note": "carried over from 0.2.1"},
+    {"type": "anet.message.received", "status": "active", "owner": "-", "note": "carried over from 0.2.1"}
+  ],
+  "ael_records": [
+    {"type": "anet.supply.epoch", "version_major": 2, "payload": ["v", "from_day", "to_day", "root", "outstanding", "depth"], "status": "active", "owner": "HPP"},
+    {"type": "anet.credit.issued", "version_major": 1, "payload": [], "status": "deleted", "owner": "HPP"},
+    {"type": "anet.credit.retired", "version_major": 1, "payload": [], "status": "deleted", "owner": "HPP"},
+    {"type": "anet.credit.opening", "version_major": 1, "payload": [], "status": "deleted", "owner": "HPP"}
+  ],
+  "reasons": {
+    "seal": [
+      {"code": "bad-outer"},
+      {"code": "bad-version"},
+      {"code": "unknown-suite"},
+      {"code": "wrong-recipient"},
+      {"code": "sealed-to-unknown-key"},
+      {"code": "decrypt-failed"},
+      {"code": "bad-inner"},
+      {"code": "unknown-critical-field"},
+      {"code": "to-mismatch"},
+      {"code": "bad-pad"},
+      {"code": "kel-too-large"},
+      {"code": "bad-kel"},
+      {"code": "from-mismatch"},
+      {"code": "expired"},
+      {"code": "from-future"},
+      {"code": "bad-lifetime"},
+      {"code": "bad-sig"},
+      {"code": "bad-key-state"},
+      {"code": "revoked-key"},
+      {"code": "rotation-grace-expired"},
+      {"code": "aid-mismatch"},
+      {"code": "bad-keyset"},
+      {"code": "no-usable-key"},
+      {"code": "invalid-input"},
+      {"code": "internal"},
+      {"code": "bad-wrap"},
+      {"code": "bad-rk"},
+      {"code": "rk-mismatch"},
+      {"code": "sealed-to-closed-interaction"},
+      {"code": "ikey-mismatch"},
+      {"code": "exp-mismatch"},
+      {"code": "access-invalid"},
+      {"code": "witness-missing"},
+      {"code": "witness-stale"},
+      {"code": "witness-mismatch"},
+      {"code": "witness-invalid"},
+      {"code": "witness-unknown"},
+      {"code": "kel-from-future"}
+    ],
+    "hub": [
+      {"code": "wire_too_old", "http": 426, "class": "wire"},
+      {"code": "wire_too_new", "http": 400, "class": "wire"},
+      {"code": "bad_request", "http": 400, "class": "wire"},
+      {"code": "not_found", "http": 404, "class": "wire"},
+      {"code": "too_large", "http": 413, "class": "wire"},
+      {"code": "internal", "http": 500, "class": "wire"},
+      {"code": "unauthorized", "http": 401, "class": "auth"},
+      {"code": "ts_stale", "http": 401, "class": "auth", "note": "carries floor"},
+      {"code": "replayed", "http": 401, "class": "auth"},
+      {"code": "key_retired", "http": 401, "class": "auth"},
+      {"code": "identity_headers_not_allowed", "http": 400, "class": "auth"},
+      {"code": "bad_envelope", "http": 400, "class": "relay"},
+      {"code": "expired", "http": 400, "class": "relay"},
+      {"code": "bad_exp", "http": 400, "class": "relay"},
+      {"code": "session_invalid", "http": 401, "class": "relay"},
+      {"code": "access_invalid", "http": 403, "class": "relay"},
+      {"code": "recipient_unknown", "http": 404, "class": "relay"},
+      {"code": "too_large_for_stranger", "http": 413, "class": "relay"},
+      {"code": "kid_stale", "http": 409, "class": "relay"},
+      {"code": "rate_limited", "http": 429, "class": "relay", "note": "waits: the daemon puts it in anet.delivery_wait and keeps the task"},
+      {"code": "strangers_busy", "http": 429, "class": "relay", "note": "waits: the daemon puts it in anet.delivery_wait and keeps the task"},
+      {"code": "redelivery_limited", "http": 429, "class": "relay", "note": "waits: the daemon puts it in anet.delivery_wait and keeps the task"},
+      {"code": "mailbox_full", "http": 507, "class": "relay", "note": "waits: the daemon puts it in anet.delivery_wait and keeps the task"},
+      {"code": "home_unreachable", "http": 502, "class": "relay", "note": "waits: the daemon puts it in anet.delivery_wait and keeps the task"},
+      {"code": "revocation_list_full", "http": 429, "class": "relay"},
+      {"code": "bucket_too_narrow", "http": 400, "class": "relay"},
+      {"code": "bad_status_query", "http": 400, "class": "delivery"},
+      {"code": "bad_ack_item", "http": 400, "class": "delivery"},
+      {"code": "not_peer", "http": 403, "class": "federation"},
+      {"code": "unknown_destination", "http": 404, "class": "federation"},
+      {"code": "source_rate", "http": 429, "class": "federation"},
+      {"code": "admission_required", "http": 403, "class": "register"},
+      {"code": "pow_required", "http": 403, "class": "register"},
+      {"code": "registration_quota", "http": 429, "class": "register"},
+      {"code": "invite_removed", "http": 400, "class": "register"},
+      {"code": "witness_not_this_hub", "http": 400, "class": "register"},
+      {"code": "aid_deactivated", "http": 410, "class": "register"},
+      {"code": "unknown_aid", "http": 404, "class": "register"},
+      {"code": "kel_invalid", "http": 400, "class": "register"},
+      {"code": "kel_fork", "http": 409, "class": "register"},
+      {"code": "kel_rollback", "http": 409, "class": "register"},
+      {"code": "kel_ts_out_of_window", "http": 400, "class": "register"},
+      {"code": "keys_rollback", "http": 409, "class": "register", "note": "carries stored_seq"},
+      {"code": "proof_unavailable", "http": 404, "class": "payment"},
+      {"code": "gateway_removed", "http": 410, "class": "payment"},
+      {"code": "probation", "http": 403, "class": "payment"},
+      {"code": "review_exists", "http": 409, "class": "payment"},
+      {"code": "requester_commit_mismatch", "http": 400, "class": "payment"},
+      {"code": "receipt_not_reviewable", "http": 400, "class": "payment"},
+      {"code": "review_window_closed", "http": 400, "class": "payment"}
+    ],
+    "note": [
+      {"code": "not_accepting", "owner": "CUX"},
+      {"code": "denied", "owner": "CUX"},
+      {"code": "capability_not_public", "owner": "CUX"},
+      {"code": "pending_full", "owner": "CUX"},
+      {"code": "busy", "owner": "CUX", "note": "with retry_after"},
+      {"code": "caller_busy", "owner": "CUX", "note": "with retry_after"},
+      {"code": "quota_caller_per_min", "owner": "CUX", "note": "with retry_after"},
+      {"code": "quota_caller_per_day", "owner": "CUX", "note": "with retry_after"},
+      {"code": "args_too_large", "owner": "CUX"},
+      {"code": "files_count", "owner": "CUX"},
+      {"code": "files_too_large", "owner": "CUX"},
+      {"code": "file_type_not_accepted", "owner": "CUX"},
+      {"code": "bad_request", "owner": "CUX"},
+      {"code": "key_state", "owner": "CUX"},
+      {"code": "canceled", "owner": "DLV"},
+      {"code": "task_not_found", "owner": "DLV"},
+      {"code": "task_ended", "owner": "DLV"},
+      {"code": "invalid", "owner": "DLV"}
+    ],
+    "c1": [
+      {"code": "not_permitted", "http": 403},
+      {"code": "bad_request", "http": 400},
+      {"code": "too_large", "http": 413},
+      {"code": "unsupported_media", "http": 415},
+      {"code": "unknown_capability", "http": 404},
+      {"code": "c1_version", "http": 426},
+      {"code": "not_found", "http": 404},
+      {"code": "internal", "http": 500}
+    ],
+    "user": [
+      {"code": "not_accepting"},
+      {"code": "denied"},
+      {"code": "capability_not_public"},
+      {"code": "pending_full"},
+      {"code": "busy"},
+      {"code": "caller_busy"},
+      {"code": "quota_caller_per_min"},
+      {"code": "quota_caller_per_day"},
+      {"code": "args_too_large"},
+      {"code": "files_count"},
+      {"code": "files_too_large"},
+      {"code": "file_type_not_accepted"},
+      {"code": "bad_request"},
+      {"code": "key_state"},
+      {"code": "invalid"},
+      {"code": "canceled"},
+      {"code": "task_not_found"},
+      {"code": "task_ended"},
+      {"code": "refused"},
+      {"code": "unknown_code"},
+      {"code": "pending_approval"},
+      {"code": "pending_expired"},
+      {"code": "operator_rejected"},
+      {"code": "sandbox_unavailable"},
+      {"code": "budget"},
+      {"code": "provider_policy"},
+      {"code": "capability_not_served"},
+      {"code": "payments_unavailable"},
+      {"code": "unavailable"},
+      {"code": "timeout"},
+      {"code": "connection_lost"},
+      {"code": "interrupted"},
+      {"code": "no_response"},
+      {"code": "backend_failed"},
+      {"code": "bad_image"},
+      {"code": "no_face_in_a"},
+      {"code": "no_face_in_b"},
+      {"code": "result_refused"},
+      {"code": "receipt_mismatch"},
+      {"code": "deduplicated"},
+      {"code": "undeliverable"},
+      {"code": "recipient_unknown"},
+      {"code": "recipient_unverifiable"},
+      {"code": "too_large"},
+      {"code": "too_large_for_stranger"},
+      {"code": "bad_envelope"},
+      {"code": "rate_limited"},
+      {"code": "redelivery_limited"},
+      {"code": "strangers_busy"},
+      {"code": "mailbox_full"},
+      {"code": "home_unreachable"},
+      {"code": "session_unavailable"},
+      {"code": "credential_refused"},
+      {"code": "quote_above_card_price"},
+      {"code": "card_price_unavailable"},
+      {"code": "quote_expired"},
+      {"code": "rail_not_payable"},
+      {"code": "option_not_offered"},
+      {"code": "client_payload_unsupported"},
+      {"code": "no_pending_quote"},
+      {"code": "binding_mismatch"},
+      {"code": "payer_mismatch"},
+      {"code": "payee_not_local"},
+      {"code": "auth_window_too_long"},
+      {"code": "over_single_limit"},
+      {"code": "over_daily_limit"},
+      {"code": "over_agent_daily_limit"},
+      {"code": "payee_not_allowed"},
+      {"code": "payees_unreadable"},
+      {"code": "limits_summary"},
+      {"code": "identity_stopped"},
+      {"code": "identity_deactivated"},
+      {"code": "local_state_lost"},
+      {"code": "key_compromise"},
+      {"code": "tty_required"},
+      {"code": "recovery_file_unprotected"},
+      {"code": "recovery_file_missing"},
+      {"code": "recovery_passphrase_wrong"},
+      {"code": "recovery_wrong_identity"},
+      {"code": "recovery_mismatch"},
+      {"code": "passphrase_too_short"},
+      {"code": "no_hub_yet"},
+      {"code": "witness_unreachable"},
+      {"code": "rotation_pending"},
+      {"code": "hub_switch_requires_rotation"},
+      {"code": "hub_switch_pending_admission"},
+      {"code": "witness_hub_leave"},
+      {"code": "recover_target_exists"},
+      {"code": "recover_not_witness"},
+      {"code": "clock_skew"},
+      {"code": "identity_v02"},
+      {"code": "rotation_emergency_done"},
+      {"code": "notice_stale"},
+      {"code": "publishing"},
+      {"code": "old_hub_unacked"},
+      {"code": "no_local_task"},
+      {"code": "retention_invalid"},
+      {"code": "registered"},
+      {"code": "hub_pending_admission"},
+      {"code": "hub_retrying"},
+      {"code": "hub_refused"},
+      {"code": "hub_unreachable"},
+      {"code": "invite_removed"},
+      {"code": "wire_too_old"},
+      {"code": "wire_too_new"},
+      {"code": "probation"},
+      {"code": "review_exists"},
+      {"code": "requester_commit_mismatch"},
+      {"code": "receipt_not_reviewable"},
+      {"code": "review_window_closed"},
+      {"code": "args_reserved_key"},
+      {"code": "preview_off"},
+      {"code": "task_not_open"},
+      {"code": "not_requested"},
+      {"code": "extended_card_not_offered"},
+      {"code": "extended_card_not_configured"},
+      {"code": "extended_card_unavailable"},
+      {"code": "daemon_not_running"},
+      {"code": "aid_invalid"},
+      {"code": "cli_removed"},
+      {"code": "config_key_removed"},
+      {"code": "config_invalid"},
+      {"code": "api_key_on_argv"},
+      {"code": "api_key_empty"},
+      {"code": "egress_allow_invalid"},
+      {"code": "egress_allow_model_host"},
+      {"code": "egress_allow_too_many"},
+      {"code": "api_base_insecure"},
+      {"code": "work_dir_invalid"},
+      {"code": "budget_invalid"},
+      {"code": "no_bwrap"},
+      {"code": "userns_blocked"},
+      {"code": "userns_unavailable"},
+      {"code": "netns_failed"},
+      {"code": "seccomp_failed"},
+      {"code": "fs_isolation_failed"},
+      {"code": "agent_unsupported"},
+      {"code": "no_api_key"},
+      {"code": "no_api_base"},
+      {"code": "no_model"},
+      {"code": "platform_unsupported"},
+      {"code": "no_sandbox_exec"},
+      {"code": "no_cgroup_limits"},
+      {"code": "egress_host_not_allowed"},
+      {"code": "egress_port"},
+      {"code": "egress_private_address"},
+      {"code": "egress_plain_http"},
+      {"code": "egress_unauthorized"},
+      {"code": "egress_tunnels"},
+      {"code": "egress_too_large"},
+      {"code": "policy_server_tool"},
+      {"code": "policy_mcp_servers"},
+      {"code": "policy_field"},
+      {"code": "policy_path"},
+      {"code": "policy_encoding"},
+      {"code": "run_budget_requests"},
+      {"code": "run_budget_upload"},
+      {"code": "egress_sni_mismatch"},
+      {"code": "egress_ech"},
+      {"code": "egress_not_tls"},
+      {"code": "peer_cred_unsupported"},
+      {"code": "peer_uid_mismatch"},
+      {"code": "c1_version"},
+      {"code": "c1_uid_refused"},
+      {"code": "balance_mismatch"},
+      {"code": "omitted_from_ledger"},
+      {"code": "unknown_debit"},
+      {"code": "proof_invalid"},
+      {"code": "proof_unavailable"},
+      {"code": "proof_expired"},
+      {"code": "allow_confirm"},
+      {"code": "approve_confirm"},
+      {"code": "limits_confirm"},
+      {"code": "payee_confirm"},
+      {"code": "redeem_confirm"},
+      {"code": "egress_confirm"},
+      {"code": "trusted_direct_confirm"},
+      {"code": "delivery_unconfirmed"},
+      {"code": "needs_operator_approval"},
+      {"code": "message_id_reused"}
+    ],
+    "hub_operator": [
+      {"code": "hub_flag_removed"},
+      {"code": "quota_below_default"},
+      {"code": "hub_recovery_setup_required"},
+      {"code": "hub_running"},
+      {"code": "hub_identity_v02"}
+    ],
+    "x402": [
+      {"code": "payee_not_local", "note": "new errorReason"},
+      {"code": "auth_window_too_long", "note": "new errorReason"},
+      {"code": "payee_mismatch", "note": "existing errorReason, used by /fed/v3/settle"}
+    ],
+    "retired": [
+      {"code": "signed_status_query", "note": "merged into identity_headers_not_allowed"},
+      {"code": "bad_signature", "note": "merged into unauthorized"},
+      {"code": "access_revoked", "note": "merged into access_invalid"},
+      {"code": "home_unknown", "note": "merged into recipient_unknown"},
+      {"code": "forwarded", "note": "no longer a status value"},
+      {"code": "quota_global_per_min", "note": "merged into busy"},
+      {"code": "max_inflight", "note": "merged into busy"},
+      {"code": "provider_busy", "note": "x402a2a; merged into busy"},
+      {"code": "task_nonce_required", "note": "merged into bad_request"},
+      {"code": "peer_refused_key_state", "note": "merged into key_state"},
+      {"code": "caller_unwitnessed", "note": "removed"},
+      {"code": "prepay_removed", "note": "never introduced: DelegateReq key 6 is retired"},
+      {"code": "hub_flag_fixed", "note": "never introduced: hub_flag_removed.fixed"},
+      {"code": "recovery_setup_required", "note": "never introduced: an identity without a recovery passphrase is the recovery.state unprotected; not to be reused"},
+      {"code": "payment_extension_not_activated", "note": "not registered"},
+      {"code": "receipt.mismatch", "note": "spelled receipt_mismatch"}
+    ],
+    "shared": ["args_too_large", "bad_envelope", "bad_request", "busy", "caller_busy", "canceled", "capability_not_public", "denied", "file_type_not_accepted", "files_count", "files_too_large", "home_unreachable", "invalid", "invite_removed", "key_state", "mailbox_full", "not_accepting", "pending_full", "probation", "proof_unavailable", "quota_caller_per_day", "quota_caller_per_min", "rate_limited", "receipt_not_reviewable", "recipient_unknown", "redelivery_limited", "requester_commit_mismatch", "review_exists", "review_window_closed", "strangers_busy", "task_ended", "task_not_found", "too_large", "too_large_for_stranger", "wire_too_new", "wire_too_old"]
+  },
+  "layouts": [
+    {
+      "name": "dack",
+      "len": 80,
+      "owner": "DLV",
+      "parts": [
+        {"of": "dack", "off": 0, "len": 16, "what": "tok(o): o = 1 processed, 2 refused"},
+        {"of": "dack", "off": 16, "len": 64, "what": "note"},
+        {"of": "note", "off": 0, "len": 12, "what": "nonce, fresh from crypto/rand"},
+        {"of": "note", "off": 12, "len": 52, "what": "ChaCha20-Poly1305(note_key, nonce, pt, aad = tok(o)): ciphertext and 16-byte tag"},
+        {"of": "pt", "off": 0, "len": 1, "what": "format, 0x01"},
+        {"of": "pt", "off": 1, "len": 4, "what": "retry_after, seconds, big-endian u32, capped at 86 400"},
+        {"of": "pt", "off": 5, "len": 1, "what": "reason length L, 0-30"},
+        {"of": "pt", "off": 6, "len": 30, "what": "reason code: L bytes of [a-z0-9_], then zeros"}
+      ]
+    }
+  ],
+  "storage": [
+    {"where": "hub", "table": "relay_message", "columns": ["id INTEGER PK AUTOINCREMENT (recipient cursor and ack only)", "rid BLOB(16) NOT NULL UNIQUE (sender only)", "to_aid", "env_digest BLOB(32) NOT NULL", "class INTEGER (1 or 2; kind 0 counts as 2)", "cap_id BLOB(16), NULL for kind 0", "size", "created_at (= accepted_at, read in the queueing transaction)", "exp INTEGER NULL", "payload"], "never": ["sender", "kind", "ix", "kid"], "note": "UNIQUE(to_aid, env_digest); partial index WHERE exp IS NOT NULL", "owner": "SS, DLV, FS, CUX"},
+    {"where": "hub", "table": "other", "columns": ["relay_dack(handle PK, dack, exp)", "relay_redelivery(env_digest PK, count, window_start)", "cap_revocation(owner, cap_id, revoked_at) PK(owner, cap_id)", "quota_override", "agent.dir_hash", "agent.dir_box", "notice_cache", "restore_state", "x402_first_verify", "dereg_event"], "note": "every path that deletes an agent row goes through aghub.DeregisterTx; areas register their AID-keyed deletions in deregSteps", "owner": "all"},
+    {"where": "hub", "table": "backup", "columns": ["includes cap_revocation, quota_override, the admission tables and the ledger-window tables"], "never": ["relay_message", "relay_dack", "relay_redelivery", "notice_cache", "dereg_event", "keys/review_tag.key"], "owner": "SS, DLV, KEL, HPP"},
+    {"where": "daemon", "table": "outbox", "columns": ["the delivery outbox columns", "sealed_kid", "sealed_kid_na", "sealed_kss", "sealed_notice_at", "body (data-key ciphertext)"], "never": ["access"], "note": "the capability credential is rebuilt on every attempt", "owner": "DLV, FS, KEL, SS"},
+    {"where": "daemon", "table": "outbox_ver", "columns": ["the delivery outbox version columns, with via renamed via_hub"], "owner": "DLV"},
+    {"where": "daemon", "table": "other", "columns": ["caps_issued", "caps_held", "ix_key", "ix_dek", "interaction.peer_rk", "pending.peer_rk", "cancel_tomb", "refused.reason", "interaction.reason_variant TEXT NOT NULL DEFAULT ''", "interaction.reason_arg TEXT NOT NULL DEFAULT ''", "message.client_key", "client_digest", "client_unanswered", "review_seed", "review_rsalt", "pay_note", "peer_ext_card", "liab_proof", "review_outbox", "pending row arrival"], "owner": "all"},
+    {"where": "daemon", "table": "key files", "columns": ["mbox.key (MboxKeyFile)", "enc_keys.cbor (EncKeyFile)", "identity.kel (IdentityFile)", "key_state_notice.cbor (KeyStateNoticeFile)", "recovery_local.key (32 raw bytes) and recovery_local.anetrec (RecoveryBlob with kdf = local): read and written by the CLI only; the daemon never opens them"], "owner": "SS, FS, KEL"}
+  ],
+  "strings": [
+    {"value": "anet-credit", "class": "asset", "status": "active", "note": "x402 asset of the anet-credit scheme"},
+    {"value": "anet-relay/", "class": "label", "status": "deleted", "note": "relayauth v1 preimage prefix"},
+    {"value": "anet.doctor/1", "class": "json-format", "status": "active", "note": "anet doctor --json schema"},
+    {"value": "anet.evidence-export/1", "class": "json-format", "status": "active", "note": "evidence export format"},
+    {"value": "anet/localpeer-proof/v1", "class": "label", "status": "active", "note": "local peer challenge MAC (HMAC under the anet/localpeer-key/v1 key); local only"},
+    {"value": "anet/backend-context/1", "class": "label", "status": "active", "note": "hash prefix of the context id a local backend sees; local only"},
+    {"value": "anet/backend-message/1", "class": "label", "status": "active", "note": "hash prefix of the message id a local backend sees; local only"},
+    {"value": "anet-daemon", "class": "name", "status": "active", "note": "signer name in the local proxy card's anet-card params"},
+    {"value": "anet-official", "class": "name", "status": "active", "note": "program name"},
+    {"value": "anet-hub", "class": "name", "status": "active", "note": "program name"},
+    {"value": "anet-hub-admin", "class": "name", "status": "active", "note": "program name"},
+    {"value": "anet.reply", "class": "artifact-id", "status": "active", "note": "A2A artifact id of a text task's reply"},
+    {"value": "anet.result", "class": "artifact-id", "status": "active", "note": "A2A artifact id of a capability call's deliverable"},
+    {"value": "anet-wire-registry/1", "class": "json-format", "status": "active", "note": "format of this register"}
+  ],
+  "exempt": [
+    {"class": "prose", "match": "regexp", "value": "[\\s%]", "note": "log lines, messages and format strings (they hold a space or a verb)"},
+    {"class": "id-prefix", "match": "exact", "value": "anet-", "note": "prefix of local file and id names"},
+    {"class": "id-prefix", "match": "exact", "value": "anet-ctx-", "note": "prefix of a backend context id"},
+    {"class": "id-prefix", "match": "exact", "value": "anet-msg-", "note": "prefix of a backend message id"},
+    {"class": "id-prefix", "match": "exact", "value": "anet.", "note": "the anet metadata namespace, as a prefix"},
+    {"class": "email", "match": "regexp", "value": "^anet-[a-z]+@agentnetwork\\.org\\.cn$", "note": "release and official signing key identities"},
+    {"class": "prose", "match": "regexp", "value": "^anet-[a-z-]+:$", "note": "log prefixes"}
+  ],
+  "signers": {
+    "methods": ["(*github.com/ANetResearch/ANetCore/identity.Controller).Sign", "(*github.com/ANetResearch/ANetCore/identity.Controller).CurrentPrivateKey"],
+    "calls": [
+      {"repo": "ANetCore", "func": "(*payment.Authorization).Sign", "signs": "PaymentAuthorization"},
+      {"repo": "ANetCore", "func": "(*payment.Receipt).Sign", "signs": "PaymentReceipt"},
+      {"repo": "ANetCore", "func": "(*tsir.TaskDoc).Sign", "signs": "TaskDocPreimage"},
+      {"repo": "ANetCore", "func": "(*ael.EventRecord).Sign", "signs": "AELRecord"},
+      {"repo": "ANetCore", "func": "(*ael.HeadAttestation).Sign", "signs": "AELHeadAttestation"}
+    ]
+  },
+  "scan": {
+    "pattern": "^anet[-./]",
+    "consts": [
+      {"repo": "ANetCore", "pkg": "seal", "prefix": "outerKey", "object": "SealedEnvelope"},
+      {"repo": "ANetCore", "pkg": "seal", "prefix": "wrapKey", "object": "Wrap"},
+      {"repo": "ANetCore", "pkg": "seal", "prefix": "preKey", "object": "InnerSigPreimage"},
+      {"repo": "ANetCore", "pkg": "seal", "prefix": "key", "object": "SealedInner"}
+    ],
+    "actions": {"repo": "ANetCore", "pkg": "relayauth", "prefix": "Action", "param": "action"}
+  },
+  "nul_guard": [
+    {"repo": "ANetCore", "label": "L9", "what": "dirbox h"},
+    {"repo": "ANetCore", "label": "L7", "what": "session key delivery"},
+    {"repo": "ANetCore", "label": "L8", "what": "session MAC"},
+    {"repo": "ANetCore", "label": "L19", "what": "KEL next-key derivation"},
+    {"repo": "ANetCore", "label": "L23", "what": "regpow hash"},
+    {"repo": "ANetCore", "label": "L27", "what": "evidence ix_commit"},
+    {"repo": "ANetCore", "label": "L28", "what": "evidence requester_commit"},
+    {"repo": "ANet", "label": "L34", "what": "x402a2a.PayBind"},
+    {"repo": "ANetHub", "label": "L31", "what": "review tag"},
+    {"repo": "ANetHub", "label": "L33", "what": "settlement guard"}
+  ]
+}
