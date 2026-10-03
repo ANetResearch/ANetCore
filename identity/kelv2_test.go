@@ -281,12 +281,12 @@ type rawSigned struct {
 	Extra   []byte          `cbor:"4,keyasint,omitempty"`
 }
 
-// rawKEL encodes kel with the head event's bytes replaced by head (signed as the bytes are), and
-// extra as key 4 of the head's signed event when it is not nil.
-func rawKEL(t testing.TB, kel []SignedEvent, head []byte, k ed25519.PrivateKey, extra []byte) []byte {
+// rawKEL encodes prefix followed by an event whose bytes are head (signed by k as the bytes
+// are), with extra as key 4 of that event's signed event when it is not nil.
+func rawKEL(t testing.TB, prefix []SignedEvent, head []byte, k ed25519.PrivateKey, extra []byte) []byte {
 	t.Helper()
 	var out []rawSigned
-	for _, se := range kel[:len(kel)-1] {
+	for _, se := range prefix {
 		b, err := coredet.Marshal(se.Event)
 		if err != nil {
 			t.Fatal(err)
@@ -502,7 +502,7 @@ func negativeCases(t testing.TB) []negCase {
 	add("rot without key 0", rawKEL(t, icpA, encodeMap(t, noKey0, sortedKeys(noKey0)), ka[1], nil), ErrKELv1.Error())
 	icpNo0 := rawMap(t, icpEvent(ka[0], ka[1], hubT0, ToadHub))
 	delete(icpNo0, 0)
-	add("icp without key 0 (a v0.2 KEL)", rawKEL(t, []SignedEvent{{}}, encodeMap(t, icpNo0, sortedKeys(icpNo0)), ka[0], nil),
+	add("icp without key 0 (a v0.2 KEL)", rawKEL(t, nil, encodeMap(t, icpNo0, sortedKeys(icpNo0)), ka[0], nil),
 		ErrKELv1.Error())
 	wrong := func(tag string) []byte {
 		e := rot1
@@ -525,7 +525,7 @@ func negativeCases(t testing.TB) []negCase {
 	add("key 1 written as an empty string", func() []byte {
 		mm := rawMap(t, icpEvent(ka[0], ka[1], hubT0, ToadHub))
 		mm[1] = []byte{0x60}
-		return rawKEL(t, []SignedEvent{{}}, encodeMap(t, mm, sortedKeys(mm)), ka[0], nil)
+		return rawKEL(t, nil, encodeMap(t, mm, sortedKeys(mm)), ka[0], nil)
 	}(), ErrNonCanonicalEvent.Error())
 	add("keys out of order (same event, non-CoreDet bytes)", func() []byte {
 		order := sortedKeys(m)
@@ -572,7 +572,7 @@ func TestKELv1IsNotAccepted(t *testing.T) {
 	m := rawMap(t, v1)
 	delete(m, 0)
 	delete(m, 8)
-	if _, err := replayBytes(rawKEL(t, []SignedEvent{{}}, encodeMap(t, m, sortedKeys(m)), k[0], nil)); !errors.Is(err, ErrKELv1) {
+	if _, err := replayBytes(rawKEL(t, nil, encodeMap(t, m, sortedKeys(m)), k[0], nil)); !errors.Is(err, ErrKELv1) {
 		t.Fatalf("a v1 icp from bytes: %v", err)
 	}
 	if ErrKELv1.Error() != "identity: KEL v1 (v0.2) is not accepted" {
