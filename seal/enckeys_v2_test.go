@@ -122,6 +122,12 @@ func TestEncKeySetV2Rejects(t *testing.T) {
 		// (1) type and registered keys.
 		{"type anet.enckeys/1", with(func(s *EncKeySet) { s.Type = "anet.enckeys/1" }), 0, "type"},
 		{"empty type", with(func(s *EncKeySet) { s.Type = "" }), 0, "type"},
+		// A v0.2 set has no key 5: it is refused for its type, not for the key it lacks.
+		{"a v0.2 set (anet.enckeys/1, no mbox)", rawEdit(t, encSet(base()), func(m fieldMap) {
+			m[0] = enc(t, "anet.enckeys/1")
+			delete(m, 5)
+		}), 0, `type "anet.enckeys/1"`},
+		{"type not a text string", rawEdit(t, encSet(base()), func(m fieldMap) { m[0] = enc(t, []byte(EncKeySetType)) }), 0, "type"},
 		{"unregistered key 6", rawEdit(t, encSet(base()), func(m fieldMap) { m[6] = enc(t, nil) }), 0, "not a key of"},
 		{"key 64 (no extension space)", rawEdit(t, encSet(base()), func(m fieldMap) { m[64] = enc(t, nil) }), 0, "not a key of"},
 		{"unregistered key in an EncKey", rawEditKey(t, encSet(base()), 0, func(m fieldMap) { m[6] = enc(t, nil) }), 0, "unknown field"},

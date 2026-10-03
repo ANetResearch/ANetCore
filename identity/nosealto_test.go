@@ -46,6 +46,19 @@ func TestIdentityAPIHasNoSealTo(t *testing.T) {
 			}
 		}
 		for _, d := range f.Decls {
+			// A function value under the old name (var SealTo = …) is the same API.
+			if gd, ok := d.(*ast.GenDecl); ok {
+				for _, s := range gd.Specs {
+					if vs, ok := s.(*ast.ValueSpec); ok {
+						for _, n := range vs.Names {
+							if n.IsExported() {
+								exported = append(exported, n.Name)
+							}
+						}
+					}
+				}
+				continue
+			}
 			fd, ok := d.(*ast.FuncDecl)
 			if !ok || !fd.Name.IsExported() {
 				continue
