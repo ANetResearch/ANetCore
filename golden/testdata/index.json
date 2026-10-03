@@ -311,7 +311,7 @@
       "covers": "the local A2A error shape: the a2a-go JSON-RPC and REST clients each recognize the standard error of no_local_task, extended_card_not_offered, extended_card_not_configured, extended_card_unavailable and message_id_reused; data or details is an array whose first item has domain a2a-protocol.org and whose second is anet's",
       "labels": [],
       "objects": [],
-      "at": [{"repo": "ANet", "path": "module/a2a/errors_contract_test.go", "test": "TestA2AERR_1", "todo": "v030-todo(UX-5)"}]
+      "at": [{"repo": "ANet", "path": "module/a2a/errors_contract_test.go", "test": "TestA2AERR_1"}]
     },
     {
       "id": "VEC_SUITE_IDENTITY_1",
