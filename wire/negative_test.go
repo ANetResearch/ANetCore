@@ -105,6 +105,57 @@ func TestNegativesSeparateStrictFromLaxDecoders(t *testing.T) {
 	}
 }
 
+// encKeyStale is a decoder that still has a field for key 6, which EncKey does not assign, and
+// of a type (bstr) other than whatever a generator might insert.
+type encKeyStale struct {
+	encKey
+	Old []byte `cbor:"6,keyasint,omitempty"`
+}
+
+// A decoder that knows a key the object does not assign is caught whatever the type of its field:
+// the negative's value is null, which decodes into any field, so the strict decoder's refusal can
+// only come from the key itself.
+func TestNegativesExposeADecoderThatKnowsAnUnassignedKey(t *testing.T) {
+	r := reg(t)
+	negs, err := wire.Negatives(r, "EncKey", validEncKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	took := map[uint64]bool{}
+	for _, n := range negs {
+		var v encKeyStale
+		if coredet.UnmarshalStrict(n.Bytes, &v) == nil {
+			took[n.Key] = true
+		}
+	}
+	if len(took) != 1 || !took[6] {
+		t.Fatalf("a decoder with a field for key 6 took %v; want exactly key 6 exposed", took)
+	}
+}
+
+// The valid encoding must be valid: one that already holds a key the object does not assign is
+// refused rather than silently left without that key's negative.
+func TestNegativesRefuseAnInvalidBase(t *testing.T) {
+	r := reg(t)
+	for name, v := range map[string]any{
+		"reserved key 6":      encKeyStale{Old: []byte{1}},
+		"64 in closed object": map[uint64]any{1: []byte{1}, 64: 0},
+	} {
+		b, err := coredet.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := wire.Negatives(r, "EncKey", b); err == nil {
+			t.Errorf("%s: base accepted", name)
+		}
+	}
+	// an extension key of a critical object is fine in the base
+	wrap, _ := coredet.Marshal(map[uint64]any{3: []byte{1}, 21: []byte{0}, 64: 0})
+	if _, err := wire.Negatives(r, "Wrap", wrap); err != nil {
+		t.Fatalf("Wrap with an extension key: %v", err)
+	}
+}
+
 func TestNegativesFollowTheKeyspace(t *testing.T) {
 	r := reg(t)
 	// Wrap: keys >= 64 are ignorable, so no negative beyond 63; keys 1-3 and 21 are active.

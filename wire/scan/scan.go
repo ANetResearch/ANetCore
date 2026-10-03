@@ -15,8 +15,9 @@
 //   - relayauth Action* constants: registered and active;
 //   - declarations annotated `//anet:wire reasons.<namespace>`: their codes are registered (and,
 //     with "complete", every registered code has a row);
-//   - every call of an identity signing method: made from a function the registry lists under
-//     signers (or transition.json does);
+//   - every call of an identity signing method, and every reference to one (a method value or
+//     method expression handed to another function): made from a function the registry lists
+//     under signers (or transition.json does);
 //   - every transition.json entry of the repository still matches something.
 //
 // Every Problem says what is wrong and what to change.
@@ -56,8 +57,11 @@ type Config struct {
 	// Repo is the repository name used in the registry: ANetCore, ANet or ANetHub.
 	Repo string
 	// Tags are extra build-tag sets to type-check besides the default build, so that signing
-	// calls in optional modules are seen. Files no configuration builds are still scanned for
-	// structs, constants and strings, without type information.
+	// calls in optional modules are seen. An element of the form NAME=value (GOOS=darwin) sets
+	// that variable for the configuration instead of a build tag, for files only another
+	// platform builds. Files no configuration builds are still scanned for structs, constants
+	// and strings, without type information; a reference to a signing method's name in such a
+	// file is reported, since the scan cannot tell whose method it is.
 	Tags [][]string
 	// Env is added to the environment of the go command (e.g. GOWORK=off for a tree outside the
 	// workspace).
@@ -302,19 +306,27 @@ func (s *scanner) typecheck() error {
 	sets := append([][]string{nil}, s.cfg.Tags...)
 	env := s.goEnv()
 	var lists [][]*listPkg
-	for _, tags := range sets {
+	for _, set := range sets {
 		args := []string{"list", "-e", "-export", "-deps", "-json=ImportPath,Dir,GoFiles,CgoFiles,Export,DepOnly,Standard,ImportMap,Error,Module"}
+		var tags, vars []string
+		for _, t := range set {
+			if strings.Contains(t, "=") {
+				vars = append(vars, t)
+			} else {
+				tags = append(tags, t)
+			}
+		}
 		if len(tags) > 0 {
 			args = append(args, "-tags", strings.Join(tags, ","))
 		}
 		args = append(args, "./...")
 		cmd := exec.Command(goCmd(), args...)
 		cmd.Dir = s.cfg.Dir
-		cmd.Env = env
+		cmd.Env = append(append([]string(nil), env...), vars...)
 		var out, errb bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &errb
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("scan: go list %v: %v\n%s", tags, err, errb.String())
+			return fmt.Errorf("scan: go list %v: %v\n%s", set, err, errb.String())
 		}
 		dec := json.NewDecoder(&out)
 		var pkgs []*listPkg
@@ -1442,6 +1454,7 @@ func (s *scanner) isSigning(f *file, fn *types.Func, recv types.Type) bool {
 
 func (s *scanner) checkSigners(f *file) {
 	if f.info == nil {
+		s.checkUntypedSigners(f)
 		return
 	}
 	for _, decl := range f.ast.Decls {
@@ -1456,12 +1469,12 @@ func (s *scanner) checkSigners(f *file) {
 		default:
 			owner = f.pkg + ".<init>"
 		}
+		// Every reference to a signing method counts, not only a call of it: a method value
+		// (seal.Seal(inner, key, d.self.Sign)) or a method expression ((*identity.Controller).Sign)
+		// hands the identity key to whatever receives it, so the function that takes the reference
+		// is the signer the registry has to list.
 		ast.Inspect(decl, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := call.Fun.(*ast.SelectorExpr)
+			sel, ok := n.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
@@ -1476,10 +1489,53 @@ func (s *scanner) checkSigners(f *file) {
 			if fn == nil || !s.isSigning(f, fn, recv) {
 				return true
 			}
-			s.signerCall(call.Pos(), owner, s.relFunc(fn.FullName()))
+			s.signerCall(sel.Pos(), owner, s.relFunc(fn.FullName()))
 			return true
 		})
 	}
+}
+
+// checkUntypedSigners covers a file that no scanned configuration compiles (another GOOS, a tag
+// set not listed in Config.Tags). Without type information a method cannot be resolved, so any
+// selector named like a signing method, other than a package-qualified function (ed25519.Sign),
+// is reported: the remedy is to add the file's configuration to Config.Tags, after which the
+// typed check decides.
+func (s *scanner) checkUntypedSigners(f *file) {
+	names := map[string]bool{}
+	for _, m := range s.reg.Signers.Methods {
+		if _, name, ok := splitMethod(m); ok {
+			names[name] = true
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	pkgs := map[string]bool{}
+	for _, im := range f.ast.Imports {
+		if im.Name != nil {
+			pkgs[im.Name.Name] = true
+			continue
+		}
+		p, _ := strconv.Unquote(im.Path.Value)
+		elems := strings.Split(p, "/")
+		last := elems[len(elems)-1]
+		if len(elems) > 1 && regexp.MustCompile(`^v[0-9]+$`).MatchString(last) {
+			last = elems[len(elems)-2]
+		}
+		pkgs[last] = true
+		pkgs[strings.ReplaceAll(last, "-", "")] = true
+	}
+	ast.Inspect(f.ast, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if !ok || !names[sel.Sel.Name] {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && pkgs[id.Name] {
+			return true
+		}
+		s.add(sel.Pos(), "signer", "no scanned build configuration compiles %s, so this reference to .%s cannot be resolved (CORE-L9): add the file's build tags or GOOS=<os> to the Tags of this repository's TestWireRegistry", f.path, sel.Sel.Name)
+		return true
+	})
 }
 
 func (s *scanner) signerCall(pos token.Pos, owner, method string) {
@@ -1495,7 +1551,7 @@ func (s *scanner) signerCall(pos token.Pos, owner, method string) {
 			return
 		}
 	}
-	s.add(pos, "signer", "%s signs with an identity key (%s) but is not in registry signers: list it with the object it signs; a new signed object needs a key-0 type tag first (CORE-L9)", owner, method)
+	s.add(pos, "signer", "%s signs with an identity key (%s, called or handed on) but is not in registry signers: list it with the object it signs; a new signed object needs a key-0 type tag first (CORE-L9)", owner, method)
 	s.fix(&wire.TransitionEntry{Kind: wire.TransSigner, Go: owner})
 }
 

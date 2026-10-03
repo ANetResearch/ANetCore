@@ -167,10 +167,11 @@
     {
       "name": "InnerSigPreimage",
       "group": "envelope",
-      "class": "plain",
+      "class": "A",
       "keyspace": "derived",
       "owner": "CORE",
       "desc": "Signature preimage v2 M: the inner fields except 20 as received, key 9 replaced by coredet(bstr(SHA-256(body))), plus keys 0 and 30-34. Built, never decoded.",
+      "tag": "anet-relay-sig/v2",
       "keys": [
         {"n": 0, "name": "label", "type": "tstr", "value": "anet-relay-sig/v2", "req": "must", "status": "active"},
         {"n": 30, "name": "enc", "type": "bstr", "req": "must", "status": "active", "aliases": ["enc1"], "note": "outer key 5"},
@@ -2751,7 +2752,7 @@
       {"code": "caller_unwitnessed", "note": "removed"},
       {"code": "prepay_removed", "note": "never introduced: DelegateReq key 6 is retired"},
       {"code": "hub_flag_fixed", "note": "never introduced: hub_flag_removed.fixed"},
-      {"code": "recovery_setup_required", "note": "never introduced; not to be reused"},
+      {"code": "recovery_setup_required", "note": "never introduced: an identity without a recovery passphrase is the recovery.state unprotected; not to be reused"},
       {"code": "payment_extension_not_activated", "note": "not registered"},
       {"code": "receipt.mismatch", "note": "spelled receipt_mismatch"}
     ],
@@ -2809,7 +2810,7 @@
     {"class": "prose", "match": "regexp", "value": "^anet-[a-z-]+:$", "note": "log prefixes"}
   ],
   "signers": {
-    "methods": ["(*github.com/ANetResearch/ANetCore/identity.Controller).Sign"],
+    "methods": ["(*github.com/ANetResearch/ANetCore/identity.Controller).Sign", "(*github.com/ANetResearch/ANetCore/identity.Controller).CurrentPrivateKey"],
     "calls": [
       {"repo": "ANetCore", "func": "(*payment.Authorization).Sign", "signs": "PaymentAuthorization"},
       {"repo": "ANetCore", "func": "(*payment.Receipt).Sign", "signs": "PaymentReceipt"},

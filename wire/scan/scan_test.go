@@ -21,6 +21,12 @@ type edit struct {
 
 func fixture(t *testing.T, edits ...edit) ([]scan.Problem, string) {
 	t.Helper()
+	return fixtureTags(t, nil, edits...)
+}
+
+// fixtureTags is fixture with extra build configurations (scan.Config.Tags).
+func fixtureTags(t *testing.T, tags [][]string, edits ...edit) ([]scan.Problem, string) {
+	t.Helper()
 	src := filepath.Join("testdata", "fx")
 	dst := t.TempDir()
 	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
@@ -71,7 +77,7 @@ func fixture(t *testing.T, edits ...edit) ([]scan.Problem, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ps, err := scan.Check(scan.Config{Dir: dst, Repo: "ANetCore", Registry: reg, Transition: tr,
+	ps, err := scan.Check(scan.Config{Dir: dst, Repo: "ANetCore", Registry: reg, Transition: tr, Tags: tags,
 		Env: []string{"GOWORK=off", "GOFLAGS=-mod=mod", "GOTOOLCHAIN=local"}})
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +164,80 @@ func Rogue(c *identity.Controller) []byte {
 	if p.Fix == nil || p.Fix.Kind != wire.TransSigner || p.Fix.Go != "thing.Rogue" {
 		t.Fatalf("fix suggestion: %+v", p.Fix)
 	}
+}
+
+// Handing the signing method on is signing: a method value passed to a helper, or a method
+// expression, makes the function that takes it a signer the registry has to list (CORE-L9).
+func TestSignerMethodValuesAndExpressions(t *testing.T) {
+	helper := `package thing
+
+func apply(sign func([]byte) ([]byte, uint64), b []byte) []byte { s, _ := sign(b); return s }
+`
+	ps, all := fixture(t, edit{"thing/apply.go", "", helper}, edit{"thing/extra.go", "", `package thing
+
+import "example.com/fx/identity"
+
+// Rogue hands the identity signing method to a helper.
+func Rogue(c *identity.Controller) []byte {
+	return apply(c.Sign, []byte("x"))
+}
+`})
+	p := expect(t, ps, all, "signer", "thing.Rogue", "not in registry signers")
+	if p.Fix == nil || p.Fix.Go != "thing.Rogue" {
+		t.Fatalf("fix suggestion: %+v", p.Fix)
+	}
+	ps, all = fixture(t, edit{"thing/extra.go", "", `package thing
+
+import "example.com/fx/identity"
+
+// Rogue2 signs through a method expression.
+func Rogue2(c *identity.Controller) []byte {
+	f := (*identity.Controller).Sign
+	s, _ := f(c, []byte("y"))
+	return s
+}
+`})
+	expect(t, ps, all, "signer", "thing.Rogue2")
+	ps, all = fixture(t, edit{"thing/apply.go", "", helper}, edit{"thing/extra.go", "", `package thing
+
+import "example.com/fx/identity"
+
+var ctl = &identity.Controller{}
+
+// signFn keeps the method value in a package variable.
+var signFn = ctl.Sign
+
+func use() []byte { return apply(signFn, nil) }
+`})
+	expect(t, ps, all, "signer", "thing.<init>")
+}
+
+// A file that no scanned configuration compiles cannot be type-checked; a signing-method name in
+// it is reported until its configuration is added, and then the typed check decides.
+func TestSignerInFileNoConfigurationBuilds(t *testing.T) {
+	other := edit{"thing/rogue_windows.go", "", `package thing
+
+import (
+	"crypto/ed25519"
+
+	"example.com/fx/identity"
+)
+
+// Rogue signs on one platform only.
+func Rogue(c *identity.Controller, k ed25519.PrivateKey) []byte {
+	sig, _ := c.Sign([]byte("x"))
+	return append(sig, ed25519.Sign(k, nil)...)
+}
+`}
+	ps, all := fixture(t, other)
+	expect(t, ps, all, "signer", "no scanned build configuration compiles thing/rogue_windows.go", ".Sign")
+	ps, all = fixtureTags(t, [][]string{{"GOOS=windows"}}, other)
+	expect(t, ps, all, "signer", "thing.Rogue", "not in registry signers")
+	tagged := edit{"thing/rogue_tagged.go", "", "//go:build fxextra\n\npackage thing\n\nimport \"example.com/fx/identity\"\n\nfunc rogue(c *identity.Controller) { c.Sign(nil) }\n"}
+	ps, all = fixture(t, tagged)
+	expect(t, ps, all, "signer", "no scanned build configuration compiles thing/rogue_tagged.go")
+	ps, all = fixtureTags(t, [][]string{{"fxextra"}}, tagged)
+	expect(t, ps, all, "signer", "thing.rogue", "not in registry signers")
 }
 
 // A call through anything that implements the registered signing interface is a signing call.

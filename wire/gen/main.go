@@ -482,8 +482,9 @@ func Render(r *wire.Registry) []byte {
 
 	d.p("## Identity-key signers")
 	d.p("")
-	d.p("Every call of an identity signing method (%s) is made from one of these functions, and", codes(r.Signers.Methods))
-	d.p("each signs a typed object or one of the carried untyped ones.")
+	d.p("Every call of an identity signing method (%s), and every reference that hands one on, is", codes(r.Signers.Methods))
+	d.p("made from one of these functions; each signs a typed object, one of the carried untyped ones,")
+	d.p("or the relayauth text preimage (L22).")
 	d.p("")
 	d.p("| Repository | Function | Signs |")
 	d.p("|---|---|---|")

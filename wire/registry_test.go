@@ -168,6 +168,40 @@ func cborType(t string) string {
 	return regexp.MustCompile(`bstr<[A-Za-z.]+>`).ReplaceAllString(t, "bstr")
 }
 
+// CORE-F3: what core §2 retires stays retired. The register alone cannot show that a retired
+// entry was turned back into an active one (its history is gone with the edit), so the retired
+// items of the frozen design are pinned here, independently of registry.json.
+func TestRegistryRetiredItemsArePinned(t *testing.T) {
+	r := reg(t)
+	for _, k := range []struct {
+		object string
+		n      int
+		was    string
+	}{
+		{"SealedInner", 21, "pad"}, {"DelegateReq", 3, "kel"}, {"DelegateReq", 6, "payment"},
+		{"ResultResp", 4, "kel"}, {"KeyEvent", 10, "revoked_since"}, {"InvokeReq", 4, "caller_aid"},
+	} {
+		o := r.Object(k.object)
+		if o == nil || o.Key(k.n) == nil || o.Key(k.n).Status != wire.StatusRetired || o.Key(k.n).Was != k.was {
+			t.Errorf("%s key %d (was %s) must stay retired (CORE-F3)", k.object, k.n, k.was)
+		}
+	}
+	if k := r.Object("ChatMsg").Key(8); k == nil || k.Status != wire.StatusReserved {
+		t.Error("ChatMsg key 8 is reserved and never assigned")
+	}
+	retired := map[string]bool{}
+	for _, c := range r.Reasons.Retired {
+		retired[c.Code] = true
+	}
+	for _, c := range []string{"signed_status_query", "bad_signature", "access_revoked", "home_unknown", "forwarded",
+		"quota_global_per_min", "max_inflight", "provider_busy", "task_nonce_required", "peer_refused_key_state",
+		"caller_unwitnessed", "prepay_removed", "hub_flag_fixed", "recovery_setup_required", "payment_extension_not_activated"} {
+		if !retired[c] {
+			t.Errorf("reason %q is retired or never introduced (core §2.15) and must be listed so it is never reused", c)
+		}
+	}
+}
+
 // CORE-S2 (4): every label is distinct; within one construction none is a prefix of another;
 // type tags and new labels follow their syntax; every typed object's tag is a registered label.
 func TestRegistryLabels(t *testing.T) {
@@ -219,6 +253,9 @@ func TestRegistryLabels(t *testing.T) {
 			}
 		} else if o.Tag != "" {
 			t.Errorf("%s: class %s with a type tag", o.Name, o.Class)
+		} else if k0 := o.Key(0); k0 != nil && k0.Status == wire.StatusActive {
+			// CORE-L1: a map whose key 0 is a registered label is class A, whatever builds it
+			t.Errorf("%s: key 0 is active but the object is class %s: make it class A with its tag", o.Name, o.Class)
 		}
 	}
 	// the label table is L1..L43, in order, none missing
@@ -449,7 +486,11 @@ func TestRegistrySignersAndScanRules(t *testing.T) {
 	for _, c := range r.Signers.Calls {
 		o := r.Object(c.Signs)
 		if o == nil {
-			t.Errorf("signer %s signs %q, which is not a registered object", c.Func, c.Signs)
+			// CORE-L9: the only identity signature over something other than a typed or carried
+			// object is the relayauth text preimage (L22)
+			if tg := tagByID(r, c.Signs); tg == nil || tg.Class != "text" {
+				t.Errorf("signer %s signs %q, which is neither a registered object nor the text label L22", c.Func, c.Signs)
+			}
 			continue
 		}
 		// CORE-L9: an identity key signs typed (A) objects, or the carried D objects
@@ -503,13 +544,15 @@ func TestRegistrySignersAndScanRules(t *testing.T) {
 	}
 }
 
-func hasTagID(r *wire.Registry, id string) bool {
+func hasTagID(r *wire.Registry, id string) bool { return tagByID(r, id) != nil }
+
+func tagByID(r *wire.Registry, id string) *wire.Tag {
 	for _, tg := range r.Tags {
 		if tg.ID == id {
-			return true
+			return tg
 		}
 	}
-	return false
+	return nil
 }
 
 func exempted(x *wire.Exempt, v string) bool {

@@ -175,7 +175,7 @@ Interaction public key (inner key 15).
 
 Signature preimage v2 M: the inner fields except 20 as received, key 9 replaced by coredet(bstr(SHA-256(body))), plus keys 0 and 30-34. Built, never decoded.
 
-*built and hashed or signed, never decoded.*
+*typed `anet-relay-sig/v2`; built and hashed or signed, never decoded.*
 
 | Key | Name | Type | Presence | Notes |
 |---|---|---|---|---|
@@ -2371,7 +2371,7 @@ Retired or never introduced (never to be reused):
 - `caller_unwitnessed`: removed
 - `prepay_removed`: never introduced: DelegateReq key 6 is retired
 - `hub_flag_fixed`: never introduced: hub_flag_removed.fixed
-- `recovery_setup_required`: never introduced; not to be reused
+- `recovery_setup_required`: never introduced: an identity without a recovery passphrase is the recovery.state unprotected; not to be reused
 - `payment_extension_not_activated`: not registered
 - `receipt.mismatch`: spelled receipt_mismatch
 
@@ -2421,8 +2421,9 @@ Retired or never introduced (never to be reused):
 
 ## Identity-key signers
 
-Every call of an identity signing method (`(*github.com/ANetResearch/ANetCore/identity.Controller).Sign`) is made from one of these functions, and
-each signs a typed object or one of the carried untyped ones.
+Every call of an identity signing method (`(*github.com/ANetResearch/ANetCore/identity.Controller).Sign`, `(*github.com/ANetResearch/ANetCore/identity.Controller).CurrentPrivateKey`), and every reference that hands one on, is
+made from one of these functions; each signs a typed object, one of the carried untyped ones,
+or the relayauth text preimage (L22).
 
 | Repository | Function | Signs |
 |---|---|---|
