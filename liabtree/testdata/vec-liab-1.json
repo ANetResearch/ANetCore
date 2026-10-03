@@ -1,6 +1,6 @@
 {
   "id": "LIAB-1",
-  "description": "Liability tree: the L25 leaf and L26 node hashes; 5 accounts padded to 16 leaves with a fixed random source; the root, outstanding and depth; the third account's proof in its response form; refused proofs.",
+  "description": "Liability tree: the L25 leaf and L26 node hashes; 5 accounts padded to 16 leaves with a fixed random source; the root, outstanding and depth; the third account's proof in its response form; refused proofs; two sibling accounts shown different splits of one parent sum (moved_split).",
   "labels": {
     "leaf": "anet-liab-leaf/v1",
     "node": "anet-liab-node/v1"
@@ -659,5 +659,73 @@
       "depth": 4,
       "error": "overflow"
     }
-  ]
+  ],
+  "moved_split": {
+    "note": "sibling accounts of 30 and 12 under a parent stored with the sum 30: a is shown (30, 0), b is shown (18, 12); each path reaches its own root, and each is refused against the other's",
+    "hidden": 12,
+    "proofs": [
+      {
+        "to_day": 20454,
+        "aid": "bafyreigmupwxcboj3iahq3nwf53pgislg5ypcrm74bi4qha76qc65brhqa",
+        "balance": 30,
+        "salt": "d7ddd97060088c0113b05266fcd1dfc49bc4559bc11fded167cb2e4c7ae63d75",
+        "path": [
+          {
+            "h": "3a80920bfb81cab8019f0cbec5d3f59bcfa9123a56588b340e996ca0835010a5",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "2d217df6eeb199061dbbe07b114d25b5b2931842d5a2db8373b5a4bd5aa8b2d3",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "05a2b1fdff9fc797ed8d281c2bd146fbaff56ec16c2ea2a56f478aaa8f671419",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "95cfc7964e6ac326709895b721d5ba369d0b4d0a5b1a465cc840103b654565bb",
+            "sum": 0,
+            "side": "R"
+          }
+        ]
+      },
+      {
+        "to_day": 20454,
+        "aid": "bafyreihjx2ihcbmlfc26x7j4vwvy3kf3m6udisjxlkksnazo2sbppbp6du",
+        "balance": 12,
+        "salt": "01e8c2b6b108d56460aae767749fa5bfde223a3f5e2e8a4a6f36c0139d867395",
+        "path": [
+          {
+            "h": "906e7c27fcfc5042fed6bd12eb9c1cf4c38b64fdf18531c8cd7a34e86d0fcca9",
+            "sum": 18,
+            "side": "L"
+          },
+          {
+            "h": "2d217df6eeb199061dbbe07b114d25b5b2931842d5a2db8373b5a4bd5aa8b2d3",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "05a2b1fdff9fc797ed8d281c2bd146fbaff56ec16c2ea2a56f478aaa8f671419",
+            "sum": 0,
+            "side": "R"
+          },
+          {
+            "h": "95cfc7964e6ac326709895b721d5ba369d0b4d0a5b1a465cc840103b654565bb",
+            "sum": 0,
+            "side": "R"
+          }
+        ]
+      }
+    ],
+    "roots": [
+      "0939b4332a426b9a060e0c9f916e8c7c38924990ac44ab06a2e9bbb1b63c7de0",
+      "a1e4520a2d3743ad4fbd74a95e972163bc985305b49a3661401da546179656e9"
+    ],
+    "sum": 30,
+    "depth": 4
+  }
 }

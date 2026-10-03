@@ -179,6 +179,17 @@ def liab_levels(entries, to_day, wrap=False):
     return levels
 
 
+def liab_fold(p):
+    """The (hash, sum) a proof's leaf and path reach under L25 and L26."""
+    h = liab_leaf(p["aid"], p["to_day"], p["balance"], bytes.fromhex(p["salt"]))
+    cur = (h, p["balance"])
+    for st in p["path"]:
+        sib = (bytes.fromhex(st["h"]), st["sum"])
+        l, r = (sib, cur) if st["side"] == "L" else (cur, sib)
+        cur = (liab_node(l, r), l[1] + r[1])
+    return cur
+
+
 def liab_proof(entries, levels, to_day, index):
     a, b, s = entries[index]
     path = []
@@ -218,8 +229,9 @@ def gen_liab_1():
 
     neg = []
 
-    # moved sums: take k from one sibling's sum and add it to another's. The root sum is the same,
-    # so a node hash that does not cover the child sums (the original Maxwell scheme) would accept.
+    # moved sums on one path: take k from one sibling's sum and add it to another's. The root sum is
+    # the same, so a node hash that covers no sums at all would accept. (A hash over a node's total
+    # alone still refuses this single path; moved_split below is the case it misses.)
     moved = copy_proof(proof)
     i = next(n for n, st in enumerate(moved["path"]) if st["sum"] >= 1)
     j = next(n for n in range(len(moved["path"])) if n != i)
@@ -271,9 +283,29 @@ def gen_liab_1():
     neg.append({"name": "sum_over_max", "note": "a sibling sum of 2^63: no wrap, but the sums and the outstanding are over 2^63 - 1",
                 "proof": liab_proof(big_entries, big_levels, to_day, 0), "root": hx(big_root), "outstanding": big_sum, "depth": 4, "error": "overflow"})
 
+    # Moved split: two sibling accounts (30 and 12) under one parent. A hub that hashed only a
+    # node's total could store that parent with the sum 30, hiding 12, and show each account a
+    # different split of it: a sees (30, 0), b sees (18, 12), one side minus 12 and the other plus
+    # 12. Both paths would reach one root. Under L26 the two parents differ, so the paths reach
+    # different roots and at most one of them can match the record.
+    hidden = 12
+    sa = (aid_for(V, "split-a"), 30, label_seed(V, "split/a"))
+    sb = (aid_for(V, "split-b"), 12, label_seed(V, "split/b"))
+    sp_entries = [sa, sb] + [("", 0, label_seed(V, "split/pad-%d" % k)) for k in range(14)]
+    sp_levels = liab_levels(sp_entries, to_day)
+    pa = liab_proof(sp_entries, sp_levels, to_day, 0)
+    pb = liab_proof(sp_entries, sp_levels, to_day, 1)
+    pa["path"][0]["sum"] -= hidden
+    pb["path"][0]["sum"] -= hidden
+    ra, sum_a = liab_fold(pa)
+    rb, sum_b = liab_fold(pb)
+    assert sum_a == sum_b == sa[1] + sb[1] - hidden and ra != rb
+    split = {"note": "sibling accounts of 30 and 12 under a parent stored with the sum 30: a is shown (30, 0), b is shown (18, 12); each path reaches its own root, and each is refused against the other's",
+             "hidden": hidden, "proofs": [pa, pb], "roots": [hx(ra), hx(rb)], "sum": sum_a, "depth": 4}
+
     return {
         "id": V,
-        "description": "Liability tree: the L25 leaf and L26 node hashes; 5 accounts padded to 16 leaves with a fixed random source; the root, outstanding and depth; the third account's proof in its response form; refused proofs.",
+        "description": "Liability tree: the L25 leaf and L26 node hashes; 5 accounts padded to 16 leaves with a fixed random source; the root, outstanding and depth; the third account's proof in its response form; refused proofs; two sibling accounts shown different splits of one parent sum (moved_split).",
         "labels": {"leaf": LEAF_LABEL.decode(), "node": NODE_LABEL.decode()},
         "leaf": {"aid": a3, "to_day": to_day, "balance": b3, "salt": hx(leaf_salt),
                  "content": hx(liab_content(a3, to_day, b3)),
@@ -298,6 +330,7 @@ def gen_liab_1():
         },
         "proof": proof,
         "negatives": neg,
+        "moved_split": split,
     }
 
 

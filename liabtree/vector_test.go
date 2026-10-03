@@ -67,8 +67,16 @@ type vecLiab1 struct {
 		Root        string `json:"root"`
 		Outstanding uint64 `json:"outstanding"`
 	} `json:"build"`
-	Proof     json.RawMessage `json:"proof"`
-	Negatives []vecNeg        `json:"negatives"`
+	Proof      json.RawMessage `json:"proof"`
+	Negatives  []vecNeg        `json:"negatives"`
+	MovedSplit struct {
+		Note   string      `json:"note"`
+		Hidden uint64      `json:"hidden"`
+		Proofs []WireProof `json:"proofs"`
+		Roots  []string    `json:"roots"`
+		Sum    uint64      `json:"sum"`
+		Depth  int         `json:"depth"`
+	} `json:"moved_split"`
 }
 
 func loadLiab1(t *testing.T) *vecLiab1 {
@@ -246,7 +254,8 @@ func TestLIAB1(t *testing.T) {
 
 	// The refused proofs. Those on the built tree are checked against the root and sum this
 	// package folds from the valid proof, not the vector's bytes: a moved-sum path then passes
-	// exactly when the node hash stops covering the child sums (M-PAY-1). The overflow trees carry
+	// exactly when the node hash covers no sums (M-PAY-1; moved split below covers a hash over
+	// the parent's total alone). The overflow trees carry
 	// their own root (they cannot be built), so they pass exactly when the sum check is gone
 	// (M-PAY-2).
 	valid, err := want.Parse()
@@ -286,4 +295,44 @@ func TestLIAB1(t *testing.T) {
 			}
 		})
 	}
+
+	// Moved split (the "moved sum" of PAY-K1 across two views): two sibling accounts, each shown a
+	// different split of one parent sum. Each path is checked against the root the other one folds
+	// to with this package, so the case turns red whenever the node hash stops covering both child
+	// sums, whether it covers no sum (M-PAY-1) or only the parent's total.
+	t.Run("refuse moved split", func(t *testing.T) {
+		s := v.MovedSplit
+		if len(s.Proofs) != 2 || len(s.Roots) != 2 || s.Hidden == 0 {
+			t.Fatalf("moved_split: %d proofs, %d roots, hidden %d", len(s.Proofs), len(s.Roots), s.Hidden)
+		}
+		var ps [2]Proof
+		var tops [2]Node
+		for i := range ps {
+			p, err := s.Proofs[i].Parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			top, err := fold(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if Hex(top.Hash) != s.Roots[i] || top.Sum != s.Sum {
+				t.Errorf("proof %d folds to %s sum %d; want %s sum %d", i, Hex(top.Hash), top.Sum, s.Roots[i], s.Sum)
+			}
+			ps[i], tops[i] = p, top
+		}
+		// The vector really is a moved split: siblings with the same steps above their parent, the
+		// same parent total, and each shown the other's balance minus Hidden.
+		a, b := ps[0], ps[1]
+		if !reflect.DeepEqual(a.Path[1:], b.Path[1:]) || a.Path[0].Side == b.Path[0].Side ||
+			a.Path[0].Sum+s.Hidden != b.Balance || b.Path[0].Sum+s.Hidden != a.Balance {
+			t.Fatalf("moved_split is not two siblings shown different splits of one parent sum")
+		}
+		for i := range ps {
+			o := tops[1-i]
+			if err := Verify(ps[i], o.Hash, o.Sum, s.Depth); !errors.Is(err, ErrRoot) {
+				t.Errorf("%s: proof %d against the other's root: Verify = %v, want %v", s.Note, i, err, ErrRoot)
+			}
+		}
+	})
 }

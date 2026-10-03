@@ -3,9 +3,10 @@
 // root sum (outstanding) and the depth; an account fetches a path from its own leaf to the root
 // and checks that its balance is counted.
 //
-// Each parent hash covers both child sums, so a hub cannot move value from one subtree to another
-// on a path ("moved sums") to hide a balance from the total, and every sum is at most 2^63-1, so a
-// hub cannot wrap a sum around to make liabilities vanish.
+// Each parent hash covers both child sums, not only their total, so a hub cannot move value from
+// one subtree to another ("moved sums"): it cannot show two sibling accounts different splits of
+// one parent sum and give both a path to the same root. Every sum is at most 2^63-1, so a hub
+// cannot wrap a sum around to make liabilities vanish.
 //
 // The hashes (wire registry labels L25 and L26):
 //
@@ -305,6 +306,11 @@ func (t *Tree) Proof(aid string) (Proof, bool) {
 	if !ok || aid == "" {
 		return Proof{}, false
 	}
+	return t.proofAt(i), true
+}
+
+// proofAt is the proof of the leaf at position i, padding included; Path is a fresh slice.
+func (t *Tree) proofAt(i int) Proof {
 	e := t.entries[i]
 	p := Proof{AID: e.AID, ToDay: t.toDay, Balance: e.Balance, Salt: e.Salt, Path: make([]Step, t.Depth())}
 	for lvl := range p.Path {
@@ -316,7 +322,7 @@ func (t *Tree) Proof(aid string) (Proof, bool) {
 		p.Path[lvl] = Step{Hash: n.Hash, Sum: n.Sum, Side: side}
 		i /= 2
 	}
-	return p, true
+	return p
 }
 
 // Verify checks that p is a leaf of the tree whose root hash is root, whose root sum is

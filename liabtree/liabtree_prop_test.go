@@ -10,7 +10,8 @@ import (
 
 // P-PAY-1 (HPP §7.2): for random balance sets, including 0 and values near the limit, every
 // account's proof verifies and the root sum is the total; changing any leaf balance, any sibling
-// hash or sum, or any side makes verification fail.
+// hash or sum, or any side makes verification fail; and two siblings shown different splits of
+// their parent's sum never reach one root.
 
 // randomBalances returns n balances whose total is at most MaxSum, mixing zeros, small values
 // and values close to the limit.
@@ -78,6 +79,35 @@ func TestPropertyProofs(t *testing.T) {
 				t.Fatalf("iteration %d: %s: %v", iter, l.AID, err)
 			}
 			mutateProof(t, r, p, root, total, depth)
+		}
+		checkMovedSplits(t, tree)
+	}
+}
+
+// checkMovedSplits: for every pair of sibling leaves (padding included), the two paths a hub could
+// serve if it showed each sibling another split of their parent's sum (one side minus k, the
+// other plus k) never reach one root. A node hash over no sums, or over the parent's total alone,
+// lets both reach the same root.
+func checkMovedSplits(t *testing.T, tree *Tree) {
+	t.Helper()
+	for i := 0; i < len(tree.entries); i += 2 {
+		a, b := tree.proofAt(i), tree.proofAt(i+1)
+		total := a.Balance + b.Balance // at most MaxSum: the tree was built
+		var shown uint64               // the parent sum both are shown, other than total
+		switch {
+		case min(a.Balance, b.Balance) >= 1:
+			shown = total - 1 // the hub hides 1
+		case total < MaxSum:
+			shown = total + 1
+		default:
+			continue
+		}
+		a.Path[0].Sum = shown - a.Balance
+		b.Path[0].Sum = shown - b.Balance
+		ta, errA := fold(a)
+		tb, errB := fold(b)
+		if errA == nil && errB == nil && ta == tb {
+			t.Fatalf("leaves %d and %d shown the parent sum %d split two ways reach one root", i, i+1, shown)
 		}
 	}
 }

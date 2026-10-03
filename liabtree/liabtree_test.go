@@ -137,7 +137,14 @@ func TestRebuildRefuses(t *testing.T) {
 	}{
 		{"15 leaves", func(e []Entry) []Entry { return e[:15] }},
 		{"8 leaves", func(e []Entry) []Entry { return e[:8] }},
-		{"24 leaves", func(e []Entry) []Entry { return append(e, e[:8]...) }},
+		// more padding, so only the power-of-two rule can refuse it
+		{"17 leaves", func(e []Entry) []Entry { return append(e, Entry{Salt: [SaltSize]byte{17}}) }},
+		{"24 leaves", func(e []Entry) []Entry {
+			for k := 0; k < 8; k++ {
+				e = append(e, Entry{Salt: [SaltSize]byte{24, byte(k)}})
+			}
+			return e
+		}},
 		{"padding with a balance", func(e []Entry) []Entry {
 			for i := range e {
 				if e[i].Padding() {
@@ -192,6 +199,25 @@ func TestVerifyRefusesShape(t *testing.T) {
 	}
 	if err := Verify(p, tree.Root(), MaxSum+1, 4); !errors.Is(err, ErrOverflow) {
 		t.Errorf("outstanding 2^63: %v", err)
+	}
+	// A path as long as the stated depth, checked against the root it folds to, is still refused
+	// when the depth is outside 4..32: a record never states such a tree.
+	for _, n := range []int{MinDepth - 1, MaxDepth + 1} {
+		q := p
+		q.Path = append([]Step(nil), p.Path...)
+		if n < len(q.Path) {
+			q.Path = q.Path[:n]
+		}
+		for len(q.Path) < n {
+			q.Path = append(q.Path, Step{Side: Right})
+		}
+		top, err := fold(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Verify(q, top.Hash, top.Sum, n); !errors.Is(err, ErrMalformed) {
+			t.Errorf("a path of depth %d against its own root: %v", n, err)
+		}
 	}
 	q := p
 	q.Path = append([]Step(nil), p.Path...)
