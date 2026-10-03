@@ -35,13 +35,13 @@ entry, but the ones below are recorded because they carry a decision (A2A-DESIGN
 - `crypto/hpke` (Go standard library, available from Go 1.26; `go.mod` already requires 1.26) —
   used by package `seal` for the end-to-end relay envelope: HPKE Base mode, suite 1 =
   DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / ChaCha20-Poly1305 (A2A-DESIGN §3.1–§3.3). Chosen
-  over `golang.org/x/crypto/nacl/box` (which `identity/encrypt.go` uses) because HPKE binds a
+  over `golang.org/x/crypto/nacl/box` because HPKE binds a
   context string (`info`) into the key schedule and names its algorithms by registered suite ids,
   so a second suite (suite 2 is reserved for MLKEM768-X25519) can be added without changing the
   envelope format. No external dependency is added.
   `seal` reads `crypto/rand` in the functions that create new material: the HPKE ephemeral key
   when sealing, a fresh message id, and a newly generated encryption key pair, as
-  `identity.Incept` and `identity.SealTo` already do. It reads no clock (callers pass `now`) and
+  `identity.Incept` already does. It reads no clock (callers pass `now`) and
   performs no I/O. Opening and verification are deterministic and are pinned by golden vectors
   with a recipient key fixed by `DeriveKeyPair(ikm)`.
 
