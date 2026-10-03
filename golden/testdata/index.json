@@ -290,7 +290,7 @@
       "covers": "request and response of every hub endpoint; the error body of every hub reason; X-ANet-Wire negotiation; an AID with U+0000 answered 400 bad_request",
       "labels": [],
       "objects": [],
-      "at": [{"repo": "ANetHub", "path": "internal/aghub/testdata/wire3/", "glob": "*.json", "todo": "v030-todo(CORE-4)"}]
+      "at": [{"repo": "ANetHub", "path": "internal/aghub/testdata/wire3/", "glob": "*.json"}]
     },
     {
       "id": "MODOBJ-1",
