@@ -71,7 +71,7 @@
       "covers": "15 epoch keys and mbox; VerifyEncKeySet on the day, on day 14 and on day 15; a set without mbox",
       "labels": ["L15", "L16"],
       "objects": ["EncKeySet", "EncKey", "Mbox", "SignedEncKeySet"],
-      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-enckeys-2.json", "todo": "v030-todo(FS-1)"}]
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-enckeys-2.json"}]
     },
     {
       "id": "DACK-1",
