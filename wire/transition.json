@@ -34,9 +34,6 @@
     {"todo": "v030-todo(PAY-2)", "repo": "ANetCore", "kind": "signer", "go": "(*payment.Voucher).Sign", "note": "vouchers are removed"},
     {"todo": "v030-todo(PAY-2)", "repo": "ANetCore", "kind": "struct", "go": "payment.wireVoucher", "keys": ["1 Body voucherPreimage", "2 Envelope *aobj.Envelope"], "note": "vouchers are removed"},
     {"todo": "v030-todo(PAY-2)", "repo": "ANetCore", "kind": "string", "value": "anet.settlement.voucher", "note": "vouchers are removed"},
-    {"todo": "v030-todo(SS-2)", "repo": "ANetCore", "kind": "action", "value": "send", "note": "retired relayauth actions"},
-    {"todo": "v030-todo(SS-2)", "repo": "ANetCore", "kind": "action", "value": "p2p", "note": "retired relayauth actions"},
-    {"todo": "v030-todo(SS-2)", "repo": "ANetCore", "kind": "string", "value": "anet-relay/", "note": "relayauth v1 preimage"},
     {"todo": "v030-todo(FS-1)", "repo": "ANetCore", "kind": "string", "value": "anet.enckeys/1", "note": "key set v1 type tag"},
     {"todo": "v030-todo(FS-1)", "repo": "ANetCore", "kind": "struct", "go": "seal.EncKey", "keys": ["1 KID []byte", "2 Suite Suite", "3 Pub []byte", "4 NotBefore uint64", "5 NotAfter uint64"], "note": "key set v2"},
     {"todo": "v030-todo(FS-1)", "repo": "ANetCore", "kind": "struct", "go": "seal.EncKeySet", "keys": ["0 Type string", "1 AID string", "2 Seq uint64", "3 Keys []EncKey", "4 IssuedAt uint64"], "note": "key set v2"},
@@ -59,6 +56,7 @@
     {"todo": "v030-todo(KEL-2)", "repo": "ANet", "kind": "signer", "go": "(*internal/daemon.Daemon).setupKeyRing", "note": "hands the signing method to the key ring (EncKeySet); identity.Signer replaces direct Controller signing; re-list the call sites"},
     {"todo": "v030-todo(KEL-2)", "repo": "ANet", "kind": "signer", "go": "(*internal/daemon.Daemon).maintainKeyRing", "note": "hands the signing method to the key ring (EncKeySet); identity.Signer replaces direct Controller signing; re-list the call sites"},
     {"todo": "v030-todo(SS-9)", "repo": "ANet", "kind": "action", "value": "send", "note": "retired relayauth action (the daemon's hub client v3 sends with session MAC or capability)"},
+    {"todo": "v030-todo(SS-9)", "repo": "ANet", "kind": "string", "value": "anet-relay/", "note": "the wire-1 challenge left relayauth; the taskboard module and the fixture's relay-sign --v1 still sign it until the board gets a registered form"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANet", "kind": "string", "value": "anet.voucher.redeemed", "note": "vouchers are removed"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANet", "kind": "string", "value": "anet.voucher.refused", "note": "vouchers are removed"},
     {"todo": "v030-todo(CORE-5)", "repo": "ANet", "kind": "struct", "go": "module/blackboard.CogUnit", "keys": ["1 Author string", "2 TaskID string", "3 Scope string", "4 Type string", "5 Stamp HLC", "6 Body []byte", "7 BodyCID string", "8 Envelope *aobj.Envelope"], "note": "module objects get key-0 type tags"},
@@ -80,6 +78,7 @@
     {"todo": "v030-todo(PAY-3)", "repo": "ANetHub", "kind": "string", "value": "anet.credit.opening", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(SS-5)", "repo": "ANetHub", "kind": "action", "value": "p2p", "note": "retired relayauth action (rendezvous routes removed)"},
     {"todo": "v030-todo(SS-4)", "repo": "ANetHub", "kind": "action", "value": "send", "note": "retired relayauth action (relay v3)"},
+    {"todo": "v030-todo(SS-4)", "repo": "ANetHub", "kind": "string", "value": "anet-relay/", "note": "the wire-1 challenge left relayauth; the taskboard's Store.VerifyAgentChallenge still verifies it until the board gets a registered form"},
     {"todo": "v030-todo(SS-6)", "repo": "ANetHub", "kind": "action", "value": "fedkeys", "note": "retired relayauth action (federation v3)"},
     {"todo": "v030-todo(KEL-2)", "repo": "ANetHub", "kind": "signer", "go": "(*internal/hubid.Identity).Sign", "note": "identity.Signer replaces direct Controller signing; re-list the call sites"}
   ]

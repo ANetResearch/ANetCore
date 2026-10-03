@@ -1,13 +1,19 @@
-// Package relayauth defines the canonical challenge a client signs to authenticate a Hub request.
-// The client signs the preimage with its KEL current key; the Hub rebuilds the identical bytes and
-// verifies them against the registered KEL (identity.VerifyObject), bounded by MaxSkewMillis so a
-// captured signature cannot be replayed indefinitely. Shared here so the signer (daemon) and
-// verifier (hub) can never disagree on the preimage.
+// Package relayauth defines what a client signs or MACs to authenticate a hub request.
 //
-// Two versions exist. v1 (Preimage) signs only action, AID and time, and travels in JSON request
-// bodies. v2 (PreimageV2, A2A-DESIGN §3.7) additionally binds the hub's AID and a hash of the HTTP
-// method, request target and body, and travels in the X-ANet-* request headers. v1 remains for the
-// wire-1 hub and daemon until both move to wire 2.
+// A signed request (PreimageV2) binds the action, the signer's AID, the hub's AID, the time and a
+// hash of the HTTP method, request target and body, and travels in the X-ANet-* request headers.
+// The client signs it with its KEL current key; the hub rebuilds the identical bytes and verifies
+// them against the registered KEL, bounded by MaxSkewMillis so a captured signature cannot be
+// replayed indefinitely. Agents and peer hubs sign the same way (label L22 in docs/wire-keys.md).
+//
+// A first-contact send carries no signature: the daemon opens a session with one signed request
+// (ActionSession), the hub hands it a session key sealed to a one-time key (SealSessionKey,
+// OpenSessionKey), and each send then carries a MAC under that key (SessionMAC,
+// VerifySessionMAC). See session.go.
+//
+// Shared here so the signer (daemon) and verifier (hub) can never disagree on the bytes. The
+// wire-1 challenge (action, AID and time only) and the actions "send" and "p2p" are retired in
+// 0.3.0: a captured wire-1 signature authorised any request with the same action on any hub.
 package relayauth
 
 import (
@@ -20,27 +26,21 @@ import (
 
 // Auth actions (part of the signed preimage so a signature for one action cannot be reused for
 // another). Every action is a lowercase ASCII word without "/", because "/" separates the preimage
-// fields.
+// fields. The set is the "relayauth actions" table of docs/wire-keys.md; ValidAction reports
+// membership. A retired action ("send", "p2p", "fedkeys") has no constant and is never assigned
+// again.
 const (
 	ActionPoll = "poll"
 	ActionAck  = "ack"
 	// ActionRegister authenticates a registry publish (proves the registrant holds the AID's key, so a
 	// public KEL cannot be replayed by a stranger to overwrite someone's registration).
 	ActionRegister = "register"
-	// ActionProfile authenticates a self-description update (summary/readme/pricing) for an AID.
+	// ActionProfile authenticates a self-description update (summary/readme) for an AID.
 	ActionProfile = "profile"
-
-	// The actions below are introduced by relay v2 (A2A-DESIGN §3.7).
-
-	// ActionSend authenticates POST /relay/send. The hub uses the sender only for rate limiting and
-	// quota and does not store it.
-	ActionSend = "send"
-	// ActionVisibility authenticates POST /agents/{aid}/visibility (directory visibility change).
+	// ActionVisibility authenticates a directory visibility change.
 	ActionVisibility = "visibility"
-	// ActionDeregister authenticates POST /agents/{aid}/deregister.
+	// ActionDeregister authenticates a deregistration.
 	ActionDeregister = "deregister"
-	// ActionP2P authenticates POST /agents/{aid}/p2p (publishing the AID's p2p rendezvous addresses).
-	ActionP2P = "p2p"
 	// ActionBalance authenticates GET /agents/{aid}/balance, which returns details only to the AID itself.
 	ActionBalance = "balance"
 	// ActionLedger authenticates GET /agents/{aid}/ledger, which returns details only to the AID itself.
@@ -50,7 +50,38 @@ const (
 	ActionRedemptions = "redemptions"
 	// ActionKeys authenticates publishing the AID's EncKeySet (POST /agents/{aid}/keys).
 	ActionKeys = "keys"
+
+	// ActionSession authenticates POST /relay/session: the daemon opens a first-contact session
+	// with its own hub. The sends made under the session carry a session MAC, not a signature.
+	ActionSession = "session"
+	// ActionRevoke authenticates POST /mailbox/revoke: the owner revokes capabilities it issued.
+	ActionRevoke = "revoke"
+
+	// The actions below are signed by a peer hub with its own identity: every /fed/v3 route is
+	// authenticated like an agent request, under the peer hub's KEL.
+
+	// ActionFedForward authenticates POST /fed/v3/forward (a peer hub hands on one envelope).
+	ActionFedForward = "fed_forward"
+	// ActionFedBucket authenticates POST /fed/v3/directory:bucket (a peer hub asks for one bucket).
+	ActionFedBucket = "fed_bucket"
+	// ActionFedCards authenticates GET /fed/v3/cards (a peer hub syncs the directory's cards).
+	ActionFedCards = "fed_cards"
 )
+
+// validActions holds every Action* constant of this package. A new constant goes here too
+// (TestEveryActionConstantIsValid reads the source to make sure it does).
+var validActions = map[string]bool{
+	ActionPoll: true, ActionAck: true, ActionRegister: true, ActionProfile: true,
+	ActionVisibility: true, ActionDeregister: true, ActionBalance: true, ActionLedger: true,
+	ActionRedemptions: true, ActionKeys: true,
+	ActionSession: true, ActionRevoke: true,
+	ActionFedForward: true, ActionFedBucket: true, ActionFedCards: true,
+}
+
+// ValidAction reports whether action is a relayauth action of this wire version. A retired action
+// ("send", "p2p", "fedkeys") or a name never assigned is not: nothing may sign or accept it, and a
+// hub answers a request signed for one with 401 unauthorized.
+func ValidAction(action string) bool { return validActions[action] }
 
 // MaxSkewMillis bounds the accepted clock skew / replay window for a signed relay auth challenge.
 const MaxSkewMillis = 5 * 60 * 1000
@@ -67,17 +98,6 @@ const (
 	// HeaderSig carries the Ed25519 signature over PreimageV2, encoded with EncodeSig.
 	HeaderSig = "X-ANet-Sig"
 )
-
-// Preimage returns the exact bytes a caller signs to authenticate a relay mailbox operation for aid at
-// ts (unix millis).
-//
-// Deprecated: v1 does not bind the hub, the HTTP method, the request target or the body, so a
-// signature captured on one request is valid for any other request with the same action within the
-// skew window, on any hub. Wire-2 clients and hubs use PreimageV2. Kept so wire-1 code builds until
-// it is removed.
-func Preimage(action, aid string, ts uint64) []byte {
-	return []byte("anet-relay/" + action + "/" + aid + "/" + strconv.FormatUint(ts, 10))
-}
 
 // PreimageV2 returns the exact bytes a caller signs to authenticate one relay v2 HTTP request
 // (A2A-DESIGN §3.7):

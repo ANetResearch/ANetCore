@@ -25,7 +25,6 @@ import (
 	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/ANetResearch/ANetCore/payment"
-	"github.com/ANetResearch/ANetCore/relayauth"
 )
 
 // The frozen conformance identity every signed vector below is anchored
@@ -187,19 +186,6 @@ func TestVEC_RESULT_1(t *testing.T) {
 	const wantCID = "bafyreifwa7c3gid5su4oxvpxujwkxf4hoykd73yyvqifshajck4e4ss2nu"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)
-	}
-}
-
-// VEC-RELAYAUTH-1: the exact bytes a client signs to open its mailbox.
-//
-// Not CBOR — a plain octet string two implementations build independently
-// and never exchange. It was duplicated in two repositories with nothing
-// holding the copies together; this is the third party's copy.
-func TestVEC_RELAYAUTH_1(t *testing.T) {
-	got := string(relayauth.Preimage(relayauth.ActionPoll, suiteAID, 1767225600000))
-	const want = "anet-relay/poll/" + suiteAID + "/1767225600000"
-	if got != want {
-		t.Fatalf("relay challenge\n got  %s\n want %s", got, want)
 	}
 }
 
