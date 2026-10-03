@@ -67,8 +67,8 @@ const (
 )
 
 // Errors. Each refusal wraps one of these, so a caller can map it without matching prose: the hub
-// answers ErrRating and ErrComment with bad_request and the others with receipt_not_reviewable
-// (HPP PAY-V1).
+// answers ErrRating and ErrComment (HPP PAY-V1 step 8) and ErrNUL (a review subject holding
+// U+0000, core CORE-E9) with bad_request, and the others with receipt_not_reviewable (PAY-V1).
 var (
 	// ErrMalformed: the bytes are not the object — they do not decode strictly, do not re-encode to
 	// themselves, carry another type tag, or hold a field of the wrong size or form.
@@ -83,8 +83,9 @@ var (
 	ErrSigner = errors.New("evidence: signed by someone other than the party the object names")
 	// ErrSignature: the signature does not verify.
 	ErrSignature = errors.New("evidence: the signature does not verify")
-	// ErrNUL: a text field of a commitment input holds U+0000 (CORE-E9), or is empty.
-	ErrNUL = errors.New("evidence: a text field of a commitment input is empty or holds U+0000")
+	// ErrNUL: a text field of a commitment input holds U+0000 (CORE-E9), or is empty; or a review's
+	// subject, an AID, holds U+0000 (CORE-E9 names it: the hub answers bad_request).
+	ErrNUL = errors.New("evidence: an AID or commitment input holds U+0000, or a commitment input is empty")
 )
 
 func malformed(format string, args ...any) error {
@@ -340,6 +341,12 @@ func (b *ReviewBody) check() error {
 	if err := textField("review receipt_cid", b.ReceiptCID); err != nil {
 		return err
 	}
+	// The subject is an AID, and CORE-E9 lists ReviewBody's subject among the fields a hub refuses
+	// with bad_request when they hold U+0000, not as an unreviewable receipt: ErrNUL, not
+	// ErrMalformed.
+	if strings.IndexByte(b.Subject, 0) >= 0 {
+		return fmt.Errorf("%w: review subject", ErrNUL)
+	}
 	if err := textField("review subject", b.Subject); err != nil {
 		return err
 	}
@@ -370,7 +377,7 @@ func (b *ReviewBody) Marshal() ([]byte, error) {
 }
 
 // UnmarshalReviewBody decodes a review body strictly. A rating or comment out of bounds is
-// ErrRating or ErrComment.
+// ErrRating or ErrComment, and a subject holding U+0000 is ErrNUL.
 func UnmarshalReviewBody(raw []byte) (*ReviewBody, error) {
 	var b ReviewBody
 	if err := decodeExact("review body", raw, &b); err != nil {

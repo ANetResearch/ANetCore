@@ -63,7 +63,7 @@ type negative struct {
 // refusal maps a vector's "refused" to the error it names.
 var refusal = map[string]error{
 	"decode": evidence.ErrMalformed, "signature": evidence.ErrSignature, "signer": evidence.ErrSigner,
-	"rating": evidence.ErrRating, "comment": evidence.ErrComment,
+	"rating": evidence.ErrRating, "comment": evidence.ErrComment, "nul": evidence.ErrNUL,
 }
 
 type ev2Vector struct {
@@ -237,8 +237,14 @@ func TestEV2_1(t *testing.T) {
 				if err != nil {
 					t.Fatalf("the authorization decodes; it is its signature that must fail: %v", err)
 				}
-				if err := a.Verify(kel, n.VerifyAt); err == nil || !bytes.Equal(a.Envelope.Sig, v.Receipt.Sig) {
-					t.Fatalf("a receipt's signature authorized a payment (%v)", err)
+				if !bytes.Equal(a.Envelope.Sig, v.Receipt.Sig) {
+					t.Fatal("the authorization does not carry the receipt's signature")
+				}
+				// It must be the signature that fails, not the window or the payer: an
+				// authorization refused for any other reason says nothing about SI-81.
+				var ve *identity.VErr
+				if err := a.Verify(kel, n.VerifyAt); !errors.As(err, &ve) || ve.Reason != "INVALID_SIGNATURE" {
+					t.Fatalf("a receipt's signature on a payment authorization: want INVALID_SIGNATURE, got %v", err)
 				}
 				return
 			}

@@ -1741,7 +1741,8 @@ def gen_review_2():
         "description": ("Evidence v2 review of the EV2-1 receipt: ReviewBody and ReviewWire signed by the one-time review key (L30); "
                         "the review tag (L31) of the requester for the provider under a hub tag key; ReviewAttBody and ReviewAttWire "
                         "signed by a hub (L32). Negatives say which refusal each must get: decode (receipt_not_reviewable), "
-                        "signer (a key other than the receipt's review_key), signature, rating or comment (bad_request)."),
+                        "signer (a key other than the receipt's review_key), signature, rating or comment (bad_request), "
+                        "nul (a subject holding U+0000, bad_request, CORE-E9)."),
         "labels": {"tag": REVIEW_TAG_LABEL.decode()},
         "receipt": {"wire": b16(r["wire"]), "body_cid": receipt_cid, "provider_kel": b16(r["kel"].wire())},
         "review": {"key_seed": b16(tk["review_seed"]), "pub": b16(tk["review_pub"]), "body": b16(body),
@@ -1761,7 +1762,7 @@ def gen_review_2():
             {"name": "review_key_6", "note": "review body with an unregistered key 6", "review_wire": review_wire(add_key(body, 6, 0)),
              "refused": "decode"},
             {"name": "subject_nul", "note": "U+0000 in the subject (CORE-E9)", "review_wire": review_wire(cbor({**rv, 2: provider[:8] + "\x00" + provider[8:]})),
-             "refused": "decode"},
+             "refused": "nul"},
             {"name": "attestation_tag_15", "note": "a 15-byte tag", "attestation_wire": b16(cbor({1: cbor({**uncbor(att_body), 4: tag[:15]}),
                                                                                                2: envelope(hub.aid, 0, att_sig)})),
              "refused": "decode"},

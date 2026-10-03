@@ -1,6 +1,6 @@
 {
   "id": "REVIEW-2",
-  "description": "Evidence v2 review of the EV2-1 receipt: ReviewBody and ReviewWire signed by the one-time review key (L30); the review tag (L31) of the requester for the provider under a hub tag key; ReviewAttBody and ReviewAttWire signed by a hub (L32). Negatives say which refusal each must get: decode (receipt_not_reviewable), signer (a key other than the receipt's review_key), signature, rating or comment (bad_request).",
+  "description": "Evidence v2 review of the EV2-1 receipt: ReviewBody and ReviewWire signed by the one-time review key (L30); the review tag (L31) of the requester for the provider under a hub tag key; ReviewAttBody and ReviewAttWire signed by a hub (L32). Negatives say which refusal each must get: decode (receipt_not_reviewable), signer (a key other than the receipt's review_key), signature, rating or comment (bad_request), nul (a subject holding U+0000, bad_request, CORE-E9).",
   "labels": {
     "tag": "anet-review-tag/v1"
   },
@@ -73,7 +73,7 @@
       "name": "subject_nul",
       "note": "U+0000 in the subject (CORE-E9)",
       "review_wire": "a30158a4a6006d616e65742e7265766965772f3201783b62616679726569646d7a346b3365746937776e733434336c64776f3574346b6568747a656d75747a7876746e6b71736a3779757a357077356f746d02783c6261667972656968007134326a3765736c6a6a3564727867696575646832617234677373706f6770656a6d64786d67346e657a6661337477646d6b650305046fe58786e697b6e38081e6b885e6a59a05194fe7025820c93a9c3014e4ed0b4879ce1944f6c823f50608178286a85979cbdf7e2980059a0358402942008d7ee27905e02ca1fcc8dc4b1b6258785a23e9aeb5e5bb2a56a9575829cdb0ee20634399b0f9b64f32951769287566c1ce1c9d65d3c1d5047ca32daa02",
-      "refused": "decode"
+      "refused": "nul"
     },
     {
       "name": "attestation_tag_15",
