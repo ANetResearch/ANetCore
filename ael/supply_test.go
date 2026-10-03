@@ -100,6 +100,8 @@ func TestParseSupplyEpochIsStrict(t *testing.T) {
 		"an aid":                 func(m map[string]any) { m["aid"] = "bafyreiaccount" },
 		"an issued count":        func(m map[string]any) { m["issued"] = uint64(9) },
 		"no root":                func(m map[string]any) { delete(m, "root") },
+		"no from_day":            func(m map[string]any) { delete(m, "from_day") },
+		"no outstanding":         func(m map[string]any) { delete(m, "outstanding") },
 		"no v":                   func(m map[string]any) { delete(m, "v") },
 		"v 1":                    func(m map[string]any) { m["v"] = uint64(1) },
 		"v as text":              func(m map[string]any) { m["v"] = "2" },
