@@ -278,10 +278,10 @@
       "id": "LOCAL-1",
       "gen": "go+python",
       "owner": "FS, CUX",
-      "covers": "the local AEAD and MAC keys derived from ix_dek; client key and client digest (with the number literals 9007199254740992 and 9007199254740993, 1 and 1.0); field ciphertexts and aad under a fixed key and nonce",
+      "covers": "the local AEAD and MAC keys derived from ix_dek; field ciphertexts and aad under a fixed key and nonce, one per encrypted column, and their negatives (delivered by FS); client key and client digest (with the number literals 9007199254740992 and 9007199254740993, 1 and 1.0), still to be added to the same file by CUX",
       "labels": ["L35", "L36", "L37", "L38"],
       "objects": [],
-      "at": [{"repo": "ANet", "path": "internal/runtime/interactions/testdata/vec-local-1.json", "todo": "v030-todo(FS-8)"}]
+      "at": [{"repo": "ANet", "path": "internal/runtime/interactions/testdata/vec-local-1.json", "rework": "v030-todo(UX-1)"}]
     },
     {
       "id": "WIRE3-*",
