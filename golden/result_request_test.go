@@ -17,7 +17,7 @@ import (
 func TestVEC_RESULT_2_RequestBinding(t *testing.T) {
 	c := identity.SuiteController()
 	deliverable := []byte(`{"ok":true}`)
-	rc := goldenReceipt()
+	rc := goldenReceipt(suiteAID)
 	cid, err := anetcid.Sum(deliverable)
 	if err != nil {
 		t.Fatal(err)

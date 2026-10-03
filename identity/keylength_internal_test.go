@@ -32,19 +32,18 @@ func TestAKeyOfTheWrongLengthIsRefusedNotAPanic(t *testing.T) {
 	short := make([]byte, ed25519.PublicKeySize-1)
 
 	// icp carrying a 31-byte key.
-	icp := signedEvent(t, KeyEvent{Type: Inception, Keys: [][]byte{short}, Threshold: 1}, k0)
+	icp := signedEvent(t, KeyEvent{KELType: KELType, Type: Inception, Keys: [][]byte{short},
+		NextDigest: nextDigest(short), Threshold: 1, Timestamp: 1, Toad: ToadField(ToadHub)}, k0)
 	if _, err := Replay([]SignedEvent{icp}); err == nil {
 		t.Fatal("an icp with a 31-byte key replayed")
 	}
 
-	// A well-formed icp that pre-commits to a 31-byte next key, and the rot
-	// that reveals it, signed by the icp key as a rot must be.
-	icp = signedEvent(t, KeyEvent{Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
-		NextDigest: nextDigest(short), Threshold: 1}, k0)
+	// A well-formed icp that pre-commits to a 31-byte next key, and the rot that reveals it.
+	icp = signedEvent(t, KeyEvent{KELType: KELType, Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
+		NextDigest: nextDigest(short), Threshold: 1, Timestamp: 1, Toad: ToadField(ToadHub)}, k0)
 	aid := icp.EventID
-	icp.Event.AID = ""
-	rot := signedEvent(t, KeyEvent{AID: aid, Seq: 1, Prev: aid, Type: Rotation, Keys: [][]byte{short},
-		NextDigest: nextDigest(short), Threshold: 1, Timestamp: 1}, k0)
+	rot := signedEvent(t, KeyEvent{KELType: KELType, AID: aid, Seq: 1, Prev: aid, Type: Rotation, Keys: [][]byte{short},
+		NextDigest: nextDigest(short), Threshold: 1, Timestamp: 2, Toad: ToadField(ToadHub)}, k0)
 	kel := []SignedEvent{icp, rot}
 	if _, err := Replay(kel); err == nil {
 		t.Fatal("a rot to a 31-byte key replayed")

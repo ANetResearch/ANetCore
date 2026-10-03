@@ -1,58 +1,13 @@
 package identity
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/coredet"
 )
-
-// A delegation (drt) must round-trip through Export/Restore AND still allow a later Rotate: the drt
-// carries the pre-rotation commitment forward, so the KEL head advertises the live commitment and the
-// next Rotate matches it (Replay checks the commitment of the last icp/rot; before ANet docs/notes/0033
-// it read the IMMEDIATELY-prior event's next_digest). Regression for the drt-missing-NextDigest bug
-// (anrp VAL-11 mode (b) self-delegation bricked restore + rotation).
-func TestDelegateExportRestoreRotate(t *testing.T) {
-	c, _ := Incept()
-	hostPub, _, _ := ed25519.GenerateKey(nil)
-	if err := c.Delegate(hostPub, 1000); err != nil {
-		t.Fatalf("delegate: %v", err)
-	}
-	// delegate → rotate directly (a drt between the icp and the rot).
-	if err := c.Rotate(2000); err != nil {
-		t.Fatalf("rotate immediately after delegate: %v", err)
-	}
-	// a second delegation after the rotation, then export/restore (the bug failed at Restore).
-	hostPub2, _, _ := ed25519.GenerateKey(nil)
-	if err := c.Delegate(hostPub2, 3000); err != nil {
-		t.Fatalf("second delegate: %v", err)
-	}
-	blob, err := c.Export()
-	if err != nil {
-		t.Fatalf("export: %v", err)
-	}
-	r, err := Restore(blob)
-	if err != nil {
-		t.Fatalf("restore after delegate: %v", err)
-	}
-	// both delegated keys survive in the restored key state.
-	states, err := Replay(r.KEL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	have := map[string]bool{}
-	for _, dk := range states[len(states)-1].DelegatedKeys {
-		have[string(dk)] = true
-	}
-	if !have[string(hostPub)] || !have[string(hostPub2)] {
-		t.Fatal("delegated keys did not survive delegate/rotate/delegate/restore")
-	}
-	// the restored controller can still rotate again.
-	if err := r.Rotate(4000); err != nil {
-		t.Fatalf("rotate after restore: %v", err)
-	}
-}
 
 func TestInceptionAndReplay(t *testing.T) {
 	c, err := Incept()
@@ -103,7 +58,7 @@ func TestRotationStableAID(t *testing.T) {
 			t.Fatalf("state %d AID drift", i)
 		}
 	}
-	if bytesEqual(states[2].CurrentKeys[0], firstKey) {
+	if bytes.Equal(states[2].CurrentKeys[0], firstKey) {
 		t.Fatal("current key did not change after rotation")
 	}
 }
@@ -242,9 +197,10 @@ func TestSignVerifyAcrossRotation(t *testing.T) {
 	if err := VerifyObject(c.KEL(), c.AID(), seq1, 6000, pre1, sig1); err != nil {
 		t.Fatalf("verify at seq1: %v", err)
 	}
-	// grace (unknown time): the seq0 object still verifies against the seq0 key after rotation.
-	if err := VerifyObject(c.KEL(), c.AID(), seq0, 0, pre0, sig0); err != nil {
-		t.Fatalf("grace verify at seq0 (msgTime=0) after rotation: %v", err)
+	// Unknown time: an object of the retired seq0 key that carries no time cannot be shown to
+	// predate the rotation, so it is REVOKED_KEY (KEL C-10).
+	if err := VerifyObject(c.KEL(), c.AID(), seq0, 0, pre0, sig0); err == nil {
+		t.Fatal("seq0 object with msgTime 0 after rotation must be REVOKED_KEY")
 	}
 	// time-aware grace: an object time-stamped BEFORE the rotation (t=4999 < 5000) is honored.
 	if err := VerifyObject(c.KEL(), c.AID(), seq0, 4999, pre0, sig0); err != nil {
@@ -261,65 +217,39 @@ func TestSignVerifyAcrossRotation(t *testing.T) {
 	}
 }
 
-// Pre-rotation: a stolen CURRENT key cannot rotate to an attacker-chosen key, because the
-// next key was pre-committed only as a digest (arch-03 §5.1 M5.1.1).
+// Pre-rotation: a stolen CURRENT key cannot rotate to an attacker-chosen key, because the next key
+// was pre-committed only as a digest, and cannot rotate to the committed key either, because a rot
+// is signed by the key it reveals (KEL R-3).
 func TestPreRotationTheftPrevented(t *testing.T) {
 	c, _ := Incept()
 	last := c.kel[len(c.kel)-1]
+	rot := func(revealed ed25519.PublicKey, signer ed25519.PrivateKey) []SignedEvent {
+		_, nxt, _ := ed25519.GenerateKey(nil)
+		e := KeyEvent{KELType: KELType, AID: c.aid, Seq: 1, Prev: last.EventID, Type: Rotation,
+			Keys: [][]byte{revealed}, NextDigest: nextDigest(nxt.Public().(ed25519.PublicKey)),
+			Threshold: 1, Timestamp: 1000, Toad: ToadField(ToadHub)}
+		pre, _ := preimage(e)
+		id, _ := anetcid.Sum(pre)
+		return append(append([]SignedEvent(nil), c.KEL()...), SignedEvent{Event: e, Sig: ed25519.Sign(signer, pre), EventID: id})
+	}
 
-	// Gate 1 — pre-rotation digest gate: attacker holds the current key (c.cur) but NOT the
-	// pre-committed next key; they mint their own key and try to forge a rot signed by the
-	// stolen current key. The revealed key fails the pre-committed-digest hash-match.
+	// Gate 1 — the digest: the attacker holds the current key but not the committed next key, and
+	// rotates to a key of its own. The revealed key fails the pre-committed digest.
 	_, attacker, _ := ed25519.GenerateKey(nil)
-	forged := KeyEvent{
-		AID:        c.aid,
-		Seq:        1,
-		Prev:       last.EventID,
-		Type:       Rotation,
-		Keys:       [][]byte{attacker.Public().(ed25519.PublicKey)},
-		NextDigest: nextDigest(attacker.Public().(ed25519.PublicKey)),
-		Threshold:  1,
-	}
-	pre, _ := preimage(forged)
-	id, _ := anetcid.Sum(pre)
-	sig := ed25519.Sign(c.cur, pre) // signed by the STOLEN current key
-	tampered := append(append([]SignedEvent(nil), c.KEL()...), SignedEvent{Event: forged, Sig: sig, EventID: id})
-	_, err := Replay(tampered)
-	if err == nil {
-		t.Fatal("pre-rotation theft NOT prevented: forged rotation accepted")
-	}
-	// The SPECIFIC rejection reason must be the pre-rotation digest mismatch (M5.1.1),
-	// not merely "some error".
-	if !contains(err.Error(), "pre-committed digest") {
-		t.Fatalf("want pre-committed-digest rejection, got: %v", err)
+	err := Replay2Err(rot(attacker.Public().(ed25519.PublicKey), c.cur))
+	if err == nil || !contains(err.Error(), "pre-committed digest") {
+		t.Fatalf("want the pre-committed-digest rejection, got: %v", err)
 	}
 
-	// Gate 2 (positive control) — prior-key signing gate: this rot reveals the CORRECT
-	// pre-committed next key (so gate 1 passes) but is signed by a NON-prior key. It MUST
-	// still be rejected, proving the two gates are independent. We recover the correct next
-	// key from the controller's own pre-commitment (c.nxt = the legitimately pre-committed K1).
-	correctNext := c.nxt.Public().(ed25519.PublicKey)
-	_, freshNextNxt, _ := ed25519.GenerateKey(nil)
-	_, wrongSigner, _ := ed25519.GenerateKey(nil) // NOT the prior current key
-	goodKeyRot := KeyEvent{
-		AID:        c.aid,
-		Seq:        1,
-		Prev:       last.EventID,
-		Type:       Rotation,
-		Keys:       [][]byte{correctNext}, // matches prior next_digest → passes gate 1
-		NextDigest: nextDigest(freshNextNxt.Public().(ed25519.PublicKey)),
-		Threshold:  1,
+	// Gate 2 — the signer: the rot reveals the correct committed key (so gate 1 passes) but is
+	// signed by the stolen current key, as a v0.2 rot was. It must still be rejected.
+	err = Replay2Err(rot(c.nxt.Public().(ed25519.PublicKey), c.cur))
+	if err == nil || !contains(err.Error(), "not signed by the key it reveals") {
+		t.Fatalf("want the revealed-key signature rejection, got: %v", err)
 	}
-	pre2, _ := preimage(goodKeyRot)
-	id2, _ := anetcid.Sum(pre2)
-	sig2 := ed25519.Sign(wrongSigner, pre2) // signed by a key that is NOT the prior current key
-	tampered2 := append(append([]SignedEvent(nil), c.KEL()...), SignedEvent{Event: goodKeyRot, Sig: sig2, EventID: id2})
-	err2 := Replay2Err(tampered2)
-	if err2 == nil {
-		t.Fatal("rot revealing correct pre-committed key but signed by non-prior key was accepted")
-	}
-	if !contains(err2.Error(), "prior current key") {
-		t.Fatalf("want prior-current-key rejection, got: %v", err2)
+	// And the owner, who holds the committed key, can.
+	if err := Replay2Err(rot(c.nxt.Public().(ed25519.PublicKey), c.nxt)); err != nil {
+		t.Fatalf("the owner's rot: %v", err)
 	}
 }
 
@@ -353,10 +283,9 @@ func TestDeactivation(t *testing.T) {
 	if err := c.Rotate(9000); err == nil {
 		t.Fatal("rotate after deactivation should fail")
 	}
-	// object signed at seq0 still verifies (grace, unknown time); a fresh object claiming the
-	// terminal (deactivation) seq is rejected by the revocation gate.
-	if err := VerifyObject(c.KEL(), c.AID(), seq, 0, pre, sig); err != nil {
-		t.Fatalf("grace verify of pre-deactivation object: %v", err)
+	// An object of seq0 that carries no time cannot be shown to predate the dip (KEL C-10).
+	if err := VerifyObject(c.KEL(), c.AID(), seq, 0, pre, sig); err == nil {
+		t.Fatal("seq0 object with msgTime 0 after deactivation must be REVOKED_KEY")
 	}
 	// time-aware grace: the seq0 object time-stamped before the dip (t<8000) is honored.
 	if err := VerifyObject(c.KEL(), c.AID(), seq, 7999, pre, sig); err != nil {

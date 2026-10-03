@@ -1170,6 +1170,9 @@ func TestParseKELCaps(t *testing.T) {
 	// 257 events that decode; they are not a valid KEL, but the count cap
 	// applies before any replay.
 	events := make([]identity.SignedEvent, MaxKELEvents+1)
+	for i := range events {
+		events[i].Event.KELType = identity.KELType
+	}
 	b, err := identity.MarshalKEL(events)
 	if err != nil {
 		t.Fatal(err)

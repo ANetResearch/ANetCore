@@ -258,7 +258,7 @@ func TestReject_UnsupportedSchemaMajor_UNSUPPORTED_SCHEMA_MAJOR(t *testing.T) {
 func TestReject_KeyStateSeqMismatch_KEY_STATE_DOWNGRADE(t *testing.T) {
 	c := mustIncept(t)
 	// Rotate so the current key_state_seq is 1, then sign a card under the current key.
-	if err := c.Rotate(0); err != nil {
+	if err := c.Rotate(2); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 	card := newCard(c.AID())

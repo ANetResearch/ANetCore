@@ -98,7 +98,7 @@
       "covers": "a hub identity (toad = 0): icp, rot 1 (setup-recovery), rot 2 (emergency), dip 3; each event's preimage, event id and signature",
       "labels": ["L17"],
       "objects": ["KeyEvent", "SignedEvent"],
-      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2a.json", "todo": "v030-todo(KEL-1)"}]
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2a.json"}]
     },
     {
       "id": "KEL-2B",
@@ -107,7 +107,7 @@
       "covers": "an agent identity (toad = 1): icp (witness pending), rot 1 (witness W1), rot 2 (moved to W2), dip 3",
       "labels": ["L17"],
       "objects": ["KeyEvent", "SignedEvent"],
-      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2b.json", "todo": "v030-todo(KEL-1)"}]
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2b.json"}]
     },
     {
       "id": "KEL-2N",
@@ -116,7 +116,7 @@
       "covers": "every counterexample of the KEL replay rules, and events without key 0 or with a wrong tag",
       "labels": ["L17"],
       "objects": ["KeyEvent", "SignedEvent"],
-      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2n.json", "todo": "v030-todo(KEL-1)"}]
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2n.json"}]
     },
     {
       "id": "RECOVERY-1",
@@ -320,7 +320,7 @@
       "covers": "the conformance identity every signed vector is anchored to; regenerated under KEL v2",
       "labels": [],
       "objects": ["KeyEvent", "SignedEvent"],
-      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_SUITE_IDENTITY_1", "rework": "v030-todo(KEL-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_SUITE_IDENTITY_1"}]
     },
     {
       "id": "VEC_AET_CID_1",
@@ -414,8 +414,8 @@
       {"repo": "ANetCore", "path": "seal/testdata/vec-sealed-1.json"}
     ]},
     {"id": "VEC_RELAYAUTH_1", "why": "the v1 relayauth preimage is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RELAYAUTH_1", "todo": "v030-todo(SS-2)"}]},
-    {"id": "VEC_KEL_SUPERSEDE_1", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_1", "todo": "v030-todo(KEL-1)"}]},
-    {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2", "todo": "v030-todo(KEL-1)"}]}
+    {"id": "VEC_KEL_SUPERSEDE_1", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_1"}]},
+    {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2"}]}
   ],
   "uncovered": [
     {"object": "IdentityFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},

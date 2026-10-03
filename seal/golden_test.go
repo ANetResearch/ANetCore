@@ -16,7 +16,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -256,7 +255,6 @@ func TestSEALED_2A(t *testing.T) {
 		}
 	})
 	t.Run("signature under the KEL", func(t *testing.T) {
-		t.Skip("v030-todo(KEL-1)")
 		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, v.Inner.TS+minuteMS, DefaultRotationGrace); err != nil {
 			t.Fatal(err)
 		}
@@ -300,11 +298,6 @@ func TestSEALED_2C(t *testing.T) {
 	for _, c := range v.Cases {
 		seen[c.Reason] = true
 		t.Run(c.Name, func(t *testing.T) {
-			if strings.HasPrefix(c.Name, "KEL v1") {
-				// The KEL v1 decoder still accepts events without key 0;
-				// KEL v2 (R-0) refuses them, and Open then says bad-kel.
-				t.Skip("v030-todo(KEL-1)")
-			}
 			_, perr := ParseOuter(c.Envelope)
 			o, err := Open(c.Envelope, v.Recipient.AID, ring, nil)
 			switch c.Stage {
@@ -350,7 +343,6 @@ func TestSEALED_2C(t *testing.T) {
 		}
 	}
 	t.Run("bad-sig under the KEL", func(t *testing.T) {
-		t.Skip("v030-todo(KEL-1)")
 		for _, c := range v.Cases {
 			if c.Stage != "sig" {
 				continue
