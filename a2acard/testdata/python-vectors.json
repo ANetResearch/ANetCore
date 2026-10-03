@@ -7,7 +7,7 @@
     "script": "gen_python_vectors.py"
   },
   "now_ms": 1767225600000,
-  "suite_aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+  "suite_aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
   "vectors": [
     {
       "card": {
@@ -15,7 +15,7 @@
           "extensions": [
             {
               "params": {
-                "aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+                "aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
                 "issuedAt": "1767225600000",
                 "notBefore": "1767225540000",
                 "seq": "9007199254740993"
@@ -56,8 +56,8 @@
         "name": "Suite Agent",
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eSMwIiwidHlwIjoiSk9TRSJ9",
-            "signature": "KttgvWXixR9N29h3dOaspRmu09GIMDclkV3JCM4Tq4T2WCHEDRXd_-nsmfLX9mT5rQKA0cBLcqoGKfPf-BC7Bw"
+            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZSMwIiwidHlwIjoiSk9TRSJ9",
+            "signature": "_BXkO6eexFSuZ-OIOEon_1sX6z6cUhOR7MbEQe0jp92dN9ll_CNQhLBxt87zzOWEHyAFXYG2YFIC_esEZ5auCA"
           }
         ],
         "skills": [
@@ -106,7 +106,7 @@
           {
             "protocolBinding": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1",
             "protocolVersion": "1.0",
-            "tenant": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+            "tenant": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
             "url": "https://hub.example.org/relay/v2"
           },
           {
@@ -122,7 +122,7 @@
           "extensions": [
             {
               "params": {
-                "aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+                "aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
                 "issuedAt": "1767225600000",
                 "notBefore": "1767225540000",
                 "seq": "9007199254740993"
@@ -207,7 +207,7 @@
           {
             "protocolBinding": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1",
             "protocolVersion": "1.0",
-            "tenant": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+            "tenant": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
             "url": "https://hub.example.org/relay/v2"
           },
           {
@@ -223,11 +223,11 @@
         "same_statement_as": "",
         "verify": "proto-stripped"
       },
-      "jku": "https://hub.example.org/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jwks.json",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "jku": "https://hub.example.org/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jwks.json",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "network-card",
       "note": "anet network card built as a proto and signed by a2a-python; the published JSON is MessageToDict output, which is in publish form",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": true
     },
     {
@@ -237,7 +237,7 @@
             {
               "description": "",
               "params": {
-                "aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+                "aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
                 "issuedAt": "1767225600000",
                 "notBefore": "1767225540000",
                 "seq": "9007199254740993"
@@ -286,8 +286,8 @@
         "securitySchemes": {},
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eSMwIiwidHlwIjoiSk9TRSJ9",
-            "signature": "KttgvWXixR9N29h3dOaspRmu09GIMDclkV3JCM4Tq4T2WCHEDRXd_-nsmfLX9mT5rQKA0cBLcqoGKfPf-BC7Bw"
+            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZSMwIiwidHlwIjoiSk9TRSJ9",
+            "signature": "_BXkO6eexFSuZ-OIOEon_1sX6z6cUhOR7MbEQe0jp92dN9ll_CNQhLBxt87zzOWEHyAFXYG2YFIC_esEZ5auCA"
           }
         ],
         "skills": [
@@ -344,7 +344,7 @@
           {
             "protocolBinding": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1",
             "protocolVersion": "1.0",
-            "tenant": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+            "tenant": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
             "url": "https://hub.example.org/relay/v2"
           },
           {
@@ -361,11 +361,11 @@
         "same_statement_as": "network-card",
         "verify": "proto-stripped"
       },
-      "jku": "https://hub.example.org/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jwks.json",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "jku": "https://hub.example.org/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jwks.json",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "network-card-wire-defaults",
       "note": "vector network-card with the same signature, rendered with always_print_fields_with_no_presence=True: \"required\": false, \"description\": \"\", \"tenant\": \"\", \"examples\": [], \"securitySchemes\": {} ... appear on the wire. A2A §8.4.3 strips them before verifying; a2a-go does not",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": true
     },
     {
@@ -375,7 +375,7 @@
             {
               "description": "",
               "params": {
-                "aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+                "aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
                 "issuedAt": "1767225600000",
                 "notBefore": "1767225540000",
                 "seq": "9007199254740993"
@@ -424,8 +424,8 @@
         "securitySchemes": {},
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eSMwIiwidHlwIjoiSk9TRSJ9",
-            "signature": "El_ivVsCVgUvesOgWvWsadIOI_6YaMnwSxreGpovlqBEgV1V9EebfJUmYPU5zKKEFcr1p_OKuU5Od1QU8WO2Dw"
+            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZSMwIiwidHlwIjoiSk9TRSJ9",
+            "signature": "exZ18C1lv2s8dB7Fo1aFNVajhg6HecY5U5AAdsGVTM_lIs91XP3UswX_RRroDFWWOzvaIVN1-nEG6OZFh1RyBA"
           }
         ],
         "skills": [
@@ -482,7 +482,7 @@
           {
             "protocolBinding": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1",
             "protocolVersion": "1.0",
-            "tenant": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+            "tenant": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
             "url": "https://hub.example.org/relay/v2"
           },
           {
@@ -499,11 +499,11 @@
         "same_statement_as": "network-card",
         "verify": "raw"
       },
-      "jku": "https://hub.example.org/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jwks.json",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "jku": "https://hub.example.org/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jwks.json",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "network-card-raw-signed",
       "note": "the wire-defaults JSON signed over its RFC 8785 form without stripping, as a2a-go signs a card that carries default values; a2a-python strips before verifying and rejects it, a2acard accepts it through the raw fallback",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"description\":\"\",\"params\":{\"aid\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"required\":false,\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"description\":\"\",\"required\":false,\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"required\":false,\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"description\":\"\",\"required\":false,\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"securityRequirements\":[],\"securitySchemes\":{},\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"inputModes\":[],\"name\":\"Echo\",\"outputModes\":[],\"securityRequirements\":[],\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"inputModes\":[],\"name\":\"翻译\",\"outputModes\":[],\"securityRequirements\":[],\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"examples\":[],\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"securityRequirements\":[],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"tenant\":\"\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"description\":\"\",\"params\":{\"aid\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"required\":false,\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"description\":\"\",\"required\":false,\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"required\":false,\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"description\":\"\",\"required\":false,\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"securityRequirements\":[],\"securitySchemes\":{},\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"inputModes\":[],\"name\":\"Echo\",\"outputModes\":[],\"securityRequirements\":[],\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"inputModes\":[],\"name\":\"翻译\",\"outputModes\":[],\"securityRequirements\":[],\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"examples\":[],\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"securityRequirements\":[],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"tenant\":\"\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": false
     },
     {
@@ -549,8 +549,8 @@
         },
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDphbmV0OmJhZnlyZWljZzNwYWV1bzJudDRuNTc1YWRnbm92dHIyeTdhaXp0aTc2NDNmeGhrNnpibWlhYWE3cTd5IzAiLCJ0eXAiOiJKT1NFIn0",
-            "signature": "pzZgUGHUydDYSpOhP2Ik-_A8lkgXIXu_Lvc4GldXNbqQkFu3G7Cbf1YISpf9395bjeq9a5SiPb9k7Y75xu-uAg"
+            "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDphbmV0OmJhZnlyZWlocTQyajdlc2xqajVkcnhnaWV1ZGgyYXI0Z3NzcG9ncGVqbWR4bWc0bmV6ZmEzdHdkbWtlIzAiLCJ0eXAiOiJKT1NFIn0",
+            "signature": "QUUQp-7d2QIL9WGp5UkdnXnf_UVk0QL7m_L3FliWs5Duh3EU9DWQRVo-1ZqOnpBth6Fe0FR_XppOkfVrPLBfDQ"
           }
         ],
         "skills": [
@@ -567,7 +567,7 @@
           {
             "protocolBinding": "JSONRPC",
             "protocolVersion": "1.0",
-            "url": "http://127.0.0.1:7300/a2a/v1/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jsonrpc"
+            "url": "http://127.0.0.1:7300/a2a/v1/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jsonrpc"
           }
         ],
         "version": "1.0.0"
@@ -626,7 +626,7 @@
           {
             "protocolBinding": "JSONRPC",
             "protocolVersion": "1.0",
-            "url": "http://127.0.0.1:7300/a2a/v1/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jsonrpc"
+            "url": "http://127.0.0.1:7300/a2a/v1/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jsonrpc"
           }
         ],
         "version": "1.0.0"
@@ -637,10 +637,10 @@
         "verify": "proto-stripped"
       },
       "jku": "",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "proxy-card",
       "note": "a card shaped like the local interface's proxy card (A2A-DESIGN §11.3), signed by a2a-python without jku; no anet-card extension, so only the JWS check applies",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"clientPayload\":false,\"signer\":\"anet-daemon\"},\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"}],\"pushNotifications\":false,\"streaming\":true},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Proxy card vector.\",\"name\":\"Suite Agent (via local anet)\",\"securityRequirements\":[{\"schemes\":{\"anetLocal\":{\"list\":[\"a2a\"]}}}],\"securitySchemes\":{\"anetLocal\":{\"httpAuthSecurityScheme\":{\"scheme\":\"Bearer\"}}},\"skills\":[{\"description\":\"Text conversation.\",\"id\":\"chat\",\"name\":\"Chat\",\"tags\":[\"chat\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"http://127.0.0.1:7300/a2a/v1/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"clientPayload\":false,\"signer\":\"anet-daemon\"},\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"}],\"pushNotifications\":false,\"streaming\":true},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Proxy card vector.\",\"name\":\"Suite Agent (via local anet)\",\"securityRequirements\":[{\"schemes\":{\"anetLocal\":{\"list\":[\"a2a\"]}}}],\"securitySchemes\":{\"anetLocal\":{\"httpAuthSecurityScheme\":{\"scheme\":\"Bearer\"}}},\"skills\":[{\"description\":\"Text conversation.\",\"id\":\"chat\",\"name\":\"Chat\",\"tags\":[\"chat\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"http://127.0.0.1:7300/a2a/v1/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": true
     },
     {
@@ -649,7 +649,7 @@
           "extensions": [
             {
               "params": {
-                "aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+                "aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
                 "issuedAt": "1767225600000",
                 "notBefore": "1767225540000",
                 "seq": "9007199254740993"
@@ -692,8 +692,8 @@
         "name": "Suite Agent",
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eSMwIiwidHlwIjoiSk9TRSJ9",
-            "signature": "KttgvWXixR9N29h3dOaspRmu09GIMDclkV3JCM4Tq4T2WCHEDRXd_-nsmfLX9mT5rQKA0cBLcqoGKfPf-BC7Bw"
+            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZSMwIiwidHlwIjoiSk9TRSJ9",
+            "signature": "_BXkO6eexFSuZ-OIOEon_1sX6z6cUhOR7MbEQe0jp92dN9ll_CNQhLBxt87zzOWEHyAFXYG2YFIC_esEZ5auCA"
           }
         ],
         "skills": [
@@ -742,7 +742,7 @@
           {
             "protocolBinding": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1",
             "protocolVersion": "1.0",
-            "tenant": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+            "tenant": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
             "url": "https://hub.example.org/relay/v2"
           },
           {
@@ -758,11 +758,11 @@
         "same_statement_as": "",
         "verify": "INVALID_SIGNATURE"
       },
-      "jku": "https://hub.example.org/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jwks.json",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "jku": "https://hub.example.org/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jwks.json",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "divergent-struct-empty",
       "note": "extension params holding \"\" and []: a2a-python drops them inside the Struct before signing, the specification keeps a Struct's content, so a2acard (spec) rejects the signature",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"description\":\"Returns the input text.\",\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": true
     },
     {
@@ -804,8 +804,8 @@
         },
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDphbmV0OmJhZnlyZWljZzNwYWV1bzJudDRuNTc1YWRnbm92dHIyeTdhaXp0aTc2NDNmeGhrNnpibWlhYWE3cTd5IzAiLCJ0eXAiOiJKT1NFIn0",
-            "signature": "1c0n5kw2eTZ_AzQJoWZrgakeP1URF5wXfvMeQHlrREa0vafutwDT_KWmVFV3_1pfRBJdJbV0fiw68oQXlWtXAg"
+            "protected": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDphbmV0OmJhZnlyZWlocTQyajdlc2xqajVkcnhnaWV1ZGgyYXI0Z3NzcG9ncGVqbWR4bWc0bmV6ZmEzdHdkbWtlIzAiLCJ0eXAiOiJKT1NFIn0",
+            "signature": "jxj0LKCieUpIEU3eGsGlqsWATuBDq9svGAbO5X8l8iAZqtwU-h1nEfiqDFJKkCfOR_S32i7fOHAyFprKOxh_CQ"
           }
         ],
         "skills": [
@@ -822,7 +822,7 @@
           {
             "protocolBinding": "JSONRPC",
             "protocolVersion": "1.0",
-            "url": "http://127.0.0.1:7300/a2a/v1/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jsonrpc"
+            "url": "http://127.0.0.1:7300/a2a/v1/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jsonrpc"
           }
         ],
         "version": "1.0.0"
@@ -833,10 +833,10 @@
         "verify": "INVALID_SIGNATURE"
       },
       "jku": "",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "divergent-empty-scope-list",
       "note": "a security requirement with an empty scope list, {\"schemes\":{\"anetLocal\":{}}}: a2a-python drops the empty object and with it the whole requirement, the specification keeps it (map values are always emitted)",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"clientPayload\":false,\"signer\":\"anet-daemon\"},\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"}],\"pushNotifications\":false,\"streaming\":true},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Proxy card vector.\",\"name\":\"Suite Agent (via local anet)\",\"securitySchemes\":{\"anetLocal\":{\"httpAuthSecurityScheme\":{\"scheme\":\"Bearer\"}}},\"skills\":[{\"description\":\"Text conversation.\",\"id\":\"chat\",\"name\":\"Chat\",\"tags\":[\"chat\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"http://127.0.0.1:7300/a2a/v1/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"clientPayload\":false,\"signer\":\"anet-daemon\"},\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"}],\"pushNotifications\":false,\"streaming\":true},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Proxy card vector.\",\"name\":\"Suite Agent (via local anet)\",\"securitySchemes\":{\"anetLocal\":{\"httpAuthSecurityScheme\":{\"scheme\":\"Bearer\"}}},\"skills\":[{\"description\":\"Text conversation.\",\"id\":\"chat\",\"name\":\"Chat\",\"tags\":[\"chat\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"http://127.0.0.1:7300/a2a/v1/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": true
     },
     {
@@ -845,7 +845,7 @@
           "extensions": [
             {
               "params": {
-                "aid": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+                "aid": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
                 "issuedAt": "1767225600000",
                 "notBefore": "1767225540000",
                 "seq": "9007199254740993"
@@ -886,8 +886,8 @@
         "name": "Suite Agent",
         "signatures": [
           {
-            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpY2czcGFldW8ybnQ0bjU3NWFkZ25vdnRyMnk3YWl6dGk3NjQzZnhoazZ6Ym1pYWFhN3E3eSMwIiwidHlwIjoiSk9TRSJ9",
-            "signature": "Ql1nBv4xbds4Lrja147NFevh51eXCrROxi1p71FGWWLUHugvbgsvmYeEbIiHQoQWcc19p6BWQCNqnikPxv1ZAw"
+            "protected": "eyJhbGciOiJFZERTQSIsImprdSI6Imh0dHBzOi8vaHViLmV4YW1wbGUub3JnL2FnZW50cy9iYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZS9qd2tzLmpzb24iLCJraWQiOiJkaWQ6YW5ldDpiYWZ5cmVpaHE0Mmo3ZXNsamo1ZHJ4Z2lldWRoMmFyNGdzc3BvZ3Blam1keG1nNG5lemZhM3R3ZG1rZSMwIiwidHlwIjoiSk9TRSJ9",
+            "signature": "mc2SvBFARXLFJ2D5u1xkQOCtlTZzvNNgKylwq2eWskj7YUqDz7tJsmCsxEN7drXZjh4nvtJ55IvOFJ7xnt8gBQ"
           }
         ],
         "skills": [
@@ -936,7 +936,7 @@
           {
             "protocolBinding": "https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1",
             "protocolVersion": "1.0",
-            "tenant": "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y",
+            "tenant": "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke",
             "url": "https://hub.example.org/relay/v2"
           },
           {
@@ -952,11 +952,11 @@
         "same_statement_as": "",
         "verify": "INVALID_CARD"
       },
-      "jku": "https://hub.example.org/agents/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/jwks.json",
-      "kid": "did:anet:bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y#0",
+      "jku": "https://hub.example.org/agents/bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke/jwks.json",
+      "kid": "did:anet:bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke#0",
       "name": "divergent-required-empty",
       "note": "a skill whose REQUIRED description is \"\", published with the member present as A2A §8.4.1 requires: MessageToDict (and so a2a-python) omits it before signing, the specification keeps it; a2acard also refuses the card, since a REQUIRED string must be set",
-      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
+      "python_payload": "{\"capabilities\":{\"extensions\":[{\"params\":{\"aid\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"issuedAt\":\"1767225600000\",\"notBefore\":\"1767225540000\",\"seq\":\"9007199254740993\"},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-card/v1\"},{\"uri\":\"https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2\"},{\"description\":\"Prices in anet credits, per call.\",\"params\":{\"network\":\"anet\",\"prices\":[{\"amount\":\"25\",\"skillId\":\"translate\"}]},\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-pricing/v1\"},{\"uri\":\"https://agentnetwork.org.cn/a2a/ext/anet-evidence/v1\"}],\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"text/plain\",\"application/json\"],\"defaultOutputModes\":[\"text/plain\"],\"description\":\"Cross-SDK vector: an anet network card signed by a2a-python. 中文说明。\",\"name\":\"Suite Agent\",\"skills\":[{\"examples\":[\"echo hello\"],\"id\":\"echo\",\"name\":\"Echo\",\"tags\":[\"text\",\"echo\"]},{\"description\":\"Translates between Chinese and English.\",\"examples\":[\"translate 你好 to English\"],\"id\":\"translate\",\"name\":\"翻译\",\"tags\":[\"text\",\"translation\",\"中文\"]},{\"description\":\"Summarizes a JSON document.\",\"id\":\"summarize.json\",\"inputModes\":[\"application/json\"],\"name\":\"Summarize JSON\",\"outputModes\":[\"text/plain\"],\"tags\":[\"json\",\"summary\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"https://agentnetwork.org.cn/a2a/bindings/anet-relay/v1\",\"protocolVersion\":\"1.0\",\"tenant\":\"bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke\",\"url\":\"https://hub.example.org/relay/v2\"},{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://node.example.org/a2a/jsonrpc\"}],\"version\":\"1.0.0\"}",
       "python_verifies": true
     }
   ]

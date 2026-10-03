@@ -149,7 +149,8 @@ func TestCompileCouplingHintRange(t *testing.T) {
 
 // F4: Verify/Compile thread msgTime into the time-aware revocation gate (§5.2). A TaskDoc
 // signed under the retiring seq0 key, bound (msgTime) AFTER the rotation → REVOKED_KEY; bound
-// before the rotation (grace) still verifies; msgTime=0 baseline still verifies.
+// before the rotation (grace) still verifies; msgTime=0 (unknown) cannot be shown to predate
+// the rotation → REVOKED_KEY (KEL C-10).
 func TestVerifyMsgTimeRevocation(t *testing.T) {
 	c, _ := identity.Incept()
 	d := &TaskDoc{Version: VersionPair{Major: 1}, Tasks: []Task{{ID: "t1", Intent: Intent{Body: "do x"}}}}
@@ -160,9 +161,9 @@ func TestVerifyMsgTimeRevocation(t *testing.T) {
 	if err := c.Rotate(5000); err != nil {
 		t.Fatal(err)
 	}
-	// baseline (msgTime=0): grace — still verifies.
-	if err := d.Verify(c.KEL(), 0); err != nil {
-		t.Fatalf("F4: msgTime=0 baseline must verify (grace), got %v", err)
+	// msgTime=0: the time is unknown, so the retired key is refused.
+	if err := d.Verify(c.KEL(), 0); err == nil {
+		t.Fatal("F4: msgTime=0 under a retired key must be REVOKED_KEY")
 	}
 	// bound before the rotation (msgTime=4999): grace — verifies.
 	if err := d.Verify(c.KEL(), 4999); err != nil {

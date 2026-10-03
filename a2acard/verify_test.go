@@ -413,45 +413,33 @@ func TestVerifyResolverErrorIsWrapped(t *testing.T) {
 	}
 }
 
-// Key-state rule across ixn/drt events (see CurrentKey): the states after the last rotation
-// share the current key and are accepted; every state before it is rejected, including one
-// separated from the rotation by a drt; a deactivated AID has no accepted state.
+// Key-state rule (see CurrentKey): only the head's state is current; every state a rot replaced
+// is rejected, and a deactivated AID has no accepted state.
 func TestVerifyKeyStateRule(t *testing.T) {
-	host := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public().(ed25519.PublicKey)
-
-	// icp(0) -> drt(1): both states hold the inception key.
 	c := incept(t)
 	k0 := c.CurrentPrivateKey()
-	if err := c.Delegate(host, t0-3000); err != nil {
-		t.Fatal(err)
-	}
-	for _, seq := range []uint64{0, 1} {
-		if _, err := Verify(signAs(t, baseCard(c.AID()), k0, KID(c.AID(), seq)), newResolver(c).resolve, t0); err != nil {
-			t.Errorf("icp->drt, kid seq %d: %v", seq, err)
-		}
+	if _, err := Verify(signAs(t, baseCard(c.AID()), k0, KID(c.AID(), 0)), newResolver(c).resolve, t0); err != nil {
+		t.Errorf("icp, kid seq 0: %v", err)
 	}
 
-	// -> rot(2): states 0 and 1 are retired; 2 is current.
+	// -> rot(1): state 0 is retired; 1 is current.
 	if err := c.Rotate(t0 - 2000); err != nil {
 		t.Fatal(err)
 	}
-	k2 := c.CurrentPrivateKey()
-	for _, seq := range []uint64{0, 1} {
-		_, err := Verify(signAs(t, baseCard(c.AID()), k0, KID(c.AID(), seq)), newResolver(c).resolve, t0)
-		if !IsCode(err, CodeKeyNotCurrent) {
-			t.Errorf("icp->drt->rot, kid seq %d: err %v, want %s", seq, err, CodeKeyNotCurrent)
-		}
+	k1 := c.CurrentPrivateKey()
+	if _, err := Verify(signAs(t, baseCard(c.AID()), k0, KID(c.AID(), 0)), newResolver(c).resolve, t0); !IsCode(err, CodeKeyNotCurrent) {
+		t.Errorf("icp->rot, kid seq 0: err %v, want %s", err, CodeKeyNotCurrent)
 	}
-	if _, err := Verify(signAs(t, baseCard(c.AID()), k2, KID(c.AID(), 2)), newResolver(c).resolve, t0); err != nil {
-		t.Errorf("icp->drt->rot, kid seq 2: %v", err)
+	if _, err := Verify(signAs(t, baseCard(c.AID()), k1, KID(c.AID(), 1)), newResolver(c).resolve, t0); err != nil {
+		t.Errorf("icp->rot, kid seq 1: %v", err)
 	}
 
-	// -> dip(3): nothing is current.
+	// -> dip(2): nothing is current.
 	if err := c.Deactivate(t0 - 1000); err != nil {
 		t.Fatal(err)
 	}
-	for _, seq := range []uint64{2, 3} {
-		_, err := Verify(signAs(t, baseCard(c.AID()), k2, KID(c.AID(), seq)), newResolver(c).resolve, t0)
+	for _, seq := range []uint64{1, 2} {
+		_, err := Verify(signAs(t, baseCard(c.AID()), k1, KID(c.AID(), seq)), newResolver(c).resolve, t0)
 		if !IsCode(err, CodeKeyNotCurrent) {
 			t.Errorf("deactivated, kid seq %d: err %v, want %s", seq, err, CodeKeyNotCurrent)
 		}

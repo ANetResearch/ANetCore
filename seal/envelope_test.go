@@ -76,21 +76,20 @@ func TestSealIsRandomized(t *testing.T) {
 // catch the change.
 func TestSignedInnerFieldMutations(t *testing.T) {
 	a, b := newParty(t), newParty(t)
-	// A second state with the same key, so a changed key_state_seq still
-	// resolves to a key and only the preimage differs.
-	if err := a.c.Delegate(make([]byte, 32), t0-dayMS); err != nil {
+	// A second key state, so a changed key_state_seq still resolves to a key.
+	if err := a.c.Rotate(t0 - dayMS); err != nil {
 		t.Fatal(err)
 	}
 	a.resign(t, t0)
 	other := newParty(t)
 
 	longerKEL := func() []byte {
-		// Same AID, different bytes: A's KEL extended by one more drt.
+		// Same AID, different bytes: A's KEL extended by one more rot.
 		cp, err := identity.Restore(mustExport(t, a.c))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := cp.Delegate(bytes.Repeat([]byte{1}, 32), t0-dayMS+1); err != nil {
+		if err := cp.Rotate(t0 - dayMS + 1); err != nil {
 			t.Fatal(err)
 		}
 		k, err := identity.MarshalKEL(cp.KEL())
@@ -525,10 +524,6 @@ func TestRotationGrace(t *testing.T) {
 		o, kel := sealBefore(t, rot, rot, nil)
 		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+1, grace), ReasonRevokedKey)
 	})
-	t.Run("rotation without timestamp", func(t *testing.T) {
-		o, kel := sealBefore(t, t0, 0, nil)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, t0+1, grace), ReasonRevokedKey)
-	})
 	t.Run("carried KEL predates rotation, stored KEL does not", func(t *testing.T) {
 		// The message verifies under the KEL it carries (top state at the
 		// time) and is still subject to the grace rule under the resolved
@@ -550,15 +545,15 @@ func TestRotationGrace(t *testing.T) {
 			t.Fatalf("current key: %v", err)
 		}
 	})
-	t.Run("drt between signing state and rotation", func(t *testing.T) {
-		// icp -> drt -> rot, message signed at seq 1 (the drt state, same
-		// key as icp). The retirement is read from the rot at seq 2.
-		withDrt := func(c *identity.Controller) {
-			if err := c.Delegate(make([]byte, 32), t0-dayMS); err != nil {
+	t.Run("signed at a rot state, retired by the next rot", func(t *testing.T) {
+		// icp -> rot -> rot, message signed at seq 1. The retirement is read
+		// from the rot at seq 2.
+		rotEarly := func(c *identity.Controller) {
+			if err := c.Rotate(t0 - dayMS); err != nil {
 				t.Fatal(err)
 			}
 		}
-		o, kel := sealBefore(t, t0, rot, withDrt)
+		o, kel := sealBefore(t, t0, rot, rotEarly)
 		if o.Inner.KeyStateSeq != 1 {
 			t.Fatalf("setup: signed at %d", o.Inner.KeyStateSeq)
 		}
@@ -566,36 +561,6 @@ func TestRotationGrace(t *testing.T) {
 			t.Fatalf("inside grace: %v", err)
 		}
 		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1, grace), ReasonGraceExpired)
-	})
-	t.Run("drt between icp state and rotation, signed at icp", func(t *testing.T) {
-		// icp -> drt -> rot, message signed at seq 0. The drt between the
-		// signing state and the rotation must not hide the retirement
-		// (identity.Replay, A2A-DESIGN §3.6 [C4a]).
-		a := newParty(t)
-		in := innerFrom(t, a, b, rot) // ts not before the rotation
-		env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
-		if err := a.c.Delegate(make([]byte, 32), t0); err != nil {
-			t.Fatal(err)
-		}
-		if err := a.c.Rotate(rot); err != nil {
-			t.Fatal(err)
-		}
-		o := mustOpen(t, env, b)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), rot+1, grace), ReasonRevokedKey)
-
-		a2 := newParty(t)
-		env = mustSeal(t, innerFrom(t, a2, b, t0), &b.kp.Public, a2.c.Sign)
-		if err := a2.c.Delegate(make([]byte, 32), t0); err != nil {
-			t.Fatal(err)
-		}
-		if err := a2.c.Rotate(rot); err != nil {
-			t.Fatal(err)
-		}
-		o = mustOpen(t, env, b)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a2.c.KEL(), rot+graceMS+1, grace), ReasonGraceExpired)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, a2.c.KEL(), rot+graceMS, grace); err != nil {
-			t.Fatalf("inside grace: %v", err)
-		}
 	})
 	t.Run("deactivated", func(t *testing.T) {
 		a := newParty(t)
@@ -673,6 +638,9 @@ func TestParseKELCaps(t *testing.T) {
 	// 257 events that decode; they are not a valid KEL, but the count cap
 	// applies before any replay.
 	events := make([]identity.SignedEvent, MaxKELEvents+1)
+	for i := range events {
+		events[i].Event.KELType = identity.KELType
+	}
 	b, err := identity.MarshalKEL(events)
 	if err != nil {
 		t.Fatal(err)

@@ -82,15 +82,6 @@ func TestVerifyEncKeySetRecipientSubstitution(t *testing.T) {
 // §3.1 rule 2: only the key in force at the KEL head signs a key set; no
 // rotation grace.
 func TestVerifyEncKeySetKeyState(t *testing.T) {
-	t.Run("ixn-like events keep the key", func(t *testing.T) {
-		a := newParty(t) // signed at seq 0
-		if err := a.c.Delegate(make([]byte, 32), t0); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := VerifyEncKeySet(a.signed, a.aid(), a.c.KEL(), t0); err != nil {
-			t.Fatalf("a drt does not change the signing key: %v", err)
-		}
-	})
 	t.Run("rotated away", func(t *testing.T) {
 		a := newParty(t)
 		if err := a.c.Rotate(t0 - 1); err != nil {
@@ -103,11 +94,8 @@ func TestVerifyEncKeySetKeyState(t *testing.T) {
 			t.Fatalf("re-signed after rotation: %v", err)
 		}
 	})
-	t.Run("rotated away through a drt", func(t *testing.T) {
+	t.Run("rotated away after now", func(t *testing.T) {
 		a := newParty(t) // signed at seq 0
-		if err := a.c.Delegate(make([]byte, 32), t0); err != nil {
-			t.Fatal(err)
-		}
 		if err := a.c.Rotate(t0 + 1); err != nil {
 			t.Fatal(err)
 		}

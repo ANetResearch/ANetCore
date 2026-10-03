@@ -2,7 +2,7 @@ package identity
 
 // Spot checks of the fx-e fix (Replay refuses icp/rot keys that are not 32
 // bytes instead of panicking in ed25519.Verify) after the round-5b merge
-// (ANet docs/notes/0030): every length around 32, the key in each place a
+// (ANet an internal note): every length around 32, the key in each place a
 // KEL carries one, and replays racing through the process-wide cache.
 
 import (
@@ -23,32 +23,37 @@ func noPanic(t *testing.T, what string, f func()) {
 	f()
 }
 
-// badKELs are KELs whose icp or rot key is not 32 bytes, for each length.
+// badKELs are KELs whose icp, rot or dip key is not 32 bytes, for each length.
 func badKELs(t *testing.T) map[string][]SignedEvent {
 	t.Helper()
 	out := map[string][]SignedEvent{}
 	for _, n := range []int{0, 1, 16, 31, 33, 64} {
 		key := make([]byte, n)
 		_, k0, _ := ed25519.GenerateKey(nil)
-		icp := signedEvent(t, KeyEvent{Type: Inception, Keys: [][]byte{key}, Threshold: 1}, k0)
+		icp := signedEvent(t, KeyEvent{KELType: KELType, Type: Inception, Keys: [][]byte{key},
+			NextDigest: nextDigest(key), Threshold: 1, Timestamp: 1, Toad: ToadField(ToadHub)}, k0)
 		out[fmt.Sprintf("icp key of %d bytes", n)] = []SignedEvent{icp}
 
-		good := signedEvent(t, KeyEvent{Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
-			NextDigest: nextDigest(key), Threshold: 1}, k0)
+		// A well-formed icp that commits to a key of n bytes, and the rot and the dip that reveal
+		// it (signed by k0, as nothing else can sign).
+		good := signedEvent(t, KeyEvent{KELType: KELType, Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
+			NextDigest: nextDigest(key), Threshold: 1, Timestamp: 1, Toad: ToadField(ToadHub)}, k0)
 		aid := good.EventID
-		rot := signedEvent(t, KeyEvent{AID: aid, Seq: 1, Prev: aid, Type: Rotation, Keys: [][]byte{key},
-			NextDigest: nextDigest(key), Threshold: 1, Timestamp: 1}, k0)
+		rot := signedEvent(t, KeyEvent{KELType: KELType, AID: aid, Seq: 1, Prev: aid, Type: Rotation, Keys: [][]byte{key},
+			NextDigest: nextDigest(key), Threshold: 1, Timestamp: 2, Toad: ToadField(ToadHub)}, k0)
 		out[fmt.Sprintf("rot to a key of %d bytes", n)] = []SignedEvent{good, rot}
+		dip := signedEvent(t, KeyEvent{KELType: KELType, AID: aid, Seq: 1, Prev: aid, Type: Deactivation, Keys: [][]byte{key},
+			Threshold: 1, Timestamp: 2}, k0)
+		out[fmt.Sprintf("dip revealing a key of %d bytes", n)] = []SignedEvent{good, dip}
 
-		// A rot with two keys whose first is fine: still not the one key
-		// the baseline takes.
+		// A rot with two keys whose first is fine: still not the one key KEL v2 takes.
 		_, k1, _ := ed25519.GenerateKey(nil)
 		pub1 := k1.Public().(ed25519.PublicKey)
-		good2 := signedEvent(t, KeyEvent{Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
-			NextDigest: nextDigest(pub1), Threshold: 1}, k0)
+		good2 := signedEvent(t, KeyEvent{KELType: KELType, Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
+			NextDigest: nextDigest(pub1), Threshold: 1, Timestamp: 1, Toad: ToadField(ToadHub)}, k0)
 		aid2 := good2.EventID
-		rot2 := signedEvent(t, KeyEvent{AID: aid2, Seq: 1, Prev: aid2, Type: Rotation, Keys: [][]byte{pub1, key},
-			NextDigest: nextDigest(pub1), Threshold: 1, Timestamp: 1}, k0)
+		rot2 := signedEvent(t, KeyEvent{KELType: KELType, AID: aid2, Seq: 1, Prev: aid2, Type: Rotation, Keys: [][]byte{pub1, key},
+			NextDigest: nextDigest(pub1), Threshold: 1, Timestamp: 2, Toad: ToadField(ToadHub)}, k1)
 		out[fmt.Sprintf("rot to two keys, the second of %d bytes", n)] = []SignedEvent{good2, rot2}
 	}
 	return out
@@ -67,38 +72,6 @@ func TestSpotEveryWrongKeyLengthIsRefusedNotAPanic(t *testing.T) {
 			}
 		})
 	}
-}
-
-// A drt event may carry a delegated key of any length (it signs nothing
-// the KEL verifies), and the KEL replays; the events after it are still
-// checked against the owner's 32-byte key, and nothing panics.
-func TestSpotAShortDelegatedKeyDoesNotReachAVerification(t *testing.T) {
-	_, k0, _ := ed25519.GenerateKey(nil)
-	_, k1, _ := ed25519.GenerateKey(nil)
-	icp := signedEvent(t, KeyEvent{Type: Inception, Keys: [][]byte{k0.Public().(ed25519.PublicKey)},
-		NextDigest: nextDigest(k1.Public().(ed25519.PublicKey)), Threshold: 1}, k0)
-	aid := icp.EventID
-	drt := signedEvent(t, KeyEvent{AID: aid, Seq: 1, Prev: aid, Type: Delegation,
-		Keys: [][]byte{make([]byte, 31)}, Threshold: 1, Timestamp: 1}, k0)
-	ixn := signedEvent(t, KeyEvent{AID: aid, Seq: 2, Prev: drt.EventID, Type: Interaction,
-		Keys: [][]byte{}, Threshold: 1, Timestamp: 2}, k0)
-	kel := []SignedEvent{icp, drt, ixn}
-	noPanic(t, "a KEL with a short delegated key", func() {
-		states, err := Replay(kel)
-		if err != nil {
-			t.Fatalf("replay: %v", err)
-		}
-		if n := len(states[2].DelegatedKeys); n != 1 {
-			t.Fatalf("delegated keys = %d", n)
-		}
-		pre := []byte("object")
-		if err := VerifyObject(kel, aid, 2, 3, pre, ed25519.Sign(k0, pre)); err != nil {
-			t.Fatalf("an object signed by the owner's key: %v", err)
-		}
-		if err := VerifyObject(kel, aid, 2, 3, pre, make([]byte, 64)); err == nil {
-			t.Fatal("a zero signature verified")
-		}
-	})
 }
 
 // The same KELs replayed from many goroutines at once through the

@@ -135,7 +135,7 @@ func TestVEC_DELEGATE_2(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertKeys(t, "delegation", b, []uint64{1, 2, 3, 4, 5, 6, 7, 8})
-	const wantCID = "bafyreife5tknp3dracamid2n2i6es4iog767qx4dxqztcpzpr4jdpacnma"
+	const wantCID = "bafyreigmaetwyfizucuxcrtla4o6dycxl7cb6agzlkwm6kjrxkijxdalrm"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("delegation wire CID\n got  %s\n want %s", got, wantCID)
 	}
@@ -156,7 +156,7 @@ func TestVEC_DELEGATE_2(t *testing.T) {
 func TestVEC_RESULT_2(t *testing.T) {
 	c := identity.SuiteController()
 	deliverable := []byte(`{"ok":true}`)
-	rc := goldenReceipt()
+	rc := goldenReceipt(suiteAID)
 	cid, err := anetcid.Sum(deliverable)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestVEC_RESULT_2(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertKeys(t, "result", b, []uint64{1, 2, 3, 4, 5})
-	const wantCID = "bafyreihskdzrcgvwfcisk7fx2h7yfrh6kzdigtcf6wkypx2lqgjaexd64m"
+	const wantCID = "bafyreid3yzaskr7sbwgi2yo5c7sglhu63twrx4lc2qdg64jm4l7hvv2p2i"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)
 	}
@@ -241,7 +241,7 @@ func TestVEC_RELAYAUTH_2(t *testing.T) {
 	}
 	c := identity.SuiteController()
 	sig, seq := c.Sign(pre)
-	const wantSig = "PZ-Fe93H14oafwaoaGB1wge7kZQJSHylMPmyAjx94dqWjuOAEVBIl2ULwQ7cjzb59r56Pi_XQ5Rr2RyPyQgsBA"
+	const wantSig = "WKDMJ5qsDGTf7-8RClO5rPFjWeIeRgVCmAi1DM45EkfGh98_3rAaaslMGOxFkJOqZ48I02EJP9OTc17LeD1mAA"
 	if got := relayauth.EncodeSig(sig); got != wantSig {
 		t.Errorf("%s value\n got  %s\n want %s", relayauth.HeaderSig, got, wantSig)
 	}

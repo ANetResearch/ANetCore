@@ -1,6 +1,6 @@
 package seal
 
-// Fuzz targets for the envelope, the inner message and the key set (ANet docs/notes/0033).
+// Fuzz targets for the envelope, the inner message and the key set (ANet an internal note).
 //
 // Open needs the recipient's private key and a signature to get past its first steps, so the
 // targets fix the recipient to the VEC-SEALED-1 key and the sender to the suite identity:
@@ -125,16 +125,18 @@ func rotatedSuiteKEL(tb testing.TB, ts uint64) []byte {
 		s := sha256.Sum256([]byte(label))
 		return ed25519.NewKeyFromSeed(s[:])
 	}
-	k0, k1, k2 := k("anet-suite-identity-v1/cur"), k("anet-suite-identity-v1/nxt"), k("anet-fuzz/seal/k2")
+	k1, k2 := k("anet-suite-identity-v1/nxt"), k("anet-fuzz/seal/k2")
 	kel := identity.SuiteController().KEL()
 	d := sha256.Sum256(k2.Public().(ed25519.PublicKey))
-	rot := identity.KeyEvent{AID: kel[0].EventID, Seq: 1, Prev: kel[0].EventID, Type: identity.Rotation,
-		Keys: [][]byte{k1.Public().(ed25519.PublicKey)}, NextDigest: d[:], Threshold: 1, Timestamp: ts}
+	rot := identity.KeyEvent{KELType: identity.KELType, AID: kel[0].EventID, Seq: 1, Prev: kel[0].EventID,
+		Type: identity.Rotation, Keys: [][]byte{k1.Public().(ed25519.PublicKey)}, NextDigest: d[:], Threshold: 1,
+		Timestamp: ts, Toad: identity.ToadField(identity.ToadHub)}
 	pre, err := coredet.Marshal(rot)
 	if err != nil {
 		tb.Fatal(err)
 	}
-	kel = append(kel, identity.SignedEvent{Event: rot, Sig: ed25519.Sign(k0, pre), EventID: anetcid.MustSum(pre)})
+	// A rot is signed by the key it reveals (KEL v2).
+	kel = append(kel, identity.SignedEvent{Event: rot, Sig: ed25519.Sign(k1, pre), EventID: anetcid.MustSum(pre)})
 	b, err := identity.MarshalKEL(kel)
 	if err != nil {
 		tb.Fatal(err)

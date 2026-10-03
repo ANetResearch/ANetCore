@@ -38,7 +38,7 @@ func goldenCard(aid string) map[string]any {
 // outside this package, with Python's json.dumps(sort_keys=True, separators=(",", ":"),
 // ensure_ascii=False), which equals RFC 8785 for this card (ASCII member names, no numbers, no
 // control characters); the signature was checked with the Python cryptography package.
-const goldenPayloadHash = "3802f58cc6e81352777f108b183acb6c96233f851d1b5668aa6fc49c94b5fe98"
+const goldenPayloadHash = "4d6f7127c244027a5de74cd920fa3f899fcec488e7088b2addb097e7be54a8ad"
 
 func checkGolden(t *testing.T, path string, got []byte) {
 	t.Helper()
