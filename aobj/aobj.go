@@ -20,6 +20,8 @@ const AlgEdDSA = -8
 // Envelope is the P1 AObj signature envelope. CBOR int keys (keyasint):
 // 1 signer_aid, 2 key_state_seq, 3 alg, 4 sig, 5 canonical_preimage_ref (optional).
 // It is carried beside the signed object, never inside the signed preimage.
+//
+//anet:wire aobj.Envelope
 type Envelope struct {
 	SignerAID   string `cbor:"1,keyasint"`
 	KeyStateSeq uint64 `cbor:"2,keyasint"`
@@ -48,7 +50,7 @@ func (e Envelope) Validate() error {
 // Verify checks a detached Ed25519 signature over preimage against pub. The signature
 // MUST be exactly 64 bytes (design3/spec/_CONVENTIONS §5), and a public key that is not
 // 32 bytes is an error: ed25519.Verify panics on one, and the key may have come from
-// whoever sent the object (ANet docs/notes/0033, found by FuzzEnvelopeVerify).
+// whoever sent the object (ANet an internal note, found by FuzzEnvelopeVerify).
 func Verify(pub ed25519.PublicKey, preimage, sig []byte) error {
 	if len(pub) != ed25519.PublicKeySize {
 		return errors.New("aobj: public key must be 32 bytes")

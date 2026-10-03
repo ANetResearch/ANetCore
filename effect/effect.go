@@ -40,6 +40,8 @@ const (
 // device acknowledged natively, what state was actually observed, and how
 // long it took. This is what lets an agent know the device REALLY executed —
 // the difference between "I sent a command" and "I verified the effect".
+//
+//anet:wire EffectEvidence
 type Evidence struct {
 	Requested     string `cbor:"1,keyasint,omitempty"` // e.g. "light.onoff=on"
 	Protocol      string `cbor:"2,keyasint,omitempty"` // "zigbee" | "modbus" | "opcua" | ...
@@ -56,6 +58,8 @@ type Evidence struct {
 }
 
 // Effect is the envelope every capability invocation returns.
+//
+//anet:wire Effect
 type Effect struct {
 	Status   Status             `cbor:"1,keyasint"`
 	Record   *tsir.EffectRecord `cbor:"2,keyasint,omitempty"` // nil when no metrics
