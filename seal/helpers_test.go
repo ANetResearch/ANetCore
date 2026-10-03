@@ -4,7 +4,6 @@ import (
 	"crypto/hpke"
 	"testing"
 
-	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
 )
 
@@ -75,7 +74,16 @@ func (p *party) keysBytes(t *testing.T) []byte {
 
 func (p *party) ring() KeyRing { return StaticKeyRing{p.kp} }
 
-// innerFrom returns an unsigned inner from -> to at ts.
+// testNotice stands in for a witness notice in key 11. This package checks
+// only that key 11 is one byte string of at most MaxNoticeBytes that goes with
+// key 10; the notice itself is checked by CheckNotice (KEL-4).
+var testNotice = []byte("notice")
+
+// testGrant is a grant-shaped map for key 14; its content is CheckGrant's.
+var testGrant = []byte{0xa1, 0x03, 0x61, 0x68} // {3: "h"}
+
+// innerFrom returns an unsigned inner from -> to at ts, of the shape every
+// queued message has: keys 10, 11 and 12.
 func innerFrom(t *testing.T, from, to *party, ts uint64) *SealedInner {
 	t.Helper()
 	return &SealedInner{
@@ -89,31 +97,61 @@ func innerFrom(t *testing.T, from, to *party, ts uint64) *SealedInner {
 		Exp:         ts + dayMS,
 		Body:        []byte("hello"),
 		KEL:         from.kelBytes(t),
+		Notices:     [][]byte{testNotice},
 		Keys:        from.keysBytes(t),
 	}
 }
 
+// session is the access a first-contact delivery carries.
+var session = &Access{Kind: AccessKindSession}
+
+// mustSeal seals and adds a session access, the form a hub accepts.
 func mustSeal(t *testing.T, in *SealedInner, to *EncKey, sign SignFunc) []byte {
 	t.Helper()
-	env, err := Seal(in, to, sign)
+	env, _ := mustSealAck(t, in, to, sign, SealOpts{})
+	return env
+}
+
+func mustSealAck(t *testing.T, in *SealedInner, to *EncKey, sign SignFunc, o SealOpts) ([]byte, AckKey) {
+	t.Helper()
+	env, ack, err := Seal(in, to, sign, o)
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
-	return env
+	return withSession(t, env), ack
+}
+
+// sealHooked is Seal with test hooks, plus a session access.
+func sealHooked(t *testing.T, in *SealedInner, to *EncKey, sign SignFunc, o SealOpts, h sealHooks) []byte {
+	t.Helper()
+	env, _, err := seal(in, to, sign, o, &h)
+	if err != nil {
+		t.Fatalf("seal: %v", err)
+	}
+	return withSession(t, env)
+}
+
+func withSession(t *testing.T, env []byte) []byte {
+	t.Helper()
+	out, err := SetAccess(env, session)
+	if err != nil {
+		t.Fatalf("set access: %v", err)
+	}
+	return out
 }
 
 func mustOpen(t *testing.T, env []byte, self *party) *Opened {
 	t.Helper()
-	o, err := Open(env, self.aid(), self.ring())
+	o, err := Open(env, self.aid(), self.ring(), nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
 	return o
 }
 
-// decryptFields decrypts env with kp and returns the inner field map, the
-// view a recipient has after a successful open.
-func decryptFields(t *testing.T, env []byte, kp *KeyPair) fieldMap {
+// openLayer1 decrypts env with kp and returns the layer-1 plaintext (the
+// Wrap), the view a recipient has after layer 1 opens.
+func openLayer1(t *testing.T, env []byte, kp *KeyPair) []byte {
 	t.Helper()
 	outer, err := ParseOuter(env)
 	if err != nil {
@@ -132,29 +170,50 @@ func decryptFields(t *testing.T, env []byte, kp *KeyPair) fieldMap {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := decodeFields(pt)
+	return pt
+}
+
+// decryptFields decrypts env with kp and returns the inner field map.
+func decryptFields(t *testing.T, env []byte, kp *KeyPair) fieldMap {
+	t.Helper()
+	w, err := decodeWrap(openLayer1(t, env, kp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := decodeFields(w.body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return m
 }
 
-// encryptFields encrypts an inner field map to recipient under a fresh HPKE
-// context, as a party holding a decrypted message could do. It does not
-// re-sign.
-func encryptFields(t *testing.T, m fieldMap, to string, recipient *EncKey) []byte {
+// wrapOf returns the padded single-layer Wrap encoding of inner bytes.
+func wrapOf(t *testing.T, inner []byte) []byte {
 	t.Helper()
-	pt, err := coredet.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return encryptPlaintext(t, pt, to, recipient)
+	w := fieldMap{wrapKeyBody: enc(t, inner)}
+	applyPad(w)
+	return mustMarshalFields(t, w)
 }
 
-// encryptPlaintext encrypts arbitrary inner bytes to recipient. Tests use it
-// for plaintexts a Go map cannot represent, such as a map with a repeated
-// key.
+// encryptFields encrypts an inner field map, wrapped and padded, to
+// recipient under a fresh HPKE context, as a party holding a decrypted
+// message could do. It does not re-sign.
+func encryptFields(t *testing.T, m fieldMap, to string, recipient *EncKey) []byte {
+	t.Helper()
+	return encryptWrap(t, wrapOf(t, mustMarshalFields(t, m)), to, recipient)
+}
+
+// encryptPlaintext wraps arbitrary inner bytes and encrypts them to
+// recipient. Tests use it for plaintexts a Go map cannot represent, such as a
+// map with a repeated key.
 func encryptPlaintext(t *testing.T, pt []byte, to string, recipient *EncKey) []byte {
+	t.Helper()
+	return encryptWrap(t, wrapOf(t, pt), to, recipient)
+}
+
+// encryptWrap encrypts arbitrary layer-1 plaintext to recipient and returns
+// an envelope with a session access.
+func encryptWrap(t *testing.T, pt []byte, to string, recipient *EncKey) []byte {
 	t.Helper()
 	p := params(recipient.Suite)
 	pk, err := p.kem.NewPublicKey(recipient.Pub)
@@ -173,7 +232,7 @@ func encryptPlaintext(t *testing.T, pt []byte, to string, recipient *EncKey) []b
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := SealedEnvelope{V: EnvelopeVersion, To: to, Suite: recipient.Suite, KID: recipient.KID, Enc: enc, CT: ct}
+	env := SealedEnvelope{V: EnvelopeVersion, To: to, Suite: recipient.Suite, KID: recipient.KID, Enc: enc, CT: ct, Access: session}
 	b, err := env.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -198,5 +257,15 @@ func wantReason(t *testing.T, err error, reason string) {
 	}
 	if got := ReasonOf(err); got != reason {
 		t.Fatalf("want reason %q, got %q (%v)", reason, got, err)
+	}
+}
+
+// wantOpenFails fails the test unless Open's error carries reason, and an
+// ack_key exactly when layer 1 opened (ack).
+func wantOpenFails(t *testing.T, err error, reason string, ack bool) {
+	t.Helper()
+	wantReason(t, err, reason)
+	if _, ok := AckKeyOf(err); ok != ack {
+		t.Fatalf("%s: AckKeyOf = %v, want %v", reason, ok, ack)
 	}
 }

@@ -1,6 +1,7 @@
 package seal
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -11,8 +12,8 @@ import (
 )
 
 // fieldMap is an integer-keyed CBOR map with each value kept as its encoded
-// bytes. Both the inner message and the outer envelope are decoded into this
-// form first, so that
+// bytes. The outer envelope, the Wrap and the inner message are all decoded
+// into this form first, so that
 //   - unknown keys are visible (a struct decode drops them silently), and
 //   - the signature preimage is built from the values exactly as received,
 //     not from a struct re-encoding that would drop keys >= 64.
@@ -23,6 +24,7 @@ const (
 	majorUint  = 0
 	majorBytes = 2
 	majorText  = 3
+	majorArray = 4
 	majorMap   = 5
 )
 
@@ -117,52 +119,76 @@ func encodeField(v any) (cbor.RawMessage, error) {
 	return coredet.Marshal(v)
 }
 
-// Signature preimage keys (§3.3). They are below FirstIgnorableKey and not
-// inner field keys, so a received inner that carries any of them fails the
-// must-understand check before a preimage is built.
+// Signature preimage keys (core §3.3). They are not inner field keys: a
+// received inner that carries 0 or 30-34 fails the must-understand check
+// before a preimage is built, and sigPreimage refuses them as well.
 const (
 	preKeyLabel = 0
-	preKeyEnc   = 30
-	preKeyKID   = 31
-	preKeySuite = 32
+	preKeyEnc   = 30 // outer key 5, layer-1 enc
+	preKeyKID   = 31 // outer key 4
+	preKeySuite = 32 // outer key 3
+	preKeyIKID  = 33 // Wrap key 1, CBOR null for a single layer
+	preKeyEnc2  = 34 // Wrap key 2, CBOR null for a single layer
 )
 
-// SigLabel is the value of preimage key 0 (§3.3).
-const SigLabel = "anet-relay-sig/v1"
+// SigLabel is the value of preimage key 0 (core §3.2 L3).
+const SigLabel = "anet-relay-sig/v2"
 
-// sigPreimage builds the signature preimage of §3.3 from an inner field map:
-// drop keys 20 (sig) and 21 (pad), add 0: SigLabel, 30: enc, 31: kid,
-// 32: suite, and CoreDet-encode the result. Seal and Open both call this one
+// cborNull is the CBOR encoding of null, the value of preimage keys 33 and
+// 34 for a single layer.
+var cborNull = cbor.RawMessage{0xf6}
+
+// sigPreimage builds the signature preimage v2 of core §3.3 from an inner
+// field map: copy every key but 20 (sig) as received; replace key 9 by
+// coredet(bstr(SHA-256(body))); add 0: SigLabel, 30: enc, 31: kid, 32: suite,
+// 33: ikid and 34: enc2 (both CBOR null for a single layer, both byte strings
+// for two); CoreDet-encode the result. Seal and Open both call this one
 // function, Seal on the map it is about to encrypt and Open on the map it
-// decrypted, so the two sides cannot compute the preimage differently.
+// decrypted, so the two sides cannot compute the preimage differently
+// (CORE-L6).
 //
 // Values are copied as received. CoreDet sorts the keys; it does not
-// re-encode a value, so a signer that wrote a value in a non-canonical form
-// still verifies, and a receiver never needs to understand a key >= 64 to
-// check that it was signed.
-func sigPreimage(fields fieldMap, enc, kid []byte, suite Suite) ([]byte, error) {
-	m := make(fieldMap, len(fields)+4)
+// re-encode a value, so a receiver never needs to understand a key >= 64 to
+// check that it was signed. Key 9 holds the digest of the body rather than
+// the body, so a message can later be shown to a third party without its
+// body (SS §2.4a). The second-layer values bind the layering: stripping the
+// second layer, replacing enc2, or moving a message between one layer and two
+// changes the preimage (SI-31).
+func sigPreimage(fields fieldMap, enc, kid []byte, suite Suite, ikid, enc2 []byte) ([]byte, error) {
+	if (ikid == nil) != (enc2 == nil) {
+		return nil, errors.New("ikid and enc2 go together: both for two layers, neither for one")
+	}
+	m := make(fieldMap, len(fields)+6)
 	for k, v := range fields {
 		switch k {
-		case keySig, keyPad:
+		case keySig:
 			continue
-		case preKeyLabel, preKeyEnc, preKeyKID, preKeySuite:
+		case preKeyLabel, preKeyEnc, preKeyKID, preKeySuite, preKeyIKID, preKeyEnc2:
 			return nil, fmt.Errorf("field %d is reserved for the signature preimage", k)
 		}
 		m[k] = v
 	}
-	var err error
-	if m[preKeyLabel], err = encodeField(SigLabel); err != nil {
+	body, err := rawBytes(fields, keyBody)
+	if err != nil {
 		return nil, err
 	}
-	if m[preKeyEnc], err = encodeField(enc); err != nil {
+	digest := sha256.Sum256(body)
+	if m[keyBody], err = encodeField(digest[:]); err != nil {
 		return nil, err
 	}
-	if m[preKeyKID], err = encodeField(kid); err != nil {
-		return nil, err
+	for k, v := range map[uint64]any{preKeyLabel: SigLabel, preKeyEnc: enc, preKeyKID: kid, preKeySuite: uint64(suite)} {
+		if m[k], err = encodeField(v); err != nil {
+			return nil, err
+		}
 	}
-	if m[preKeySuite], err = encodeField(uint64(suite)); err != nil {
-		return nil, err
+	m[preKeyIKID], m[preKeyEnc2] = cborNull, cborNull
+	if ikid != nil {
+		if m[preKeyIKID], err = encodeField(ikid); err != nil {
+			return nil, err
+		}
+		if m[preKeyEnc2], err = encodeField(enc2); err != nil {
+			return nil, err
+		}
 	}
 	return coredet.Marshal(m)
 }
@@ -175,7 +201,7 @@ func sigPreimage(fields fieldMap, enc, kid []byte, suite Suite) ([]byte, error) 
 //
 // n below 2 is returned as is. So is an n whose Padmé length exceeds
 // math.MaxInt (n > 2^63 - 2^56 on a 64-bit int): no message is that long,
-// and rounding up would wrap to a negative length (ANet docs/notes/0033,
+// and rounding up would wrap to a negative length (ANet an internal note,
 // found by FuzzPadme).
 func Padme(n int) int {
 	if n < 2 {
@@ -235,18 +261,19 @@ func padLenFor(d int) (int, bool) {
 	return 0, false
 }
 
-// applyPad sets fields[keyPad] to zero bytes so that the encoded map length
-// is a Padmé length, and returns that length. When the Padmé length of the
-// unpadded map is one of the unreachable offsets of padLenFor, the next
-// Padmé length is used; the result is always a value Padme returns.
-func applyPad(fields fieldMap) int {
-	fields[keyPad] = cbor.RawMessage{0x40} // empty byte string
-	base := encodedLen(fields)
+// applyPad sets wrap[wrapKeyPad] to zero bytes so that the encoded Wrap has a
+// Padmé length, and returns that length (FS-C9). Only the Wrap is padded: the
+// inner and a second layer's plaintext are not. When the Padmé length of the
+// map with an empty pad is one of the unreachable offsets of padLenFor, the
+// next Padmé length is used; the result is always a value Padme returns.
+func applyPad(wrap fieldMap) int {
+	wrap[wrapKeyPad] = cbor.RawMessage{0x40} // empty byte string
+	base := encodedLen(wrap)
 	target := Padme(base)
 	for {
 		if n, ok := padLenFor(target - base); ok {
 			pad, _ := encodeField(make([]byte, n)) // a byte string always encodes
-			fields[keyPad] = pad
+			wrap[wrapKeyPad] = pad
 			return target
 		}
 		target = Padme(target + 1)

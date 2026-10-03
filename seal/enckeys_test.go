@@ -378,7 +378,7 @@ func TestKeyPairAndRetention(t *testing.T) {
 	}
 }
 
-// The integer keys of §3.1 and §3.3, read back from the encodings. The
+// The integer keys of §3.1 and of the envelope (core §2.1-§2.3, §3.3), read back from the encodings. The
 // golden vector pins them too; this test names the object and key when one
 // moves.
 func TestWireKeyNumbers(t *testing.T) {
@@ -423,16 +423,19 @@ func TestWireKeyNumbers(t *testing.T) {
 	same("SignedEncKeySet", keysOf(signedBytes), 1, 2, 3)
 
 	b := newParty(t)
-	env := mustSeal(t, innerFrom(t, a, b, t0), &b.kp.Public, a.c.Sign)
-	same("SealedEnvelope", keysOf(env), 1, 2, 3, 4, 5, 6)
-	same("SealedInner", keysOf(mustMarshalFields(t, decryptFields(t, env, b.kp))), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 20, 21)
+	in := innerFrom(t, a, b, t0)
+	in.Grant, in.RK = testGrant, &RK{Suite: SuiteX25519, Pub: make([]byte, 32)}
+	env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
+	same("SealedEnvelope", keysOf(env), 1, 2, 3, 4, 5, 6, 7)
+	same("Wrap", keysOf(openLayer1(t, env, b.kp)), 3, 21)
+	same("SealedInner", keysOf(mustMarshalFields(t, decryptFields(t, env, b.kp))), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 20)
 	info, err := HPKEInfo(b.aid(), SuiteX25519, b.kp.Public.KID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	same("HPKE info", keysOf(info), 1, 2, 3, 4)
 	o := mustOpen(t, env, b)
-	same("signature preimage", keysOf(o.Preimage), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 30, 31, 32)
+	same("signature preimage", keysOf(o.Preimage), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 30, 31, 32, 33, 34)
 }
 
 func mustMarshalFields(t *testing.T, m fieldMap) []byte {
