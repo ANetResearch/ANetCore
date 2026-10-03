@@ -6,45 +6,49 @@ public labels its seeds derive from (CORE-G5) and written in the JSON form the G
 (two-space indent, final newline), so the CI job golden-xcheck compares the two implementations
 byte for byte by regenerating the files and diffing them with the committed ones.
 
-  gen_v016.py                  regenerate every vector this file knows into the repository
-  gen_v016.py --check          regenerate in memory and fail on any difference (golden-xcheck)
-  gen_v016.py [--check] ID…    only these vectors (for example KEL-2A KEL-2B)
+  gen_v016.py check [ID…]      regenerate in memory and fail on any difference (golden-xcheck)
+  gen_v016.py write [ID…]      regenerate into the repository
 
-Environment: Python 3 with the cryptography package (Ed25519).
+Requires the cryptography package (Ed25519).
 
-Each work item adds its vectors as a section below and registers them in VECTORS. Sections so far:
-  CoreDet and CID   the subset of RFC 8949 §4.2 the sections below need
-  KEL (KEL-1)       KEL-2A, KEL-2B: KEL v2 events, preimages (L17), event ids, signatures, states
+The file has two parts. The framework (CoreDet, CID, seeds, Ed25519, the @vector registry and the
+driver) is the subset the vectors below need; it uses the names and conventions of the full golden
+framework (CORE-3), so each work item's section moves into that framework unchanged. Sections:
+  KEL (KEL-1)   KEL-2A, KEL-2B: KEL v2 events, preimages (L17), event ids, signatures, key states
 """
 
 import hashlib
 import json
-import os
 import sys
 from base64 import b32encode
+from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+CORE_DIR = Path(__file__).resolve().parents[2]  # this ANetCore checkout
 
 
-# ---- CoreDet and CID ------------------------------------------------------------------------------
-#
-# CoreDet is RFC 8949 §4.2 core deterministic encoding: shortest-form integers and lengths, definite
-# lengths, map keys sorted by the bytewise order of their encodings, no tags.
+# ---------------------------------------------------------------------------------------------
+# The framework (subset)
+# ---------------------------------------------------------------------------------------------
+
+class GoldenError(Exception):
+    pass
 
 
-def _head(major, n):
+def _head(major: int, n: int) -> bytes:
     if n < 24:
         return bytes([major << 5 | n])
     for ai, size in ((24, 1), (25, 2), (26, 4), (27, 8)):
         if n < 1 << (8 * size):
             return bytes([major << 5 | ai]) + n.to_bytes(size, "big")
-    raise ValueError("integer too large")
+    raise GoldenError("integer too large")
 
 
-def coredet(v):
+def cbor(v) -> bytes:
+    """CoreDet (RFC 8949 §4.2): shortest-form integers and lengths, definite lengths, map keys
+    sorted by the bytewise order of their encodings, no tags. Only what the vectors here use."""
     if v is True:
         return b"\xf5"
     if v is False:
@@ -53,7 +57,7 @@ def coredet(v):
         return b"\xf6"
     if isinstance(v, int):
         if v < 0:
-            raise ValueError("negative integers are not used here")
+            raise GoldenError("negative integers are not used here")
         return _head(0, v)
     if isinstance(v, (bytes, bytearray)):
         return _head(2, len(v)) + bytes(v)
@@ -61,84 +65,140 @@ def coredet(v):
         b = v.encode("utf-8")
         return _head(3, len(b)) + b
     if isinstance(v, (list, tuple)):
-        return _head(4, len(v)) + b"".join(coredet(x) for x in v)
+        return _head(4, len(v)) + b"".join(cbor(x) for x in v)
     if isinstance(v, dict):
-        items = sorted((coredet(k), coredet(x)) for k, x in v.items())
+        items = sorted((cbor(k), cbor(x)) for k, x in v.items())
         return _head(5, len(items)) + b"".join(k + x for k, x in items)
-    raise TypeError(type(v))
+    raise GoldenError("cannot encode %s" % type(v).__name__)
 
 
-def cid(preimage):
+def sha256(b: bytes) -> bytes:
+    return hashlib.sha256(b).digest()
+
+
+def cid(preimage: bytes) -> str:
     """CIDv1, dag-cbor, sha2-256, multibase base32 lower without padding (anetcid.Sum)."""
-    raw = b"\x01\x71\x12\x20" + hashlib.sha256(preimage).digest()
+    raw = b"\x01\x71\x12\x20" + sha256(preimage)
     return "b" + b32encode(raw).decode().lower().rstrip("=")
 
 
-def seed_key(label):
-    """The Ed25519 key whose seed is SHA-256(label)."""
-    return Ed25519PrivateKey.from_private_bytes(hashlib.sha256(label.encode()).digest())
+def ed25519_public(seed: bytes) -> bytes:
+    return Ed25519PrivateKey.from_private_bytes(seed).public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
 
 
-def pub(k):
-    return k.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+def ed25519_sign(seed: bytes, msg: bytes) -> bytes:
+    return Ed25519PrivateKey.from_private_bytes(seed).sign(msg)
 
 
-def dump(v):
-    """The JSON form both generators write."""
-    return (json.dumps(v, indent=2) + "\n").encode()
+def seed(vector_id: str, role: str) -> bytes:
+    """A published seed: SHA-256("anet-golden/v016/<vector id>/<role>")."""
+    return sha256(("anet-golden/v016/%s/%s" % (vector_id, role)).encode("utf-8"))
 
 
-# ---- KEL (KEL-1): KEL-2A, KEL-2B --------------------------------------------------------------------
+def b16(b: bytes) -> str:
+    return bytes(b).hex()
+
+
+GENERATORS = {}
+
+
+def vector(vid: str, path: str):
+    """Registers fn as the generator of vector vid, whose file is path ("<repository>/<path>")."""
+    def register(fn):
+        if vid in GENERATORS:
+            raise GoldenError("vector %s registered twice" % vid)
+        GENERATORS[vid] = (path, fn)
+        return fn
+    return register
+
+
+def serialize(content) -> bytes:
+    return (json.dumps(content, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def main(argv) -> int:
+    cmd = argv[0] if argv and argv[0] in ("check", "write") else "check"
+    ids = [a for a in argv if a not in ("check", "write")] or sorted(GENERATORS)
+    unknown = [i for i in ids if i not in GENERATORS]
+    if unknown:
+        print("unknown vector(s) %s; known: %s" % (" ".join(unknown), " ".join(sorted(GENERATORS))), file=sys.stderr)
+        return 2
+    bad = 0
+    for vid in ids:
+        path, fn = GENERATORS[vid]
+        repo, rel = path.split("/", 1)
+        if repo != "ANetCore":
+            raise GoldenError("vector %s: only ANetCore files are known here" % vid)
+        target = CORE_DIR / rel
+        got = serialize(fn())
+        if cmd == "write":
+            target.write_bytes(got)
+            print("%s: wrote %s" % (vid, path))
+            continue
+        have = target.read_bytes() if target.is_file() else None
+        if have == got:
+            print("%s: %s identical" % (vid, path))
+        else:
+            bad += 1
+            print("%s: %s differs from what this implementation generates; regenerate and check the diff"
+                  % (vid, path), file=sys.stderr)
+    return 1 if bad else 0
+
+
+# ---------------------------------------------------------------------------------------------
+# KEL (KEL-1): KEL-2A, KEL-2B
+# ---------------------------------------------------------------------------------------------
 #
-# KeyEvent (core §2.6): 0 t_obj "anet.kel/2", 1 aid (not in the icp), 2 seq, 3 prev (not in the icp),
-# 4 t, 5 keys, 6 next (icp and rot), 7 kt = 1, 8 ts, 9 witnesses (a toad-1 rot), 11 toad (icp and rot,
-# written even when 0), 12 emergency (a rot, only true). SignedEvent: 1 event, 2 sig, 3 event_id. The
-# icp is signed by k0, a rot or a dip by the key it reveals (L17). AID = CID(icp preimage).
+# KeyEvent (core §2.6): 0 t_obj "anet.kel/2", 1 aid (not in the icp), 2 seq, 3 prev (not in the
+# icp), 4 t, 5 keys, 6 next (icp and rot), 7 kt = 1, 8 ts, 9 witnesses (a toad-1 rot), 11 toad
+# (icp and rot, written even when 0), 12 emergency (a rot, only true). SignedEvent: 1 event, 2 sig,
+# 3 event_id. The icp is signed by k0, a rot or a dip by the key it reveals (L17). AID = CID of the
+# icp preimage. Key seeds: seed(<vector id>, "k0".."k3").
 
 KEL_TYPE = "anet.kel/2"
-MINUTE = 60 * 1000
-HUB_T0 = 1760000000000
-HUB_DIP_TS = HUB_T0 + 10 * MINUTE  # the KEL-2B agent's whole KEL lies between the hub's icp and dip
-AGENT_T0 = 1760000180000
+KEL_MINUTE = 60 * 1000
+KEL_HUB_T0 = 1760000000000
+KEL_HUB_DIP_TS = KEL_HUB_T0 + 10 * KEL_MINUTE  # the KEL-2B agent's whole KEL lies between the hub's icp and dip
+KEL_AGENT_T0 = 1760000180000
 
-ABOUT_2A = ("KEL v2 hub identity (toad 0): icp, rot 1 (setup-recovery), rot 2 (emergency), dip 3. "
-            "Key seeds are SHA-256 of the labels. The icp is signed by k0, every rot and dip by the key it reveals. "
-            "preimage is coredet(KeyEvent) (L17), event_id its CID, kel is MarshalKEL.")
-ABOUT_2B = ("KEL v2 agent identity (toad 1): icp (witness pending), rot 1 (designates W1), rot 2 (moves to W2), dip 3. "
-            "W1 is the hub incepted from the labels given, W2 the KEL-2A hub. "
-            "Key seeds are SHA-256 of the labels. The icp is signed by k0, every rot and dip by the key it reveals. "
-            "preimage is coredet(KeyEvent) (L17), event_id its CID, kel is MarshalKEL.")
+KEL_ABOUT_2A = ("KEL v2 hub identity (toad 0): icp, rot 1 (setup-recovery), rot 2 (emergency), dip 3. "
+                "Key seeds are SHA-256 of the labels. The icp is signed by k0, every rot and dip by the key it reveals. "
+                "preimage is coredet(KeyEvent) (L17), event_id its CID, kel is MarshalKEL.")
+KEL_ABOUT_2B = ("KEL v2 agent identity (toad 1): icp (witness pending), rot 1 (designates W1), rot 2 (moves to W2), dip 3. "
+                "W1 is the hub incepted from the labels given, W2 the KEL-2A hub. "
+                "Key seeds are SHA-256 of the labels. The icp is signed by k0, every rot and dip by the key it reveals. "
+                "preimage is coredet(KeyEvent) (L17), event_id its CID, kel is MarshalKEL.")
 
 
-class KEL:
-    """A KEL being written: the events as maps, with their preimages, ids and signatures."""
+class KelLog:
+    """A KEL being written: each event as a map, with its preimage, id and signature."""
 
     def __init__(self):
         self.events = []  # (event map, preimage, event_id, signature)
 
     @property
-    def aid(self):
+    def aid(self) -> str:
         return self.events[0][2]
 
-    def add(self, event, signer):
+    def add(self, event: dict, signer_seed: bytes) -> "KelLog":
         if self.events:
             event[1] = self.aid
             event[2] = len(self.events)
             event[3] = self.events[-1][2]
-        pre = coredet(event)
-        self.events.append((event, pre, cid(pre), signer.sign(pre)))
+        pre = cbor(event)
+        self.events.append((event, pre, cid(pre), ed25519_sign(signer_seed, pre)))
         return self
 
-    def wire(self):
-        return coredet([{1: e, 2: sig, 3: eid} for e, _, eid, sig in self.events])
+    def wire(self) -> bytes:
+        return cbor([{1: e, 2: sig, 3: eid} for e, _, eid, sig in self.events])
 
 
-def icp(k0, k1, ts, toad):
-    return {0: KEL_TYPE, 2: 0, 4: "icp", 5: [pub(k0)], 6: hashlib.sha256(pub(k1)).digest(), 7: 1, 8: ts, 11: toad}
+def kel_icp(k0: bytes, k1: bytes, ts: int, toad: int) -> dict:
+    return {0: KEL_TYPE, 2: 0, 4: "icp", 5: [ed25519_public(k0)], 6: sha256(ed25519_public(k1)), 7: 1, 8: ts, 11: toad}
 
 
-def rot(rev, nxt, ts, toad, witness=None, emergency=False):
-    e = {0: KEL_TYPE, 4: "rot", 5: [pub(rev)], 6: hashlib.sha256(pub(nxt)).digest(), 7: 1, 8: ts, 11: toad}
+def kel_rot(rev: bytes, nxt: bytes, ts: int, toad: int, witness=None, emergency=False) -> dict:
+    e = {0: KEL_TYPE, 4: "rot", 5: [ed25519_public(rev)], 6: sha256(ed25519_public(nxt)), 7: 1, 8: ts, 11: toad}
     if witness is not None:
         e[9] = [witness]
     if emergency:
@@ -146,52 +206,46 @@ def rot(rev, nxt, ts, toad, witness=None, emergency=False):
     return e
 
 
-def dip(rev, ts):
-    return {0: KEL_TYPE, 4: "dip", 5: [pub(rev)], 7: 1, 8: ts}
+def kel_dip(rev: bytes, ts: int) -> dict:
+    return {0: KEL_TYPE, 4: "dip", 5: [ed25519_public(rev)], 7: 1, 8: ts}
 
 
-def vec_keys(vid):
-    labels = ["anet-golden/v016/%s/k%d" % (vid, i) for i in range(4)]
-    return labels, [seed_key(l) for l in labels]
+def kel_keys(vid: str) -> list:
+    return [seed(vid, "k%d" % i) for i in range(4)]
 
 
-def kel_2a():
-    _, k = vec_keys("KEL-2A")
-    kel = KEL().add(icp(k[0], k[1], HUB_T0, 0), k[0])
-    kel.add(rot(k[1], k[2], HUB_T0 + MINUTE, 0), k[1])
-    kel.add(rot(k[2], k[3], HUB_T0 + 2 * MINUTE, 0, emergency=True), k[2])
-    kel.add(dip(k[3], HUB_DIP_TS), k[3])
+def kel_2a() -> KelLog:
+    k = kel_keys("KEL-2A")
+    kel = KelLog().add(kel_icp(k[0], k[1], KEL_HUB_T0, 0), k[0])
+    kel.add(kel_rot(k[1], k[2], KEL_HUB_T0 + KEL_MINUTE, 0), k[1])
+    kel.add(kel_rot(k[2], k[3], KEL_HUB_T0 + 2 * KEL_MINUTE, 0, emergency=True), k[2])
+    kel.add(kel_dip(k[3], KEL_HUB_DIP_TS), k[3])
     return kel
 
 
-W1_LABELS = ["anet-golden/v016/KEL-2B/w1-k0", "anet-golden/v016/KEL-2B/w1-k1"]
+def kel_w1() -> KelLog:
+    k0, k1 = seed("KEL-2B", "w1-k0"), seed("KEL-2B", "w1-k1")
+    return KelLog().add(kel_icp(k0, k1, KEL_HUB_T0, 0), k0)
 
 
-def kel_w1():
-    k0, k1 = (seed_key(l) for l in W1_LABELS)
-    return KEL().add(icp(k0, k1, HUB_T0, 0), k0)
-
-
-def kel_2b():
-    _, k = vec_keys("KEL-2B")
+def kel_2b() -> KelLog:
+    k = kel_keys("KEL-2B")
     w1, w2 = kel_w1().aid, kel_2a().aid
-    kel = KEL().add(icp(k[0], k[1], AGENT_T0, 1), k[0])
-    kel.add(rot(k[1], k[2], AGENT_T0 + MINUTE, 1, witness=w1), k[1])
-    kel.add(rot(k[2], k[3], AGENT_T0 + 2 * MINUTE, 1, witness=w2), k[2])
-    kel.add(dip(k[3], AGENT_T0 + 3 * MINUTE), k[3])
+    kel = KelLog().add(kel_icp(k[0], k[1], KEL_AGENT_T0, 1), k[0])
+    kel.add(kel_rot(k[1], k[2], KEL_AGENT_T0 + KEL_MINUTE, 1, witness=w1), k[1])
+    kel.add(kel_rot(k[2], k[3], KEL_AGENT_T0 + 2 * KEL_MINUTE, 1, witness=w2), k[2])
+    kel.add(kel_dip(k[3], KEL_AGENT_T0 + 3 * KEL_MINUTE), k[3])
     return kel
 
 
-def kel_states(kel, names):
-    """The key states the KEL v2 replay rules give each event (KEL §2.2), computed from the maps."""
+def kel_states(kel: KelLog, names: dict) -> list:
+    """The key states the KEL v2 replay rules give each event (KEL §2.2), from the event maps."""
     states = []
     toad, witness = None, ""
     for i, (e, _, _, _) in enumerate(kel.events):
-        t = e[4]
-        if t in ("icp", "rot"):
+        if e[4] in ("icp", "rot"):
             toad = e[11]
-            if 9 in e:
-                witness = e[9][0]
+            witness = e[9][0] if 9 in e else witness
             key, status = names[e[5][0]], "active"
         else:
             key, status = "", "deactivated"
@@ -205,74 +259,38 @@ def kel_states(kel, names):
     return states
 
 
-def kel_vector(vid, about, kel, witnesses):
-    labels, keys = vec_keys(vid)
-    names = {}
-    key_list = []
-    for i, (l, k) in enumerate(zip(labels, keys)):
-        names[pub(k)] = "k%d" % i
-        key_list.append({"name": "k%d" % i, "label": l, "pub": pub(k).hex()})
+def kel_vector(vid: str, about: str, kel: KelLog, witnesses: list) -> dict:
+    names, keys = {}, []
+    for i, k in enumerate(kel_keys(vid)):
+        pub = ed25519_public(k)
+        names[pub] = "k%d" % i
+        keys.append({"name": "k%d" % i, "label": "anet-golden/v016/%s/k%d" % (vid, i), "pub": b16(pub)})
     return {
         "id": vid,
         "about": about,
-        "keys": key_list,
+        "keys": keys,
         "witnesses": witnesses,
         "aid": kel.aid,
-        "events": [{"seq": i, "t": e[4], "signer": names[e[5][0]], "preimage": pre.hex(), "event_id": eid,
-                    "sig": sig.hex()} for i, (e, pre, eid, sig) in enumerate(kel.events)],
-        "kel": kel.wire().hex(),
+        "events": [{"seq": i, "t": e[4], "signer": names[e[5][0]], "preimage": b16(pre), "event_id": eid,
+                    "sig": b16(sig)} for i, (e, pre, eid, sig) in enumerate(kel.events)],
+        "kel": b16(kel.wire()),
         "states": kel_states(kel, names),
     }
 
 
+@vector("KEL-2A", "ANetCore/identity/testdata/vec-kel-2a.json")
 def gen_kel_2a():
-    return dump(kel_vector("KEL-2A", ABOUT_2A, kel_2a(), []))
+    return kel_vector("KEL-2A", KEL_ABOUT_2A, kel_2a(), [])
 
 
+@vector("KEL-2B", "ANetCore/identity/testdata/vec-kel-2b.json")
 def gen_kel_2b():
     w1, a = kel_w1(), kel_2a()
-    return dump(kel_vector("KEL-2B", ABOUT_2B, kel_2b(), [
-        {"name": "W1", "aid": w1.aid, "labels": W1_LABELS, "kel": w1.wire().hex()},
-        {"name": "W2", "aid": a.aid, "labels": [], "kel": a.wire().hex()},
-    ]))
-
-
-# ---- registry and driver ------------------------------------------------------------------------------
-
-VECTORS = {
-    "KEL-2A": ("identity/testdata/vec-kel-2a.json", gen_kel_2a),
-    "KEL-2B": ("identity/testdata/vec-kel-2b.json", gen_kel_2b),
-}
-
-
-def main(argv):
-    check = "--check" in argv
-    ids = [a for a in argv if not a.startswith("--")] or list(VECTORS)
-    unknown = [i for i in ids if i not in VECTORS]
-    if unknown:
-        print("unknown vector(s): %s; known: %s" % (" ".join(unknown), " ".join(VECTORS)), file=sys.stderr)
-        return 2
-    bad = 0
-    for vid in ids:
-        rel, gen = VECTORS[vid]
-        path = os.path.join(ROOT, rel)
-        got = gen()
-        if check:
-            try:
-                with open(path, "rb") as f:
-                    have = f.read()
-            except FileNotFoundError:
-                have = None
-            if have != got:
-                bad += 1
-                print("%s: %s differs from what Python generates" % (vid, rel), file=sys.stderr)
-            else:
-                print("%s: %s identical" % (vid, rel))
-        else:
-            with open(path, "wb") as f:
-                f.write(got)
-            print("%s: wrote %s" % (vid, rel))
-    return 1 if bad else 0
+    return kel_vector("KEL-2B", KEL_ABOUT_2B, kel_2b(), [
+        {"name": "W1", "aid": w1.aid, "labels": ["anet-golden/v016/KEL-2B/w1-k0", "anet-golden/v016/KEL-2B/w1-k1"],
+         "kel": b16(w1.wire())},
+        {"name": "W2", "aid": a.aid, "labels": [], "kel": b16(a.wire())},
+    ])
 
 
 if __name__ == "__main__":

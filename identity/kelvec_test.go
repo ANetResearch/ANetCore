@@ -8,7 +8,7 @@ package identity
 // error text each must fail with.
 //
 //	go test ./identity -run TestKELVectors -update     rewrites the three files
-//	python3 golden/py/gen_v016.py --check KEL-2A KEL-2B  checks the Python side
+//	python3 golden/py/gen_v016.py check KEL-2A KEL-2B    checks the Python side
 
 import (
 	"bytes"
