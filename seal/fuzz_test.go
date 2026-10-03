@@ -411,6 +411,10 @@ func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 	if in.To != fx.self || o.Outer.To != fx.self || o.Layers != 1 || o.IKID != nil {
 		t.Fatalf("opened a message to %q (outer %q), %d layers", in.To, o.Outer.To, o.Layers)
 	}
+	if o.Access == nil || o.Access != o.Outer.Access || o.RK != in.RK || !bytes.Equal(o.Grant, in.Grant) ||
+		len(o.Notices) != len(in.Notices) || (o.Notices == nil) != (in.Notices == nil) {
+		t.Fatal("Opened.Access, RK, Notices or Grant is not what Outer and Inner hold")
+	}
 	if len(in.MID) != MIDLen || len(in.Sig) != SigLen {
 		t.Fatalf("opened mid %d bytes, sig %d bytes", len(in.MID), len(in.Sig))
 	}

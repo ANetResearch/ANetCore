@@ -5,6 +5,7 @@ import (
 	"crypto/hpke"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -391,7 +392,8 @@ func ParseOuter(envelope []byte) (*SealedEnvelope, error) {
 	e.V = v
 	raw, ok := fields[outerKeyAccess]
 	if !ok {
-		return nil, fail(ReasonAccessInvalid, "parse: outer key 7 (access) is missing")
+		// Detail is the step name alone (SSR-W5); the cause goes in Err.
+		return nil, failWrap(ReasonAccessInvalid, errors.New("outer key 7 (access) is missing"), "parse")
 	}
 	if e.Access, err = decodeAccess(raw); err != nil {
 		return nil, failWrap(ReasonAccessInvalid, err, "parse")
@@ -549,7 +551,9 @@ type sealHooks struct {
 }
 
 func seal(inner *SealedInner, recipient *EncKey, sign SignFunc, o SealOpts, hooks *sealHooks) ([]byte, AckKey, error) {
-	var ack AckKey
+	// ack stays zero on every error return; the export goes to key and is
+	// returned only with the envelope it belongs to.
+	var ack, key AckKey
 	if inner == nil || recipient == nil || sign == nil {
 		return nil, ack, fail(ReasonInvalidInput, "nil inner, recipient or signer")
 	}
@@ -583,7 +587,7 @@ func seal(inner *SealedInner, recipient *EncKey, sign SignFunc, o SealOpts, hook
 	if err != nil {
 		return nil, ack, failWrap(ReasonInternalError, err, "export ack_key")
 	}
-	copy(ack[:], exported)
+	copy(key[:], exported)
 	fields, err := inner.fieldMap()
 	if err != nil {
 		return nil, ack, failWrap(ReasonInvalidInput, err, "encode inner")
@@ -649,7 +653,7 @@ func seal(inner *SealedInner, recipient *EncKey, sign SignFunc, o SealOpts, hook
 	if err != nil {
 		return nil, ack, failWrap(ReasonInternalError, err, "encode envelope")
 	}
-	return b, ack, nil
+	return b, key, nil
 }
 
 // checkForSeal rejects an inner, or options, that its receiver would reject
@@ -779,10 +783,10 @@ func (in *SealedInner) fieldMap() (fieldMap, error) {
 
 // Opened is the result of Open.
 //
-// CORE-A2 lists what an opened message carries beyond the v1 result; each is
-// a field here or in Outer or Inner: AckKey, Layers and IKID below, Access as
-// Outer.Access, and RK, Notices and Grant as Inner.RK, Inner.Notices and
-// Inner.Grant.
+// CORE-A2 lists what an opened message carries beyond the v1 result: AckKey,
+// Layers, IKID, RK, Notices, Grant and Access, each a field here. Access,
+// RK, Notices and Grant are also in Outer and Inner, the forms Seal and
+// ParseOuter use; Open sets both to the same values.
 type Opened struct {
 	Outer SealedEnvelope
 	Inner SealedInner
@@ -803,6 +807,17 @@ type Opened struct {
 	// IKID is Wrap key 1, the kid of this node's interaction key the second
 	// layer was sealed to; nil for one layer.
 	IKID []byte
+	// Access is outer key 7 as ParseOuter decoded it (Outer.Access). Its
+	// structure is checked; the credential is not (VerifyAccess, SS-1).
+	Access *Access
+	// RK is inner key 15 (Inner.RK), nil when absent.
+	RK *RK
+	// Notices is inner key 11 (Inner.Notices): the witness notices for KEL,
+	// nil exactly when KEL is. CheckNotice (KEL-4) checks the content.
+	Notices [][]byte
+	// Grant is inner key 14 as received (Inner.Grant), nil when absent. It
+	// may not decode; CheckGrant (SS-1) decides whether to keep it (CORE-K4).
+	Grant cbor.RawMessage
 }
 
 // Open performs receive steps 1 to 4 on an envelope addressed to selfAID, in
@@ -916,7 +931,10 @@ func Open(envelope []byte, selfAID string, ring KeyRing, ix IXKeyLookup) (*Opene
 	if err != nil {
 		return nil, withAck(ack, failWrap(ReasonBadInner, err, "signature preimage"))
 	}
-	return &Opened{Outer: *outer, Inner: *inner, KEL: kel, Preimage: pre, AckKey: ack, Layers: 1}, nil
+	return &Opened{
+		Outer: *outer, Inner: *inner, KEL: kel, Preimage: pre, AckKey: ack, Layers: 1,
+		Access: outer.Access, RK: inner.RK, Notices: inner.Notices, Grant: inner.Grant,
+	}, nil
 }
 
 // wrapFields is a decoded Wrap.

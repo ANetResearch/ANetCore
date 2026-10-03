@@ -69,6 +69,12 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	if len(got.Ext) != 2 || !bytes.Equal(got.Ext[64], in.Ext[64]) || !bytes.Equal(got.Ext[1000], in.Ext[1000]) {
 		t.Fatalf("extensions: got %v want %v", got.Ext, in.Ext)
 	}
+	// CORE-A2: Opened names the credential, rk, notices and grant itself.
+	if o.Access == nil || o.Access != o.Outer.Access || o.Access.Kind != AccessKindSession ||
+		o.RK == nil || o.RK != o.Inner.RK || !bytes.Equal(o.RK.Pub, rkPub) ||
+		len(o.Notices) != 1 || !bytes.Equal(o.Notices[0], testNotice) || !bytes.Equal(o.Grant, testGrant) {
+		t.Fatalf("Opened access %+v, rk %+v, notices %x, grant %x", o.Access, o.RK, o.Notices, o.Grant)
+	}
 	// Seal must not write into the caller's struct.
 	if in.Sig != nil {
 		t.Fatal("Seal modified its input")
@@ -90,7 +96,8 @@ func TestOptionalInnerKeysStayAbsent(t *testing.T) {
 		}
 	}
 	o := mustOpen(t, env, b)
-	if o.Inner.KEL != nil || o.Inner.Notices != nil || o.Inner.Keys != nil || o.Inner.Grant != nil || o.KEL != nil {
+	if o.Inner.KEL != nil || o.Inner.Notices != nil || o.Inner.Keys != nil || o.Inner.Grant != nil || o.KEL != nil ||
+		o.Notices != nil || o.Grant != nil {
 		t.Fatalf("absent keys came back: %+v", o.Inner)
 	}
 	// The signature is still checkable under the sender's KEL from storage.
@@ -753,7 +760,7 @@ func TestParseOuterV2Access(t *testing.T) {
 			}
 			wantOpenFails(t, err, ReasonAccessInvalid, false)
 			var se *Error
-			if !errors.As(err, &se) || !bytes.HasPrefix([]byte(se.Detail), []byte("parse")) {
+			if !errors.As(err, &se) || se.Detail != "parse" {
 				t.Fatalf("detail %q, want parse", se.Detail)
 			}
 		})
@@ -1149,8 +1156,11 @@ func TestSealInputChecks(t *testing.T) {
 			in := innerFrom(t, a, b, t0)
 			var o SealOpts
 			tc.edit(in, &o)
-			_, _, err := Seal(in, &b.kp.Public, a.c.Sign, o)
+			_, ack, err := Seal(in, &b.kp.Public, a.c.Sign, o)
 			wantReason(t, err, ReasonInvalidInput)
+			if ack != (AckKey{}) {
+				t.Fatal("an ack_key with an error")
+			}
 		})
 	}
 	// A recipient key whose kid does not match its public key.

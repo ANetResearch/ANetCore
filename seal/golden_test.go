@@ -217,6 +217,10 @@ func TestSEALED_2A(t *testing.T) {
 		if len(o.KEL) != 2 {
 			t.Fatalf("KEL of %d events, want 2", len(o.KEL))
 		}
+		if o.RK != in.RK || len(o.Notices) != 1 || !bytes.Equal(o.Notices[0], want.Notice[0]) ||
+			!bytes.Equal(o.Grant, want.Grant) || o.Access != o.Outer.Access {
+			t.Fatal("Opened.RK, Notices, Grant or Access is not the opened inner's (CORE-A2)")
+		}
 		// Go encodes the same fields to the same inner bytes.
 		g := in
 		g.Sig = nil
