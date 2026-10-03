@@ -117,7 +117,7 @@ func TestS8KeyNumberChanged(t *testing.T) {
 // CORE-S8 (2): an unregistered key added.
 func TestS8UnregisteredKeyAdded(t *testing.T) {
 	ps, all := fixture(t, edit{"thing/thing.go", "\tCache []byte", "\tD     string `cbor:\"9,keyasint,omitempty\"`\n\tCache []byte"})
-	expect(t, ps, all, "struct", "Thing key 9 is reserved", "field D")
+	expect(t, ps, all, "struct", "Thing key 9 is reserved", "field D", "register the key")
 }
 
 // CORE-S8 (3): a label changed by one character.

@@ -696,11 +696,17 @@ func (s *scanner) checkAnnotated(f *file, id, objName string, fields []keyField,
 		reg := obj.Key(k.n)
 		status := obj.KeyStatus(k.n)
 		if status != wire.StatusActive {
-			what := status
-			if reg != nil && reg.Was != "" {
-				what += " (was " + reg.Was + ")"
+			what, next := status, "register the key in wire/registry.json first"
+			switch status {
+			case wire.StatusRetired:
+				if reg != nil && reg.Was != "" {
+					what += " (was " + reg.Was + ")"
+				}
+				next = "a retired key is never reused: give the field a newly registered key"
+			case wire.StatusForbidden:
+				next = "it is for preimages only and never on the wire"
 			}
-			s.add(k.pos, "struct", "%s key %d is %s; field %s of %s may not use it (a retired key is never reused; a new field needs a newly registered key)", objName, k.n, what, k.name, id)
+			s.add(k.pos, "struct", "%s key %d is %s; field %s of %s may not use it: %s", objName, k.n, what, k.name, id, next)
 			continue
 		}
 		if !contains(reg.Names(), wire.NormName(k.name)) {
