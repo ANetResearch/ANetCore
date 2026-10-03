@@ -98,7 +98,7 @@ func UnmarshalKEL(b []byte) ([]SignedEvent, error) {
 // blob obtains both the current key AND its committed successor — so for THIS stored controller the
 // pre-rotation guarantee (a stolen current key can't rotate to an attacker key) does not hold. This
 // is inherent to persisting a rotatable controller; if the threat model warrants, encrypt the blob at
-// rest (the package's SealTo/Open is available).
+// rest.
 type controllerExport struct {
 	CurSeed []byte        `cbor:"1,keyasint"`
 	NxtSeed []byte        `cbor:"2,keyasint"`
