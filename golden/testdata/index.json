@@ -1,0 +1,451 @@
+{
+  "format": "anet-golden-index/1",
+  "about": "The golden vectors of anet 0.3.0 (ANetCore v0.16): for each vector, its files, the labels (wire/registry.json tags, by id) and objects it covers, the area that owns it and what produces its bytes. golden/index_test.go checks this index against the registry and the repositories; golden/py/gen_v016.py check (CI golden-xcheck) regenerates every vector it writes and compares the bytes. An artifact with \"todo\" is not delivered yet and must not exist; one with \"rework\" exists in its v0.2 form and is still to be rewritten; remove the marker in the change that delivers it.",
+  "seeds": "every random input of a vector is SHA-256(\"anet-golden/v016/<vector id>/<role>\")",
+  "gens": {
+    "python": "gen_v016.py seals or writes the bytes; the Go test opens them and reproduces every derived value",
+    "go+python": "gen_v016.py writes the file; the Go test reproduces every value from the same seeds",
+    "go": "the Go test holds or writes the vector; golden-xcheck does not regenerate it",
+    "rfc": "values transcribed from an RFC; gen_v016.py regenerates them from the RFC's inputs",
+    "a2a-python": "written by a2acard/testdata/gen_python_vectors.py with the a2a-python SDK; golden-xcheck does not run it"
+  },
+  "vectors": [
+    {
+      "id": "SEALED-2A",
+      "gen": "python",
+      "owner": "FS, SS, DLV",
+      "covers": "single layer: outer v2 with key 7 of kind 0; Wrap (keys 3, 21); inner with keys 10, 11, 12, 14, 15; preimage v2 (keys 33, 34 null, key 9 a digest); signature; env_digest; ack_key, handle, tok",
+      "labels": ["L1", "L3", "L4", "L11", "L12", "L13", "L39"],
+      "objects": ["SealedEnvelope", "Access", "Wrap", "SealedInner", "InnerSigPreimage", "HPKEInfo", "SignedEvent", "NoticeWire", "SignedEncKeySet", "Grant", "RK"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-sealed-2a.json", "todo": "v030-todo(CORE-2)"}]
+    },
+    {
+      "id": "SEALED-2B",
+      "gen": "python",
+      "owner": "FS, SS, DLV, CUX",
+      "covers": "two layers; ikid; preimage keys 33, 34 set; outer key 7 of kind 1 (Cap and proof), outer key 8, one extension key >= 64; a second implementation derives both keys from the seeds and opens the same bytes; layer-1 ack_key equal to the single-layer export of the same outer",
+      "labels": ["L1", "L2", "L3", "L4", "L5", "L6", "L11"],
+      "objects": ["SealedEnvelope", "Access", "Cap", "CapBody", "Wrap", "SealedInner", "InnerSigPreimage", "HPKEInfo", "RK"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-sealed-2b.json", "todo": "v030-todo(FS-2)"}]
+    },
+    {
+      "id": "SEALED-2C",
+      "gen": "go+python",
+      "owner": "FS, SS, KEL, CORE",
+      "covers": "negatives, each with its seal reason: second layer stripped, enc2 replaced, Wrap with unknown key 5, pad not zero, inner key 21, inner key 0 or 30, outer key 9, access kind 2, outer and inner exp unequal, v = 1, key 11 without key 10, KEL v1, a ReceiptBody signature over the inner preimage, inner ix or from with U+0000",
+      "labels": ["L3"],
+      "objects": ["SealedEnvelope", "Wrap", "SealedInner", "InnerSigPreimage"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-sealed-2c.json", "todo": "v030-todo(CORE-2)"}]
+    },
+    {
+      "id": "SEALED-PREVIEW-1",
+      "gen": "python",
+      "owner": "CUX",
+      "covers": "the inner of a preview frame: no keys 10, 11, 12, 14; key 15 present; outer key 8 = inner ts + 60000",
+      "labels": ["L1", "L3", "L39"],
+      "objects": ["SealedEnvelope", "Wrap", "SealedInner", "ChatMsg", "RK"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-sealed-preview-1.json", "todo": "v030-todo(UX-2)"}]
+    },
+    {
+      "id": "ACCESS-1",
+      "gen": "go+python",
+      "owner": "SS",
+      "covers": "CapBody and Cap bytes and signature; the holder proof; each failing step of VerifyAccess (owner is not to, wrong epoch, expired, wrong holder, access moved to another envelope)",
+      "labels": ["L4", "L5", "L6"],
+      "objects": ["Access", "Cap", "CapBody"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-access-1.json", "todo": "v030-todo(SS-1)"}]
+    },
+    {
+      "id": "GRANT-1",
+      "gen": "go+python",
+      "owner": "SS",
+      "covers": "a Grant with every field and with the fewest; each failing check of CheckGrant",
+      "labels": [],
+      "objects": ["Grant", "Cap"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-grant-1.json", "todo": "v030-todo(SS-1)"}]
+    },
+    {
+      "id": "ENCKEYS-2",
+      "gen": "go+python",
+      "owner": "FS, SS",
+      "covers": "15 epoch keys and mbox; VerifyEncKeySet on the day, on day 14 and on day 15; a set without mbox",
+      "labels": ["L15", "L16"],
+      "objects": ["EncKeySet", "EncKey", "Mbox", "SignedEncKeySet"],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-enckeys-2.json", "todo": "v030-todo(FS-1)"}]
+    },
+    {
+      "id": "DACK-1",
+      "gen": "go+python",
+      "owner": "DLV, CUX",
+      "covers": "from SEALED-2A and SEALED-2B: ack_key, handle, tok(1), tok(2), note_key; notes under a fixed nonce (outcome 1 empty, busy 30 s, caller_busy, quota_caller_per_day); a whole dack",
+      "labels": ["L11", "L12", "L13", "L14"],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-dack-1.json", "todo": "v030-todo(RC-1)"}]
+    },
+    {
+      "id": "rfc9180",
+      "gen": "rfc",
+      "owner": "DLV",
+      "covers": "RFC 9180 Appendix A.2.1 (suite 1); the three exports of the appendix are still to be added",
+      "labels": ["L11"],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/rfc9180-a2-1.json", "rework": "v030-todo(RC-1)"}]
+    },
+    {
+      "id": "KEL-2A",
+      "gen": "go+python",
+      "owner": "KEL",
+      "covers": "a hub identity (toad = 0): icp, rot 1 (setup-recovery), rot 2 (emergency), dip 3; each event's preimage, event id and signature",
+      "labels": ["L17"],
+      "objects": ["KeyEvent", "SignedEvent"],
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2a.json"}]
+    },
+    {
+      "id": "KEL-2B",
+      "gen": "go+python",
+      "owner": "KEL",
+      "covers": "an agent identity (toad = 1): icp (witness pending), rot 1 (witness W1), rot 2 (moved to W2), dip 3",
+      "labels": ["L17"],
+      "objects": ["KeyEvent", "SignedEvent"],
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2b.json"}]
+    },
+    {
+      "id": "KEL-2N",
+      "gen": "go",
+      "owner": "KEL",
+      "covers": "every counterexample of the KEL replay rules, and events without key 0 or with a wrong tag",
+      "labels": ["L17"],
+      "objects": ["KeyEvent", "SignedEvent"],
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-kel-2n.json"}]
+    },
+    {
+      "id": "RECOVERY-1",
+      "gen": "go+python",
+      "owner": "KEL",
+      "covers": "next-key seeds and keys at seq 2, 3, 4; a RecoveryBlob under a fixed passphrase, salt and nonce (wrong passphrase, changed AID header); a RecoveryBlob of kdf local under a fixed local key and nonce (each mode opened as the other, wrong local key)",
+      "labels": ["L19", "L20"],
+      "objects": ["RecoveryBlob", "RecoveryKDF"],
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-recovery-1.json", "todo": "v030-todo(KEL-3)"}]
+    },
+    {
+      "id": "KSN-1",
+      "gen": "go+python",
+      "owner": "KEL",
+      "covers": "the KEL-2A hub as witness signs a notice for the tip of KEL-2B: NoticeBody, NoticeWire; a counterexample for each step of notice verification",
+      "labels": ["L18"],
+      "objects": ["NoticeBody", "NoticeWire", "aobj.Envelope"],
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-ksn-1.json", "todo": "v030-todo(KEL-4)"}]
+    },
+    {
+      "id": "RELAYAUTH-3",
+      "gen": "go",
+      "owner": "CORE, HPP, SS",
+      "covers": "PreimageV2 bytes and signature for every relayauth action (fed_* included); retired actions refused",
+      "labels": ["L22"],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "golden/relayauth_v3_test.go", "test": "TestRELAYAUTH_3", "todo": "v030-todo(SS-2)"}]
+    },
+    {
+      "id": "SESSION-1",
+      "gen": "python",
+      "owner": "SS",
+      "covers": "the session MAC input and output; the receiving side of a session key delivery (fixed skR, recorded enc and ct)",
+      "labels": ["L7", "L8"],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "relayauth/testdata/vec-session-1.json", "todo": "v030-todo(SS-2)"}]
+    },
+    {
+      "id": "DIR-1",
+      "gen": "go+python",
+      "owner": "SS",
+      "covers": "the directory hash h and box key K; a box under a fixed nonce; opening it; a wrong AID does not open it",
+      "labels": ["L9", "L10"],
+      "objects": ["DirEntry"],
+      "at": [{"repo": "ANetCore", "path": "dirbox/testdata/vec-dir-1.json", "todo": "v030-todo(SS-2)"}]
+    },
+    {
+      "id": "DELEGATE-3",
+      "gen": "go",
+      "owner": "CUX",
+      "covers": "DelegateReq with keys 3 and 6 retired (present: decoding fails)",
+      "labels": [],
+      "objects": ["DelegateReq", "Attachment"],
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestDELEGATE_3", "todo": "v030-todo(UX-2)"}]
+    },
+    {
+      "id": "CHATMSG-3",
+      "gen": "go",
+      "owner": "CUX",
+      "covers": "ChatMsg as a preview frame (keys 11-13) and as plain text (keys 4-7 or 11-13 present: decoding fails)",
+      "labels": [],
+      "objects": ["ChatMsg"],
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestCHATMSG_3", "todo": "v030-todo(UX-2)"}]
+    },
+    {
+      "id": "RESULT-3",
+      "gen": "go",
+      "owner": "CUX",
+      "covers": "ResultResp key 6 reply (other keys in the reply: decoding fails)",
+      "labels": [],
+      "objects": ["ResultResp", "ReplyMsg"],
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestRESULT_3", "todo": "v030-todo(UX-2)"}]
+    },
+    {
+      "id": "CARD-1",
+      "gen": "go",
+      "owner": "HPP",
+      "covers": "CardGet; CardResp with card and with error",
+      "labels": ["L39"],
+      "objects": ["CardGet", "CardResp"],
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestCARD_1", "todo": "v030-todo(PAY-2)"}]
+    },
+    {
+      "id": "TASKDOC-3",
+      "gen": "go",
+      "owner": "CUX, HPP",
+      "covers": "$files in args; the three private contexts; the request CID changes with a file CID",
+      "labels": [],
+      "objects": ["TaskDoc", "TaskDocPreimage", "VersionPair", "Task", "Intent", "Context"],
+      "at": [{"repo": "ANetCore", "path": "golden/taskdoc_v3_test.go", "test": "TestTASKDOC_3", "todo": "v030-todo(PAY-2)"}]
+    },
+    {
+      "id": "EV2-1",
+      "gen": "go+python",
+      "owner": "HPP",
+      "covers": "ix and requester commitments, settle guard; ReceiptBody and ReceiptWire; a ReceiptBody signature moved onto a payment Authorization fails; (ix, nonce) = (\"a\\u0000b\", \"c\") and (\"a\", \"b\\u0000c\") refused by the commitment and by PayBind",
+      "labels": ["L27", "L28", "L29", "L33", "L34"],
+      "objects": ["ReceiptBody", "ReceiptWire", "aobj.Envelope", "PaymentAuthorization"],
+      "at": [{"repo": "ANetCore", "path": "evidence/testdata/vec-ev2-1.json", "todo": "v030-todo(PAY-2)"}]
+    },
+    {
+      "id": "REVIEW-2",
+      "gen": "go+python",
+      "owner": "HPP",
+      "covers": "ReviewBody and ReviewWire; ReviewAttBody; the review tag",
+      "labels": ["L30", "L31", "L32"],
+      "objects": ["ReviewBody", "ReviewWire", "ReviewAttBody", "ReviewAttWire"],
+      "at": [{"repo": "ANetCore", "path": "evidence/testdata/vec-review-2.json", "todo": "v030-todo(PAY-2)"}]
+    },
+    {
+      "id": "LIAB-1",
+      "gen": "go+python",
+      "owner": "HPP",
+      "covers": "leaf and node hashes; a tree of 16 leaves; path verification; a path that moves a sum fails",
+      "labels": ["L25", "L26"],
+      "objects": ["LiabLeafContent"],
+      "at": [{"repo": "ANetCore", "path": "liabtree/testdata/vec-liab-1.json", "todo": "v030-todo(PAY-1)"}]
+    },
+    {
+      "id": "REGPOW-1",
+      "gen": "go+python",
+      "owner": "HPP",
+      "covers": "the PoW seed; the PoW hash; a nonce with 22 leading zero bits and one with 21",
+      "labels": ["L23", "L24"],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "regpow/testdata/vec-regpow-1.json", "todo": "v030-todo(PAY-1)"}]
+    },
+    {
+      "id": "SUPPLY-EPOCH-1",
+      "gen": "go",
+      "owner": "HPP",
+      "covers": "the ael anet.supply.epoch record (VersionMajor2): bytes and signature",
+      "labels": [],
+      "objects": ["AELRecord"],
+      "at": [{"repo": "ANetCore", "path": "golden/supply_epoch_test.go", "test": "TestSUPPLY_EPOCH_1", "todo": "v030-todo(PAY-2)"}]
+    },
+    {
+      "id": "C1-1",
+      "gen": "go",
+      "owner": "LEC",
+      "covers": "CapList; InvokeReq (local and relay; key 4 retired; key 5 caller); InvokeResp; every Refusal code; negatives (via 2, via 0 with aid, unknown key, duplicate map key, CBOR tag, invalid UTF-8); the two copies are byte for byte the same",
+      "labels": [],
+      "objects": ["CapList", "CapEntry", "Describe", "InvokeReq", "Caller", "InvokeResp", "Refusal", "EffectEvidence"],
+      "at": [
+        {"repo": "ANet", "path": "provider/anetlink/testdata/c1v1/", "glob": "*.cbor", "todo": "v030-todo(EXE-12)"},
+        {"repo": "ANetLink", "path": "northbound/c1serv/testdata/c1v1/", "glob": "*.cbor"}
+      ]
+    },
+    {
+      "id": "FRAME-3",
+      "gen": "go",
+      "owner": "DLV, SS",
+      "covers": "the JSON frame of every p2p op; a frame with v = 2 refused; a dack of 107 characters",
+      "labels": [],
+      "objects": [],
+      "at": [{"repo": "ANet", "path": "module/p2p/testdata/frame-v3.json", "todo": "v030-todo(RC-2)"}]
+    },
+    {
+      "id": "LOCAL-1",
+      "gen": "go+python",
+      "owner": "FS, CUX",
+      "covers": "the local AEAD and MAC keys derived from ix_dek; client key and client digest (with the number literals 9007199254740992 and 9007199254740993, 1 and 1.0); field ciphertexts and aad under a fixed key and nonce",
+      "labels": ["L35", "L36", "L37", "L38"],
+      "objects": [],
+      "at": [{"repo": "ANet", "path": "internal/runtime/interactions/testdata/vec-local-1.json", "todo": "v030-todo(FS-8)"}]
+    },
+    {
+      "id": "WIRE3-*",
+      "gen": "go",
+      "owner": "CORE, SS, DLV, FS, KEL, HPP, CUX",
+      "covers": "request and response of every hub endpoint; the error body of every hub reason; X-ANet-Wire negotiation; an AID with U+0000 answered 400 bad_request",
+      "labels": [],
+      "objects": [],
+      "at": [{"repo": "ANetHub", "path": "internal/aghub/testdata/wire3/", "glob": "*.json", "todo": "v030-todo(CORE-4)"}]
+    },
+    {
+      "id": "MODOBJ-1",
+      "gen": "go+python",
+      "owner": "CORE",
+      "covers": "org_id; the OrgCredBody and CogUnitBody preimages and signatures; negatives (no key 0, a tag one character off, the two signatures swapped, either signature over the inner preimage, a ReceiptBody or a payment Authorization)",
+      "labels": ["L41", "L42", "L43"],
+      "objects": ["OrgGenesis", "OrgCredBody", "SignedCredential", "CogUnitBody", "CogUnitWire", "HLC", "aobj.Envelope"],
+      "at": [
+        {"repo": "ANet", "path": "module/org/testdata/vec-org-1.json", "todo": "v030-todo(CORE-5)"},
+        {"repo": "ANet", "path": "module/blackboard/testdata/vec-cogunit-1.json", "todo": "v030-todo(CORE-5)"}
+      ]
+    },
+    {
+      "id": "A2AERR-1",
+      "gen": "go",
+      "owner": "CUX",
+      "covers": "the local A2A error shape: the a2a-go JSON-RPC and REST clients each recognize the standard error of no_local_task, extended_card_not_offered, extended_card_not_configured, extended_card_unavailable and message_id_reused; data or details is an array whose first item has domain a2a-protocol.org and whose second is anet's",
+      "labels": [],
+      "objects": [],
+      "at": [{"repo": "ANet", "path": "module/a2a/errors_contract_test.go", "test": "TestA2AERR_1", "todo": "v030-todo(UX-5)"}]
+    },
+    {
+      "id": "VEC_SUITE_IDENTITY_1",
+      "gen": "go",
+      "owner": "KEL",
+      "covers": "the conformance identity every signed vector is anchored to; regenerated under KEL v2",
+      "labels": [],
+      "objects": ["KeyEvent", "SignedEvent"],
+      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_SUITE_IDENTITY_1"}]
+    },
+    {
+      "id": "VEC_AET_CID_1",
+      "gen": "go",
+      "owner": "CORE",
+      "covers": "carried: an AET preimage and its CID",
+      "labels": [],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "golden/golden_test.go", "test": "TestVEC_AET_CID_1"}]
+    },
+    {
+      "id": "VEC_TSIR_CID_1",
+      "gen": "go",
+      "owner": "CORE",
+      "covers": "carried: a TaskDoc preimage and its CID",
+      "labels": [],
+      "objects": ["TaskDocPreimage", "VersionMajor", "Task", "Intent"],
+      "at": [{"repo": "ANetCore", "path": "golden/golden_test.go", "test": "TestVEC_TSIR_CID_1"}]
+    },
+    {
+      "id": "VEC_CID_RAW_1",
+      "gen": "go",
+      "owner": "CORE",
+      "covers": "carried: the raw CID of attachment bytes",
+      "labels": [],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "golden/golden_test.go", "test": "TestVEC_CID_RAW_1"}]
+    },
+    {
+      "id": "VEC_PAYMENT_AUTH_1",
+      "gen": "go",
+      "owner": "HPP",
+      "covers": "carried: the payment Authorization preimage and id",
+      "labels": [],
+      "objects": ["PaymentAuthorization"],
+      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_PAYMENT_AUTH_1"}]
+    },
+    {
+      "id": "VEC_PAYMENT_AUTH_WIRE_1",
+      "gen": "go",
+      "owner": "HPP",
+      "covers": "carried: the signed payment Authorization as it travels",
+      "labels": [],
+      "objects": ["PaymentAuthorizationWire", "aobj.Envelope"],
+      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_PAYMENT_AUTH_WIRE_1"}]
+    },
+    {
+      "id": "VEC_PAYMENT_RECEIPT_1",
+      "gen": "go",
+      "owner": "HPP",
+      "covers": "carried: the hub settlement receipt preimage",
+      "labels": [],
+      "objects": ["PaymentReceipt"],
+      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_PAYMENT_RECEIPT_1"}]
+    },
+    {
+      "id": "VEC_AEL_ATTESTATION_1",
+      "gen": "go",
+      "owner": "CORE",
+      "covers": "carried: a witness attestation of an ael chain head",
+      "labels": [],
+      "objects": ["AELHeadAttestation"],
+      "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_AEL_ATTESTATION_1"}]
+    },
+    {
+      "id": "VEC_STATUS_1",
+      "gen": "go",
+      "owner": "CUX",
+      "covers": "carried: the anet.status/1 body with every field",
+      "labels": [],
+      "objects": ["StatusMsg"],
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_test.go", "test": "TestVEC_STATUS_1"}]
+    },
+    {
+      "id": "a2acard-python",
+      "gen": "a2a-python",
+      "owner": "CORE",
+      "covers": "carried: A2A card signatures as the a2a-python SDK computes them",
+      "labels": [],
+      "objects": [],
+      "at": [{"repo": "ANetCore", "path": "a2acard/testdata/python-vectors.json"}]
+    }
+  ],
+  "retired": [
+    {"id": "VEC_PAYMENT_VOUCHER_1", "why": "vouchers are removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_PAYMENT_VOUCHER_1", "todo": "v030-todo(PAY-2)"}]},
+    {"id": "VEC_RECEIPT_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RECEIPT_1", "todo": "v030-todo(PAY-2)"}]},
+    {"id": "VEC_RECEIPT_WIRE_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RECEIPT_WIRE_1", "todo": "v030-todo(PAY-2)"}]},
+    {"id": "VEC_REVIEW_1", "why": "evidence v1 is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_REVIEW_1", "todo": "v030-todo(PAY-2)"}]},
+    {"id": "VEC-SEALED-1", "why": "outer envelope v1 is removed", "at": [
+      {"repo": "ANetCore", "path": "seal/golden_test.go", "test": "TestVEC_SEALED_1", "todo": "v030-todo(CORE-2)"},
+      {"repo": "ANetCore", "path": "seal/testdata/vec-sealed-1.json", "todo": "v030-todo(CORE-2)"}
+    ]},
+    {"id": "VEC_RELAYAUTH_1", "why": "the v1 relayauth preimage is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RELAYAUTH_1", "todo": "v030-todo(SS-2)"}]},
+    {"id": "VEC_KEL_SUPERSEDE_1", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_1"}]},
+    {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2"}]}
+  ],
+  "uncovered": [
+    {"object": "IdentityFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "IdentityPending", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "WitnessPush", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "KeyStateNoticeFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "MboxKeyFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "EncKeyFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "RingKey", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "KeyPair", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "RollbackMark", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "PaymentReceiptWire", "why": "carried unchanged from 0.2.1; its signed preimage has a vector (VEC_PAYMENT_RECEIPT_1), its wire form none"},
+    {"object": "AELHeadAttestationWire", "why": "carried unchanged from 0.2.1; its signed preimage has a vector (VEC_AEL_ATTESTATION_1), its wire form none"},
+    {"object": "Effect", "why": "carried unchanged from 0.2.1; the kernel's result of a capability invocation, never encoded by another implementation"},
+    {"object": "MetaEntry", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Link", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Require", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Output", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Schema", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Accept", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Predicate", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "ArtifactClause", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "TestClause", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "ThresholdClause", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "ScopeClause", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "ResourceMatch", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "EffectRecord", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "Artifact", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "TestResult", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "ResourceRef", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"},
+    {"object": "EffectRef", "why": "carried unchanged from 0.2.1; a part of a TaskDoc that no vector fills in (the TaskDoc vectors carry the version and one task)"}
+  ]
+}
