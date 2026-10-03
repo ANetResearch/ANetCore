@@ -35,7 +35,7 @@ import (
 const (
 	goldenFile         = "testdata/vec-sealed-1.json"
 	goldenRecipientAID = "bafyreigoldenrecipient"
-	goldenSenderAID    = "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y"
+	goldenSenderAID    = "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke"
 	goldenTS           = t0
 	goldenNow          = t0 + minuteMS
 	goldenBody         = "anet seal golden vector 1"

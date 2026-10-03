@@ -1,6 +1,6 @@
 package delegation_test
 
-// Fuzz targets for the relayed delegation payloads and their verifiers (ANet docs/notes/0033).
+// Fuzz targets for the relayed delegation payloads and their verifiers (ANet an internal note).
 //
 // A mutated signed object almost never keeps its signature, so FuzzDelegateReq and
 // FuzzResultResp can re-sign what they decoded (the TaskDoc, the receipt) with a fixed identity
@@ -30,18 +30,19 @@ const fuzzTS = 1767225600000
 func rotatedSuite(tb testing.TB) *identity.Controller {
 	tb.Helper()
 	seed := func(label string) []byte { s := sha256.Sum256([]byte(label)); return s[:] }
-	k0 := ed25519.NewKeyFromSeed(seed("anet-suite-identity-v1/cur"))
 	k1Seed, k2Seed := seed("anet-suite-identity-v1/nxt"), seed("anet-fuzz/delegation/k2")
 	k1, k2 := ed25519.NewKeyFromSeed(k1Seed), ed25519.NewKeyFromSeed(k2Seed)
 	kel := identity.SuiteController().KEL()
 	d := sha256.Sum256(k2.Public().(ed25519.PublicKey))
-	rot := identity.KeyEvent{AID: kel[0].EventID, Seq: 1, Prev: kel[0].EventID, Type: identity.Rotation,
-		Keys: [][]byte{k1.Public().(ed25519.PublicKey)}, NextDigest: d[:], Threshold: 1, Timestamp: fuzzTS - 1000}
+	rot := identity.KeyEvent{KELType: identity.KELType, AID: kel[0].EventID, Seq: 1, Prev: kel[0].EventID,
+		Type: identity.Rotation, Keys: [][]byte{k1.Public().(ed25519.PublicKey)}, NextDigest: d[:], Threshold: 1,
+		Timestamp: fuzzTS - 1000, Toad: identity.ToadField(identity.ToadHub)}
 	pre, err := coredet.Marshal(rot)
 	if err != nil {
 		tb.Fatal(err)
 	}
-	kel = append(kel, identity.SignedEvent{Event: rot, Sig: ed25519.Sign(k0, pre), EventID: anetcid.MustSum(pre)})
+	// A rot is signed by the key it reveals (KEL v2).
+	kel = append(kel, identity.SignedEvent{Event: rot, Sig: ed25519.Sign(k1, pre), EventID: anetcid.MustSum(pre)})
 	blob, err := coredet.Marshal(struct {
 		Cur []byte                 `cbor:"1,keyasint"`
 		Nxt []byte                 `cbor:"2,keyasint"`

@@ -1,8 +1,6 @@
 package delegation
 
 import (
-	"crypto/ed25519"
-	"crypto/sha256"
 	"errors"
 	"reflect"
 	"sort"
@@ -145,11 +143,6 @@ func marshalKEL(t *testing.T, kel []identity.SignedEvent) []byte {
 	return b
 }
 
-func hostKey() ed25519.PublicKey {
-	seed := sha256.Sum256([]byte("anet-test/delegation/host"))
-	return ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-}
-
 func TestVerifyDelegateReqWithKEL(t *testing.T) {
 	alice, err := identity.Incept()
 	if err != nil {
@@ -183,7 +176,7 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 	t.Run("body KEL is a prefix of the resolved KEL", func(t *testing.T) {
 		a2, _ := identity.Incept()
 		r := signedReq(t, a2, "x")
-		if err := a2.Delegate(hostKey(), 1000); err != nil {
+		if err := a2.Rotate(1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, _, err := VerifyDelegateReqWithKEL(r, a2.KEL(), 1767225600000); err != nil {
@@ -204,7 +197,7 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 		a3, _ := identity.Incept()
 		r := signedReq(t, a3, "x")
 		stale := append([]identity.SignedEvent(nil), a3.KEL()...)
-		if err := a3.Delegate(hostKey(), 1000); err != nil {
+		if err := a3.Rotate(1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		r.KEL = marshalKEL(t, a3.KEL())
@@ -405,7 +398,7 @@ func TestVerifyResultWithKEL(t *testing.T) {
 		p3, _ := identity.Incept()
 		receipt := receiptBy(p3, nil)
 		stale := append([]identity.SignedEvent(nil), p3.KEL()...)
-		if err := p3.Delegate(hostKey(), 1000); err != nil {
+		if err := p3.Rotate(1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable, Receipt: receipt,

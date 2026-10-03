@@ -67,7 +67,7 @@ func TestDecideHighWaterSigned(t *testing.T) {
 func TestDecideHighWaterSignedUsesSetSeq(t *testing.T) {
 	a := newParty(t)
 	// Move the signer to key_state_seq 1 so ksn is not 0.
-	if err := a.c.Delegate(make([]byte, 32), t0); err != nil {
+	if err := a.c.Rotate(t0); err != nil {
 		t.Fatal(err)
 	}
 	sign := func(seq, issued uint64) *SignedEncKeySet {

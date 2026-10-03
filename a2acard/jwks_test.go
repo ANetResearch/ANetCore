@@ -44,7 +44,6 @@ func pubOf(c *identity.Controller) ed25519.PublicKey {
 }
 
 func TestJWKSKeyStates(t *testing.T) {
-	host := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public().(ed25519.PublicKey)
 	c := incept(t)
 	aid := c.AID()
 	p0 := pubOf(c)
@@ -62,20 +61,16 @@ func TestJWKSKeyStates(t *testing.T) {
 		}
 	}
 
+	// In KEL v2 every event after the icp is a rot or a dip, so the JWKS lists the head's key.
 	assertKeys("icp", jwkFor(aid, 0, p0))
-	if err := c.Delegate(host, t0); err != nil {
+	if err := c.Rotate(t0 - 2000); err != nil {
 		t.Fatal(err)
 	}
-	assertKeys("icp->drt", jwkFor(aid, 0, p0), jwkFor(aid, 1, p0))
-	if err := c.Rotate(t0); err != nil {
+	assertKeys("icp->rot", jwkFor(aid, 1, pubOf(c)))
+	if err := c.Rotate(t0 - 1000); err != nil {
 		t.Fatal(err)
 	}
-	p2 := pubOf(c)
-	assertKeys("icp->drt->rot", jwkFor(aid, 2, p2))
-	if err := c.Delegate(host, t0); err != nil {
-		t.Fatal(err)
-	}
-	assertKeys("icp->drt->rot->drt", jwkFor(aid, 2, p2), jwkFor(aid, 3, p2))
+	assertKeys("icp->rot->rot", jwkFor(aid, 2, pubOf(c)))
 	if err := c.Deactivate(t0); err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +88,6 @@ func TestJWKSKeyStates(t *testing.T) {
 // kid #s is listed. A disagreement would let a JWKS-based verifier (a2a-go with jku) accept
 // cards that the hub and daemons reject, or the reverse.
 func TestJWKSAgreesWithVerify(t *testing.T) {
-	host := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public().(ed25519.PublicKey)
 	c := incept(t)
 	keyAt := []ed25519.PrivateKey{c.CurrentPrivateKey()} // key held at each seq
 	step := func(f func() error) {
@@ -102,11 +96,9 @@ func TestJWKSAgreesWithVerify(t *testing.T) {
 		}
 		keyAt = append(keyAt, c.CurrentPrivateKey())
 	}
-	step(func() error { return c.Delegate(host, t0) })
-	step(func() error { return c.Rotate(t0) })
-	step(func() error { return c.Delegate(host, t0) })
-	step(func() error { return c.Rotate(t0) })
-	step(func() error { return c.Delegate(host, t0) })
+	step(func() error { return c.Rotate(t0 - 3000) })
+	step(func() error { return c.Rotate(t0 - 2000) })
+	step(func() error { return c.Rotate(t0 - 1000) })
 
 	listed := map[string]bool{}
 	for _, k := range parseJWKS(t, c.KEL()) {
@@ -119,8 +111,8 @@ func TestJWKSAgreesWithVerify(t *testing.T) {
 			t.Errorf("seq %d: Verify accepted=%v (err %v), JWKS lists=%v", seq, accepted, err, listed[kid])
 		}
 	}
-	if len(listed) != 2 {
-		t.Fatalf("JWKS lists %d kids, want 2 (the rot and the drt after it)", len(listed))
+	if len(listed) != 1 {
+		t.Fatalf("JWKS lists %d kids, want 1 (the head)", len(listed))
 	}
 }
 
