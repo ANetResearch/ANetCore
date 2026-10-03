@@ -13,10 +13,11 @@ import (
 const t0 uint64 = 1767225600000
 
 // party is one daemon as the tests see it: an identity, one encryption key
-// pair and the signed key set that publishes it.
+// pair, a mailbox signing key and the signed key set that publishes them.
 type party struct {
 	c      *identity.Controller
 	kp     *KeyPair
+	mbox   Mbox
 	set    *EncKeySet
 	signed *SignedEncKeySet
 }
@@ -32,11 +33,11 @@ func newParty(t *testing.T) *party {
 
 func partyFor(t *testing.T, c *identity.Controller) *party {
 	t.Helper()
-	kp, err := GenerateKeyPair(SuiteX25519, t0-dayMS, t0+13*dayMS)
+	kp, err := GenerateKeyPair(SuiteX25519, t0-dayMS, t0+MaxKeyValidityMS-dayMS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &party{c: c, kp: kp}
+	p := &party{c: c, kp: kp, mbox: testMbox(t)}
 	p.resign(t, t0)
 	return p
 }
@@ -45,7 +46,7 @@ func partyFor(t *testing.T, c *identity.Controller) *party {
 func (p *party) resign(t *testing.T, seq uint64, extra ...EncKey) {
 	t.Helper()
 	keys := append([]EncKey{p.kp.Public}, extra...)
-	p.set = &EncKeySet{Type: EncKeySetType, AID: p.c.AID(), Seq: seq, Keys: keys, IssuedAt: seq}
+	p.set = &EncKeySet{Type: EncKeySetType, AID: p.c.AID(), Seq: seq, Keys: keys, IssuedAt: seq, Mbox: p.mbox}
 	s, err := SignEncKeySet(p.set, p.c.Sign)
 	if err != nil {
 		t.Fatal(err)

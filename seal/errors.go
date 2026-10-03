@@ -12,7 +12,7 @@ import (
 const (
 	// Outer envelope (§3.6 step 1).
 	ReasonBadOuter       = "bad-outer"       // outer does not decode, misses a field, or has a wrong-typed/sized field
-	ReasonBadVersion     = "bad-version"     // outer v != 1
+	ReasonBadVersion     = "bad-version"     // outer v is not EnvelopeVersion
 	ReasonUnknownSuite   = "unknown-suite"   // suite not implemented by this build
 	ReasonWrongRecipient = "wrong-recipient" // outer to != the opening node's AID
 
@@ -36,10 +36,18 @@ const (
 	ReasonRevokedKey    = "revoked-key"            // key state retired before the object's time, or AID deactivated
 	ReasonGraceExpired  = "rotation-grace-expired" // old key state, but now is past SupersededAt + rotation grace
 	ReasonAIDMismatch   = "aid-mismatch"           // key set AID, KEL AID and expected AID are not all equal
-	ReasonBadKeySet     = "bad-keyset"             // key set fails structure or validity rules (§3.1 rule 3)
+	ReasonBadKeySet     = "bad-keyset"             // key set fails its decoding, structure or validity rules (EncKeySet.checkStructure)
 	ReasonNoUsableKey   = "no-usable-key"          // no key in the set is valid now under a supported suite
 	ReasonInvalidInput  = "invalid-input"          // caller passed an object Seal or SignEncKeySet cannot produce a valid encoding from
 	ReasonInternalError = "internal"               // entropy or encoder failure on the sending side; not a property of any received bytes
+
+	// The first-layer plaintext (Wrap) and the second layer, sealed to the
+	// recipient's interaction key. Each is a property of bytes that opened
+	// under the recipient's epoch key, so each is permanent.
+	ReasonBadWrap                   = "bad-wrap"                     // Wrap does not decode: a key it does not name, ikid without enc2 or the reverse, a wrong length, or pad not all zero
+	ReasonBadRK                     = "bad-rk"                       // inner rk is not a suite-1, 32-byte public key
+	ReasonSealedToClosedInteraction = "sealed-to-closed-interaction" // the second layer names an interaction key the recipient no longer holds
+	ReasonIKeyMismatch              = "ikey-mismatch"                // the interaction key that opened the second layer belongs to another interaction or peer
 )
 
 // Error is the only error type this package returns. Reason is one of the

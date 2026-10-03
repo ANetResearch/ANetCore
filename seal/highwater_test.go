@@ -71,7 +71,7 @@ func TestDecideHighWaterSignedUsesSetSeq(t *testing.T) {
 		t.Fatal(err)
 	}
 	sign := func(seq, issued uint64) *SignedEncKeySet {
-		s, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: seq, Keys: []EncKey{a.kp.Public}, IssuedAt: issued}, a.c.Sign)
+		s, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: seq, Keys: []EncKey{a.kp.Public}, IssuedAt: issued, Mbox: a.mbox}, a.c.Sign)
 		if err != nil {
 			t.Fatal(err)
 		}

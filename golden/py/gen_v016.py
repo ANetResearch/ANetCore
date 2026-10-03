@@ -968,6 +968,214 @@ def write(ws: Workspace, ids: list[str], generators: dict[str, Generator] | None
 # registered under the id of the index row it produces.
 # ---------------------------------------------------------------------------------------------
 
+# --- FS: the epoch key set (ENCKEYS-2) --------------------------------------------------------
+
+DAY_MS = 86_400_000
+HOUR_MS = 3_600_000
+CLOCK_SKEW_MS = 300_000            # seal.ClockSkewMS
+MAX_KEY_VALIDITY_MS = 2 * DAY_MS   # seal.MaxKeyValidityMS
+MAX_KEYS_PER_SET = 32              # seal.MaxKeysPerSet
+ENCKEYS_TYPE = "anet.enckeys/2"    # L16, EncKeySet key 0
+ENC_KID_LABEL = b"anet-enc-kid/v1"  # L15
+ENCKEYS_KEYS = (0, 1, 2, 3, 4, 5)   # t, aid, seq, keys, issued_at, mbox
+
+
+def enc_kid(suite: int, pub: bytes) -> bytes:
+    """L15: SHA-256("anet-enc-kid/v1" || u8(suite) || pub)[:16]. The v0.2 form, kept: no 0x00 after
+    the label (the suite byte is fixed-length)."""
+    return sha256(ENC_KID_LABEL + bytes([suite]) + bytes(pub))[:16]
+
+
+def enc_key(vid: str, i: int, not_before: int, not_after: int) -> dict:
+    """An EncKey for suite 1 whose public key is DeriveKeyPair(seed(vid, "epoch/<i>"))."""
+    _, pub = SUITE1.derive_key_pair(seed(vid, "epoch/%d" % i))
+    return {1: enc_kid(1, pub), 2: 1, 3: pub, 4: not_before, 5: not_after}
+
+
+def enckeys_rule(b: bytes, now: int):
+    """Which of the five refusal classes an encoded EncKeySet falls in at now, or None if it is
+    accepted (independent of seal.VerifyEncKeySet; the KEL rules are not part of it):
+    1 encoding, type or a key the format does not name; 2 the number of keys or a validity over two
+    days; 3 a kid or the not_before order; 4 the mailbox signing key; 5 no key valid at now + skew."""
+    try:
+        m = uncbor(b)
+    except GoldenError:
+        return 1
+    if not isinstance(m, dict) or m.get(0) != ENCKEYS_TYPE:
+        return 1
+    if any(k not in ENCKEYS_KEYS for k in m):
+        return 1
+    if 5 not in m:
+        return 4
+    if any(k not in m for k in ENCKEYS_KEYS):
+        return 1
+    aid, seq, keys, issued, mbox = m[1], m[2], m[3], m[4], m[5]
+    if not (isinstance(aid, str) and aid and isinstance(seq, int) and isinstance(issued, int) and isinstance(keys, list)):
+        return 1
+    if not isinstance(mbox, dict) or set(mbox) != {1, 2} or not isinstance(mbox[1], int) or not isinstance(mbox[2], bytes):
+        return 1
+    for k in keys:
+        if not isinstance(k, dict) or set(k) != {1, 2, 3, 4, 5}:
+            return 1
+        if not (isinstance(k[1], bytes) and isinstance(k[2], int) and isinstance(k[3], bytes)
+                and isinstance(k[4], int) and isinstance(k[5], int)):
+            return 1
+    if not 1 <= len(keys) <= MAX_KEYS_PER_SET:
+        return 2
+    seen = set()
+    for i, k in enumerate(keys):
+        if k[2] == 0 or len(k[1]) != 16 or (k[2] == 1 and len(k[3]) != 32) or len(k[3]) == 0:
+            return 3
+        if k[1] != enc_kid(k[2], k[3]):
+            return 3
+        if k[5] <= k[4] or k[5] - k[4] > MAX_KEY_VALIDITY_MS:
+            return 2
+        if k[1] in seen or (i > 0 and k[4] < keys[i - 1][4]):
+            return 3
+        seen.add(k[1])
+    if mbox[1] == 0 or len(mbox[2]) != 32:
+        return 4
+    t = now + CLOCK_SKEW_MS
+    if not any(k[4] <= t < k[5] for k in keys):
+        return 5
+    return None
+
+
+def with_(m: dict, over: dict) -> dict:
+    """A copy of the map m with the entries of over set (added, or replacing m's)."""
+    out = dict(m)
+    out.update(over)
+    return out
+
+
+def enckeys_select(keys: list, now: int):
+    """seal.SelectKey: among suite-1 keys valid at now, the one with the largest not_before (the
+    last of equals); when none is, the earliest one that becomes valid within the clock skew."""
+    best = None
+    for i, k in enumerate(keys):
+        if k[2] == 1 and k[4] <= now < k[5] and (best is None or k[4] >= keys[best][4]):
+            best = i
+    if best is None:
+        t = now + CLOCK_SKEW_MS
+        for i, k in enumerate(keys):
+            if k[2] == 1 and k[4] <= t < k[5] and (best is None or k[4] < keys[best][4]):
+                best = i
+    return best
+
+
+@vector("ENCKEYS-2", "ANetCore/seal/testdata/vec-enckeys-2.json")
+def gen_enckeys_2():
+    V = "ENCKEYS-2"
+    e0 = 20454  # 2026-01-01, a UTC day number
+    s = lambda e: e * DAY_MS
+    issued = s(e0) + HOUR_MS
+    keys = [enc_key(V, i, s(e0 + i), s(e0 + i + 1)) for i in range(15)]
+    mbox = {1: 1, 2: ed25519_public(seed(V, "mbox"))}
+    aid = aid_for(V, "owner")
+    ident = seed(V, "identity")
+
+    def set_map(over=None):
+        m = {0: ENCKEYS_TYPE, 1: aid, 2: issued, 3: [dict(k) for k in keys], 4: issued, 5: dict(mbox)}
+        m.update(over or {})
+        return m
+
+    def entry(name, rule, note, b):
+        got = enckeys_rule(b, issued)
+        if got != rule:
+            raise GoldenError("ENCKEYS-2 %s: the rule check says %r, the row says %r" % (name, got, rule))
+        return {"name": name, "rule": rule, "note": note, "reason": "bad-keyset" if rule else None,
+                "set": b16(b), "sig": b16(ed25519_sign(ident, b))}
+
+    set_b = cbor(set_map())
+    sig = ed25519_sign(ident, set_b)
+    signed = cbor({1: set_b, 2: 0, 3: sig})
+    if enckeys_rule(set_b, issued) is not None:
+        raise GoldenError("ENCKEYS-2: the set itself is refused")
+
+    verify = []
+    for name, now in (("before_first_minus_skew", s(e0) - CLOCK_SKEW_MS - 1),
+                      ("first_within_skew", s(e0) - CLOCK_SKEW_MS),
+                      ("on_the_day", issued),
+                      ("day_14", s(e0 + 14) + HOUR_MS),
+                      ("last_within_skew", s(e0 + 15) - CLOCK_SKEW_MS - 1),
+                      ("last_ends_at_skew", s(e0 + 15) - CLOCK_SKEW_MS),
+                      ("day_15", s(e0 + 15) + HOUR_MS)):
+        rule = enckeys_rule(set_b, now)
+        row = {"name": name, "now": now, "result": "ok" if rule is None else "bad-keyset"}
+        if rule is None:
+            row["select"] = enckeys_select(keys, now)
+        verify.append(row)
+
+    extra = [enc_key(V, i, s(e0 + i), s(e0 + i + 1)) for i in range(15, 33)]
+    two_days = with_(keys[14], {5: s(e0 + 16)})
+    three_days = with_(keys[14], {5: s(e0 + 17)})
+    bad_kid = with_(keys[3], {1: flip(keys[3][1])})
+    swapped = [dict(k) for k in keys]
+    swapped[2], swapped[3] = swapped[3], swapped[2]
+
+    accepted = [
+        entry("keys_32", None, "32 keys, the most a set may hold", cbor(set_map({3: keys + extra[:17]}))),
+        entry("validity_two_days", None, "the last key valid for exactly two days", cbor(set_map({3: keys[:14] + [two_days]}))),
+    ]
+    for a in accepted:
+        del a["rule"], a["reason"]
+
+    negatives = [
+        entry("type_v1", 1, "key 0 is the v0.2 type anet.enckeys/1", cbor(set_map({0: "anet.enckeys/1"}))),
+        entry("unregistered_key_6", 1, "key 6, which the format does not name (CORE-G4: a key added)", add_key(set_b, 6)),
+        entry("key_64", 1, "key 64: a key set has no extension range", add_key(set_b, 64)),
+        entry("unregistered_key_in_enckey", 1, "key 6 in the first EncKey",
+              cbor(set_map({3: [with_(keys[0], {6: None})] + keys[1:]}))),
+        entry("unregistered_key_in_mbox", 1, "key 3 in the mbox", cbor(set_map({5: with_(mbox, {3: None})}))),
+        entry("no_keys", 2, "an empty key list", cbor(set_map({3: []}))),
+        entry("keys_33", 2, "33 keys, one more than a set may hold", cbor(set_map({3: keys + extra}))),
+        entry("validity_three_days", 2, "the last key valid for three days", cbor(set_map({3: keys[:14] + [three_days]}))),
+        entry("kid_repeated", 3, "the first key listed twice", cbor(set_map({3: [keys[0]] + keys}))),
+        entry("kid_mismatch", 3, "the fourth key's kid with its last bit changed, so it is not KID(suite, pub)",
+              cbor(set_map({3: keys[:3] + [bad_kid] + keys[4:]}))),
+        entry("not_ascending", 3, "the third and fourth keys swapped", cbor(set_map({3: swapped}))),
+        entry("mbox_missing", 4, "key 5 removed (CORE-G4: a required key dropped)", drop_key(set_b, 5)),
+        entry("mbox_epoch_0", 4, "mbox epoch 0", cbor(set_map({5: with_(mbox, {1: 0})}))),
+        entry("mbox_pub_31_bytes", 4, "mbox pub one byte short", cbor(set_map({5: with_(mbox, {2: mbox[2][:31]})}))),
+    ]
+    flipped = flip(set_b)
+    if enckeys_rule(flipped, issued) is not None or ed25519_verify(ed25519_public(ident), flipped, sig):
+        raise GoldenError("ENCKEYS-2: the flipped set must decode and its signature must fail")
+
+    return {
+        "id": V,
+        "description": "Epoch key set v2 (anet.enckeys/2): 15 epoch keys, one per UTC day from 2026-01-01, and a "
+                       "mailbox signing key; the L15 kids and the L16 signature by the owner's identity key; "
+                       "VerifyEncKeySet's content rules on the day, on day 14 and on day 15 and at the clock-skew "
+                       "edges; two sets accepted at a limit; one set per refusal class, each signed so that only its "
+                       "content fails; one changed byte that only the signature catches.",
+        "labels": {"kid": "anet-enc-kid/v1", "set": ENCKEYS_TYPE},
+        "seeds": "seed(role) = SHA-256(UTF-8(\"anet-golden/v016/ENCKEYS-2/\" + role))",
+        "kel": "none: the owner is a stand-in AID and an Ed25519 identity key; a verifier checks the signature "
+               "with identity.public, and the KEL rules of VerifyEncKeySet are the KEL vectors' to pin",
+        "epoch_ms": DAY_MS,
+        "first_epoch": e0,
+        "issued_at": issued,
+        "aid": {"role": "aid/owner", "rule": "\"b\" + base32 lower without padding of 01 71 12 20 || seed(role)",
+                "value": aid},
+        "identity": {"role": "identity", "public": b16(ed25519_public(ident)), "key_state_seq": 0},
+        "mbox": {"role": "mbox", "epoch": mbox[1], "pub": b16(mbox[2])},
+        "keys": [{"role": "epoch/%d" % i, "kid": b16(k[1]), "suite": k[2], "pub": b16(k[3]),
+                  "not_before": k[4], "not_after": k[5]} for i, k in enumerate(keys)],
+        "extra_keys": [{"role": "epoch/%d" % (15 + i), "kid": b16(k[1]), "pub": b16(k[3]),
+                        "not_before": k[4], "not_after": k[5]} for i, k in enumerate(extra)],
+        "kid_preimage": b16(ENC_KID_LABEL + bytes([1]) + keys[0][3]),
+        "set": b16(set_b),
+        "sig": b16(sig),
+        "signed": b16(signed),
+        "verify": verify,
+        "accepted": accepted,
+        "flipped": {"note": "the set with its last byte (inside the mbox public key) changed: it still decodes, "
+                            "but the signature no longer verifies", "set": b16(flipped), "reason": "bad-sig"},
+        "negatives": negatives,
+    }
+
+
 # --- RFC 9180 (the HPKE instantiation of seal suite 1) -----------------------------------------
 
 _RFC9180_A21 = dict(

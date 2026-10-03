@@ -48,9 +48,10 @@
 //
 // # Forward secrecy
 //
-// HPKE generates a fresh sender key per message, but the recipient key is
-// static for its lifetime; there are no per-interaction recipient keys (§2).
-// Under the key ring policy in limits.go a message can therefore be opened
-// by whoever obtains the recipient's key ring for at most
-// ForwardSecrecyWindowMS (29 days) after it was sent (§21 item 2).
+// HPKE generates a fresh sender key per message. The recipient key is an
+// epoch key: one per UTC day (EpochMS), published PublishAheadMS ahead and
+// valid for its epoch only, so an envelope can be opened only while the
+// recipient still holds the private half of the day it was sealed for. When
+// the holder deletes it is the holder's policy; MaxMessageLifetimeMS bounds
+// how long any envelope sealed to a key can still arrive.
 package seal

@@ -81,6 +81,8 @@ func TestSigPreimageFollowsDesign(t *testing.T) {
 // over it. Without this, the file only records what the implementation
 // produced when the vector was generated.
 func TestVEC_SEALED_1_PreimageFollowsDesign(t *testing.T) {
+	// See TestVEC_SEALED_1: the vector is retired with the v1 envelope.
+	t.Skip("v030-todo(CORE-2)")
 	_, g := readGolden(t)
 	_, rk := goldenKeys(t)
 	outer, err := ParseOuter(g["envelope"])

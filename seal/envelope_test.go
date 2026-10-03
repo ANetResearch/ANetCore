@@ -197,7 +197,7 @@ func TestOuterFieldsAreSigned(t *testing.T) {
 	})
 	t.Run("kid", func(t *testing.T) {
 		// Same recipient, its second key.
-		kp2, err := GenerateKeyPair(SuiteX25519, t0-dayMS, t0+13*dayMS)
+		kp2, err := GenerateKeyPair(SuiteX25519, t0-dayMS, t0+dayMS)
 		if err != nil {
 			t.Fatal(err)
 		}

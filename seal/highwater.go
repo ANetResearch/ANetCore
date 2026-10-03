@@ -1,10 +1,6 @@
 package seal
 
-import (
-	"bytes"
-
-	"github.com/ANetResearch/ANetCore/coredet"
-)
+import "bytes"
 
 // Decision is the outcome of the consumer high-water rule for key sets
 // (§3.1). It is decided on seq and bytes alone, before any signature check:
@@ -76,14 +72,16 @@ func DecideHighWater(seen *Seen, seq uint64, set []byte) Decision {
 
 // DecideHighWaterSigned reads the seq from incoming.Set without verifying the
 // signature and applies DecideHighWater. It returns an error when the set
-// bytes do not decode as an EncKeySet.
+// bytes do not decode as an EncKeySet; the decoding is the strict one of
+// VerifyEncKeySet, so a set that verification would refuse for its encoding
+// never reaches a decision.
 func DecideHighWaterSigned(seen *Seen, incoming *SignedEncKeySet) (Decision, error) {
 	if incoming == nil {
 		return 0, fail(ReasonBadKeySet, "nil signed key set")
 	}
-	var s EncKeySet
-	if err := coredet.Unmarshal(incoming.Set, &s); err != nil {
-		return 0, failWrap(ReasonBadKeySet, err, "decode set")
+	s, err := decodeEncKeySet(incoming.Set)
+	if err != nil {
+		return 0, err
 	}
 	return DecideHighWater(seen, s.Seq, incoming.Set), nil
 }
