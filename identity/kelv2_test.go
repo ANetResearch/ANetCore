@@ -865,6 +865,8 @@ func TestRetiredUsableAt(t *testing.T) {
 		{"the dip's own state", KeyState{Status: StatusDeactivated}, 0, false},
 		{"the dip's own state, later", KeyState{Status: StatusDeactivated}, sup, false},
 		{"planned near the top of uint64", KeyState{Status: StatusRotated, SupersededAt: ^uint64(0) - 10}, ^uint64(0), true},
+		{"a zero KeyState (no status)", KeyState{}, 1, false},
+		{"a status Replay never gives", KeyState{Status: "retired", SupersededAt: sup}, sup, false},
 	}
 	for _, c := range cases {
 		if got := RetiredUsableAt(c.ks, c.arrival); got != c.want {
@@ -887,6 +889,41 @@ func TestRetiredUsableAt(t *testing.T) {
 	}
 	if !RetiredUsableAt(states[2], hubDipTS) || RetiredUsableAt(states[2], hubDipTS+1) {
 		t.Error("KEL-2A state 2 (dip): zero grace")
+	}
+}
+
+// Replay depends on a KEL's encoding alone, which is what ReplayCache keys it by: a dip whose keys
+// 6 and 9 are empty rather than nil encodes exactly as the dip without them, so it replays the
+// same, whichever of the two a cache meets first.
+func TestReplayDependsOnTheEncodingOnly(t *testing.T) {
+	a, k := kel2A(), vecKeys("KEL-2A")
+	empty := clone(a)
+	empty[3].Event.NextDigest = []byte{}
+	empty[3].Event.Witnesses = []string{}
+	if !bytes.Equal(mustMarshal(t, empty), mustMarshal(t, a)) {
+		t.Fatal("setup: empty keys 6 and 9 encode differently from absent ones")
+	}
+	want, err := replay(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, first := range [][]SignedEvent{empty, a} {
+		c := NewReplayCache(1 << 20)
+		for _, kel := range [][]SignedEvent{first, a, empty} {
+			got, err := c.replay(kel)
+			if err != nil || fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Fatalf("replay through a cache: %v, %v", got, err)
+			}
+		}
+	}
+	// A dip that does carry key 6 is still refused, in memory as from bytes.
+	carried := extend(a[:3], func() KeyEvent {
+		e := dipEvent(k[3], hubDipTS)
+		e.NextDigest = digestOf(k[0])
+		return e
+	}(), k[3])
+	if _, err := replay(carried); err == nil || err.Error() != "identity: dip must not carry next" {
+		t.Fatalf("a dip with key 6: %v", err)
 	}
 }
 

@@ -326,7 +326,7 @@ func modelReplay(b built, ops []kelOp, inMemory bool) ([]modelState, bool) {
 				committed = e.NextDigest
 				out = append(out, modelState{key: e.Keys[0], status: StatusActive, toad: toad, witness: witness})
 			} else {
-				if e.NextDigest != nil || e.Witnesses != nil || e.Toad != nil || e.Emergency {
+				if len(e.NextDigest) != 0 || len(e.Witnesses) != 0 || e.Toad != nil || e.Emergency {
 					return nil, false
 				}
 				dead = true

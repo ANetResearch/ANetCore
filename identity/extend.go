@@ -18,8 +18,8 @@ var ErrKELFork = errors.New("identity: KEL fork (the KELs disagree on a key even
 
 // ExtendsKEL reports whether next is an acceptable successor of old for the same AID
 // (A2A-DESIGN §3.8; KEL R-11). Every KEL update goes through it; a party that accepts the longer
-// KEL then applies CheckNewEvents to the events it adds. It returns nil when next replays successfully and old is a prefix of next
-// (equal KELs included), and otherwise:
+// KEL then applies CheckNewEvents to the events it adds. It returns nil when next replays
+// successfully and old is a prefix of next (equal KELs included), and otherwise:
 //
 //   - the Replay error, wrapped, when next itself does not validate;
 //   - an error wrapping ErrKELFork when the event preimages differ at some index present in both;
@@ -29,10 +29,11 @@ var ErrKELFork = errors.New("identity: KEL fork (the KELs disagree on a key even
 // encoding. The preimage is what the event id, the prev linkage and the signature cover; Replay
 // checks next's event ids and signatures against it. A stored copy of an event that differs from
 // the candidate's only in its EventID string or signature bytes therefore describes the same
-// history and is not reported as a fork. old is not replayed. When ExtendsKEL returns nil, old's event preimages are a prefix of next's,
-// and a prefix of a KEL that replays also replays because each event's validity depends only on
-// the events before it; the history old describes is therefore valid. old's own signature and
-// EventID bytes are never checked, so the caller stores next, not old.
+// history and is not reported as a fork. old is not replayed. When ExtendsKEL returns nil, old's
+// event preimages are a prefix of next's, and a prefix of a KEL that replays also replays because
+// each event's validity depends only on the events before it; the history old describes is
+// therefore valid. old's own signature and EventID bytes are never checked, so the caller stores
+// next, not old.
 //
 // A divergence is reported as a fork even when next is also shorter, because a disagreement about
 // a signed event is the stronger finding.

@@ -404,12 +404,14 @@ func checkRotation(e KeyEvent, prior KeyState) error {
 	return nil
 }
 
-// checkDeactivation is R-5 apart from the digest and the signature.
+// checkDeactivation is R-5 apart from the digest and the signature. Keys 6 and 9 are judged by
+// length, as everywhere else in Replay: an empty slice and nil encode alike (both omitted), and
+// Replay must depend on the encoding alone, which is what ReplayCache keys its entries by.
 func checkDeactivation(e KeyEvent) error {
 	switch {
-	case e.NextDigest != nil:
+	case len(e.NextDigest) != 0:
 		return errors.New("identity: dip must not carry next")
-	case e.Witnesses != nil:
+	case len(e.Witnesses) != 0:
 		return errors.New("identity: dip must not carry witnesses")
 	case e.Toad != nil:
 		return errors.New("identity: dip must not carry toad")
@@ -502,7 +504,10 @@ func RetiredUsableAt(ks KeyState, arrival uint64) bool {
 	switch ks.Status {
 	case StatusActive:
 		return true
-	case StatusDeactivated:
+	case StatusRotated:
+	default:
+		// The dip's own state, or a state Replay never gives (a zero KeyState from a failed
+		// lookup, say): refuse rather than grant it a grace.
 		return false
 	}
 	grace := RotationGrace
