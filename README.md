@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="docs/media/anetcore-banner.png" alt="ANetCore — protocol and cryptography kernel of the ANet A2A network" width="100%" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/hero-dark.png" />
+  <img src="docs/media/hero-light.png" alt="ANetCore — protocol and cryptography kernel of the ANet A2A network" width="100%" />
+</picture>
 
 <h3>The protocol kernel of ANet: deterministic encoding, content addressing, signatures, identity and end-to-end sealing.</h3>
 
