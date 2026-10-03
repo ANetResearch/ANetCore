@@ -50,8 +50,8 @@ func taskdoc3(t *testing.T, fileCID string) (*tsir.TaskDoc, *delegation.TaskBind
 
 // TASKDOC-3: a capability call's TaskDoc — $files in args, the three private contexts — pinned as
 // the bytes that travel (DelegateReq key 1) and their CID, the request CID a receipt names; the
-// request CID changes with a file's CID; and CheckTaskBinding's refusals. The pinned bytes were
-// cross-checked with the independent encoder of golden/py/gen_v016.py.
+// request CID changes with a file's CID; and CheckTaskBinding's refusals. golden/py/test_gen_v016.py
+// (hpp_go_pins) checks the pinned bytes against the independent encoder.
 func TestTASKDOC_3(t *testing.T) {
 	const fileCID = "bafkreif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu" // SumRaw("abc")
 	if got, _ := anetcid.SumRaw([]byte("abc")); got != fileCID {

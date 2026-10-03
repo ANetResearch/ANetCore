@@ -135,7 +135,8 @@ func TestVEC_DELEGATE_2(t *testing.T) {
 	}
 	// Key 6 (payment, the prepayment) is retired in 0.3.0 (core G6).
 	assertKeys(t, "delegation", b, []uint64{1, 2, 3, 4, 5, 7, 8})
-	// Re-pinned without key 6; cross-checked with the independent encoder of golden/py/gen_v016.py.
+	// Re-pinned without key 6; golden/py/test_gen_v016.py (hpp_go_pins) checks it against the
+	// independent encoder.
 	const wantCID = "bafyreigtnplj2z3v4lgrxuwzbfj7vbatwnsps434fyzrw256isumge6x44"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("delegation wire CID\n got  %s\n want %s", got, wantCID)
@@ -171,7 +172,7 @@ func TestVEC_RESULT_2(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertKeys(t, "result", b, []uint64{1, 2, 3, 4, 5})
-	// Cross-checked with the independent encoder of golden/py/gen_v016.py (cbor, cid).
+	// golden/py/test_gen_v016.py (hpp_go_pins) checks it against the independent encoder.
 	const wantCID = "bafyreidvksgikd2irratvzdboplknauyhsewiq72m6ljbvwc4dvaulxpla"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)

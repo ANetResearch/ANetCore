@@ -44,8 +44,8 @@ func supplyEpoch1(t *testing.T) ael.SupplyEpoch {
 // SUPPLY-EPOCH-1: the ael anet.supply.epoch record (VersionMajor2) a hub publishes, signed by the
 // hub (here the conformance identity, a toad-0 identity like a hub's): its bytes, id and signature,
 // pinned; and a payload with any member beyond the six is refused even under a good signature
-// (HPP §2.3). The pinned bytes were cross-checked with the independent encoder of
-// golden/py/gen_v016.py.
+// (HPP §2.3). golden/py/test_gen_v016.py (hpp_go_pins) checks the pinned bytes against the
+// independent encoder.
 func TestSUPPLY_EPOCH_1(t *testing.T) {
 	c := identity.SuiteController()
 	p := supplyEpoch1(t)

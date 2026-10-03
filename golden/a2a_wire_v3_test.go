@@ -15,7 +15,8 @@ import (
 
 // CARD-1: the extended card request and answer (L39 anet.card.get/1, anet.card/1). A request is
 // the empty map and nothing else; an answer is exactly one of a card (at most 64 KiB) and a known
-// error. The pinned bytes were cross-checked with the independent encoder of golden/py/gen_v016.py.
+// error. golden/py/test_gen_v016.py (hpp_go_pins) checks the pinned bytes against the independent
+// encoder.
 func TestCARD_1(t *testing.T) {
 	if delegation.TypeCardGet != "anet.card.get/1" || delegation.TypeCard != "anet.card/1" {
 		t.Fatalf("inner types %q, %q", delegation.TypeCardGet, delegation.TypeCard)

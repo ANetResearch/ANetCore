@@ -1592,6 +1592,52 @@ def ev2_receipt() -> dict:
     return {"task": tk, "kel": kel, "body": body, "sig": sig, "wire": wire}
 
 
+def hpp_go_pins() -> dict:
+    """The bytes that the gen "go" vectors of this area (CARD-1, TASKDOC-3, SUPPLY-EPOCH-1) and the
+    0.2 completion vectors carrying the EV2-1 receipt (VEC_RESULT_1, VEC_RESULT_2, VEC_DELEGATE_2)
+    pin in their Go tests, computed here independently; test_gen_v016.py checks that each value is
+    a literal of the Go test named."""
+    pins = {}
+    card = b'{"name":"golden","capabilities":{"extendedAgentCard":true}}'
+    pins["golden/a2a_wire_v3_test.go"] = [b16(cbor({1: card})), b16(cbor({2: "not_configured"})), b16(cbor({2: "busy"}))]
+
+    def sd(role):
+        return seed("TASKDOC-3", role)
+    file_cid = "bafkreif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu"
+    args = '{"prompt":"describe it","$files":[{"name":"a.txt","mime":"text/plain","size":3,"cid":"' + file_cid + '"}]}'
+    goal = "invoke capability image.caption"
+
+    def ctx(k, v):
+        return {1: k, 2: v, 4: "text", 5: "private"}
+    rc = sha256(requester_commit_preimage(SUITE_AID, sd("rsalt")))
+    td = cbor({1: {1: 1}, 4: [{10: {1: goal, 3: goal}, 11: [{1: "image.caption", 2: "capability", 3: "must"}],
+                               13: [{1: "args", 2: args, 4: "json"}, ctx("anet.nonce", b64u(sd("nonce")[:16])),
+                                    ctx("anet.requester_commit", b64u(rc)), ctx("anet.review_key", b64u(ed25519_public(sd("review-key"))))]}]})
+    pins["golden/taskdoc_v3_test.go"] = [b16(td), cid(td)]
+
+    # SUPPLY-EPOCH-1 states the LIAB-1 tree; the hub is the conformance identity.
+    liab = gen_liab_1()["build"]
+    payload = {"v": 2, "from_day": liab["to_day"] - 6, "to_day": liab["to_day"], "root": liab["root"],
+               "outstanding": liab["outstanding"], "depth": liab["depth"]}
+    genesis = cid(cbor("anet:ael:genesis"))
+    rec = {1: SUITE_AID, 2: 0, 3: genesis, 4: "anet.supply.epoch", 5: 2, 6: payload, 7: (liab["to_day"] + 1) * 86400000,
+           8: SUITE_AID, 9: 0}
+    pre = cbor(rec)
+    sig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), pre)
+    pins["golden/supply_epoch_test.go"] = [b16(pre), b16(sig), b16(cbor({**rec, 11: cid(pre), 12: sig}))]
+
+    r = ev2_receipt()
+    deliverable, wire, kel = r["task"]["deliverable"], r["wire"], r["kel"].wire()
+    meta = b'{"a2a.serviceParameters":{"A2A-Version":"1.0"}}'
+    pins["golden/wire_test.go"] = [cid(cbor({1: "done", 2: deliverable, 3: wire}))]
+    gtd = {1: {1: 1}, 4: [{10: {1: "golden task", 3: "describe the image"}}]}
+    gsig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), cbor(gtd))
+    att = {1: "a.txt", 2: "text/plain", 3: 3, 4: "bafkreif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu", 5: b"abc"}
+    delegate = {1: cbor(gtd), 2: envelope(SUITE_AID, 0, gsig), 3: kel, 4: "ix-golden-1", 5: [att], 7: "ctx-golden-1", 8: meta}
+    pins["golden/a2a_wire_test.go"] = [cid(cbor({1: "done", 2: deliverable, 3: wire, 4: kel, 5: meta})), cid(cbor(delegate))]
+    return pins
+
+
 @vector("EV2-1", "ANetCore/evidence/testdata/vec-ev2-1.json")
 def gen_ev2_1():
     V = "EV2-1"

@@ -86,7 +86,7 @@ func TestVEC_RESULT_1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Cross-checked with the independent encoder of golden/py/gen_v016.py (cbor, cid).
+	// golden/py/test_gen_v016.py (hpp_go_pins) checks it against the independent encoder.
 	const wantCID = "bafyreif77cc4odlswpsaxjezuhgnssjgal5t25wqsbozwuqnogx62wrmum"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)
