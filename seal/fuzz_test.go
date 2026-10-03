@@ -1,6 +1,6 @@
 package seal
 
-// Fuzz targets for the envelope, the inner message and the key set (ANet docs/notes/0033).
+// Fuzz targets for the envelope, the inner message and the key set (ANet an internal note).
 //
 // Open needs the recipient's private key and a signature to get past its first steps, so the
 // targets fix the recipient to the VEC-SEALED-1 key and the sender to the suite identity:
@@ -38,18 +38,22 @@ type fuzzFixture struct {
 	golden    []byte       // VEC-SEALED-1 envelope
 }
 
+// fuzzMbox is the mailbox signing key of the fixture's key sets, derived from a fixed seed so
+// the seeds are the same in every run.
+var fuzzMbox = Mbox{Epoch: 1, Pub: ed25519.NewKeyFromSeed(seed("mbox")).Public().(ed25519.PublicKey)}
+
 func newFuzzFixture(tb testing.TB) *fuzzFixture {
 	tb.Helper()
-	sk, err := DeriveKeyPair(SuiteX25519, seed("sender-enc"), goldenTS-dayMS, goldenTS+13*dayMS)
+	sk, err := DeriveKeyPair(SuiteX25519, seed("sender-enc"), goldenTS-dayMS, goldenTS+dayMS)
 	if err != nil {
 		tb.Fatal(err)
 	}
-	rk, err := DeriveKeyPair(SuiteX25519, seed("recipient-enc"), goldenTS-dayMS, goldenTS+13*dayMS)
+	rk, err := DeriveKeyPair(SuiteX25519, seed("recipient-enc"), goldenTS-dayMS, goldenTS+dayMS)
 	if err != nil {
 		tb.Fatal(err)
 	}
 	c := identity.SuiteController()
-	set := &EncKeySet{Type: EncKeySetType, AID: c.AID(), Seq: goldenTS, Keys: []EncKey{sk.Public}, IssuedAt: goldenTS}
+	set := &EncKeySet{Type: EncKeySetType, AID: c.AID(), Seq: goldenTS, Keys: []EncKey{sk.Public}, IssuedAt: goldenTS, Mbox: fuzzMbox}
 	signed, err := SignEncKeySet(set, c.Sign)
 	if err != nil {
 		tb.Fatal(err)
@@ -309,7 +313,7 @@ func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 func FuzzEncKeySet(f *testing.F) {
 	fx := newFuzzFixture(f)
 	signed, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: fx.sender.AID(), Seq: goldenTS,
-		Keys: []EncKey{fx.senderKP.Public}, IssuedAt: goldenTS}, fx.sender.Sign)
+		Keys: []EncKey{fx.senderKP.Public}, IssuedAt: goldenTS, Mbox: fuzzMbox}, fx.sender.Sign)
 	if err != nil {
 		f.Fatal(err)
 	}
@@ -321,7 +325,7 @@ func FuzzEncKeySet(f *testing.F) {
 	f.Add(b, true, goldenTS+dayMS)
 	two := NewEncKey(SuiteXWing, bytes.Repeat([]byte{9}, 1216), goldenTS, goldenTS+dayMS)
 	signed2, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: fx.sender.AID(), Seq: goldenTS + 1,
-		Keys: []EncKey{fx.senderKP.Public, two}, IssuedAt: goldenTS}, fx.sender.Sign)
+		Keys: []EncKey{fx.senderKP.Public, two}, IssuedAt: goldenTS, Mbox: fuzzMbox}, fx.sender.Sign)
 	if err != nil {
 		f.Fatal(err)
 	}
