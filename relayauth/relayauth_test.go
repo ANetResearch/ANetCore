@@ -153,6 +153,16 @@ func TestV2ActionsAreDistinctAndSlashFree(t *testing.T) {
 	}
 }
 
+// The replay window has to be short enough to matter and long enough to survive ordinary clock
+// drift. Five minutes is the number the hub enforces on a signed request's X-ANet-TS (and on a
+// session send's); pinning it here means changing it fails a test rather than silently widening
+// the window for every hub that reads the constant.
+func TestReplayWindowIsFiveMinutes(t *testing.T) {
+	if MaxSkewMillis != 5*60*1000 {
+		t.Fatalf("replay window = %dms, want 300000ms — the hub enforces this number too", MaxSkewMillis)
+	}
+}
+
 // The header names are part of the wire: the hub looks up these exact names.
 func TestHeaderNamesArePinned(t *testing.T) {
 	for _, h := range []struct{ got, want string }{
