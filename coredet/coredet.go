@@ -16,9 +16,22 @@ import (
 )
 
 var (
-	encMode cbor.EncMode
-	decMode cbor.DecMode
+	encMode       cbor.EncMode
+	decMode       cbor.DecMode
+	strictDecMode cbor.DecMode
 )
+
+// strictDecOptions are the decoder options of UnmarshalStrict: the CoreDet profile's own (no tags,
+// duplicate map keys rejected) plus an error for a map key the destination struct does not name.
+// ANetLink pins a copy of these options in its own C1 decoder; a test here fixes them field by
+// field so the two cannot drift apart unnoticed.
+func strictDecOptions() cbor.DecOptions {
+	return cbor.DecOptions{
+		TagsMd:            cbor.TagsForbidden,
+		DupMapKey:         cbor.DupMapKeyEnforcedAPF,
+		ExtraReturnErrors: cbor.ExtraDecErrorUnknownField,
+	}
+}
 
 func init() {
 	opts := cbor.CoreDetEncOptions()        // RFC 8949 §4.2
@@ -37,6 +50,11 @@ func init() {
 		panic(fmt.Sprintf("coredet: invalid dec options: %v", err))
 	}
 	decMode = dm
+	sm, err := strictDecOptions().DecMode()
+	if err != nil {
+		panic(fmt.Sprintf("coredet: invalid strict dec options: %v", err))
+	}
+	strictDecMode = sm
 }
 
 // Marshal encodes v as CoreDet-CBOR. It returns an error if v contains NaN or
@@ -78,4 +96,17 @@ func Marshal(v any) ([]byte, error) {
 // (it is an encode property); re-encoding the result with Marshal reproduces canonical bytes.
 func Unmarshal(b []byte, v any) error {
 	return decMode.Unmarshal(b, v)
+}
+
+// UnmarshalStrict decodes CoreDet-CBOR bytes into v like Unmarshal, and also fails when a map
+// carries a key that the destination struct has no field for, at any depth that decodes into a
+// struct. Every object that has a closed key space decodes with it, so a key the reader does not
+// know is refused instead of silently dropped: dropping one is how a writer and a reader end up
+// agreeing on bytes and disagreeing on meaning.
+//
+// Fields typed any, map or cbor.RawMessage still take whatever they are given; a caller that
+// wants those checked decodes them again into a struct. On error v may be partly filled and must
+// not be used.
+func UnmarshalStrict(b []byte, v any) error {
+	return strictDecMode.Unmarshal(b, v)
 }
