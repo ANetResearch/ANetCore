@@ -2638,7 +2638,6 @@
       {"code": "identity_v02"},
       {"code": "rotation_emergency_done"},
       {"code": "notice_stale"},
-      {"code": "publishing"},
       {"code": "old_hub_unacked"},
       {"code": "no_local_task"},
       {"code": "retention_invalid"},
