@@ -272,7 +272,7 @@
       "covers": "the JSON frame of every p2p op; a frame with v = 2 refused; a dack of 107 characters",
       "labels": [],
       "objects": [],
-      "at": [{"repo": "ANet", "path": "module/p2p/testdata/frame-v3.json", "todo": "v030-todo(RC-2)"}]
+      "at": [{"repo": "ANet", "path": "module/p2p/testdata/frame-v3.json"}]
     },
     {
       "id": "LOCAL-1",
