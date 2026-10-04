@@ -48,8 +48,8 @@ var allActions = []string{
 	ActionPoll, ActionAck, ActionRegister, ActionProfile,
 	ActionVisibility, ActionDeregister,
 	ActionBalance, ActionLedger, ActionRedemptions, ActionKeys,
-	ActionSession, ActionRevoke,
-	ActionFedForward, ActionFedBucket, ActionFedCards,
+	ActionSession, ActionRevoke, ActionReview, ActionLiabProof,
+	ActionFedForward, ActionFedBucket, ActionFedCards, ActionFedSettle, ActionFedReviews, ActionFedClear,
 }
 
 // The v2 action strings are wire constants: the hub rebuilds the preimage from its own copy of the
@@ -59,8 +59,8 @@ func TestV2ActionNamesArePinned(t *testing.T) {
 		"poll", "ack", "register", "profile",
 		"visibility", "deregister",
 		"balance", "ledger", "redemptions", "keys",
-		"session", "revoke",
-		"fed_forward", "fed_bucket", "fed_cards",
+		"session", "revoke", "review", "liab_proof",
+		"fed_forward", "fed_bucket", "fed_cards", "fed_settle", "fed_reviews", "fed_clear",
 	}
 	if len(allActions) != len(want) {
 		t.Fatalf("%d actions, want %d", len(allActions), len(want))

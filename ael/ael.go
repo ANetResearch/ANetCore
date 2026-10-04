@@ -59,6 +59,8 @@ func GenesisPrev() string { return genesisPrev }
 
 // EventRecord is one ledger entry (evidence-spec §2.1). Payload is an embedded CoreDet-CBOR
 // data item (C-D5). id (11)/sig (12)/version.minor (13)/corr_id (14) are NOT in the preimage.
+//
+//anet:wire AELRecord
 type EventRecord struct {
 	ChainDID           string   `cbor:"1,keyasint"`
 	Seq                uint64   `cbor:"2,keyasint"`

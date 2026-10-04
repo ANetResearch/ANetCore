@@ -56,6 +56,12 @@ const (
 	ActionSession = "session"
 	// ActionRevoke authenticates POST /mailbox/revoke: the owner revokes capabilities it issued.
 	ActionRevoke = "revoke"
+	// ActionReview authenticates POST /reviews: the reviewer uploads a review (evidence v2) with the
+	// salt that proves it is the requester the receipt committed to.
+	ActionReview = "review"
+	// ActionLiabProof authenticates GET /agents/{aid}/liability-proof, which answers only the AID
+	// itself: its balance leaf and the path to the published supply epoch root.
+	ActionLiabProof = "liab_proof"
 
 	// The actions below are signed by a peer hub with its own identity: every /fed/v3 route is
 	// authenticated like an agent request, under the peer hub's KEL.
@@ -66,6 +72,14 @@ const (
 	ActionFedBucket = "fed_bucket"
 	// ActionFedCards authenticates GET /fed/v3/cards (a peer hub syncs the directory's cards).
 	ActionFedCards = "fed_cards"
+	// ActionFedSettle authenticates POST /fed/v3/settle: the payee's hub forwards a settlement to
+	// the hub that holds the payer's balance.
+	ActionFedSettle = "fed_settle"
+	// ActionFedReviews authenticates GET /fed/v3/reviews (a peer hub syncs stored reviews).
+	ActionFedReviews = "fed_reviews"
+	// ActionFedClear authenticates POST /fed/v3/clear (a peer hub clears what one hub owes the
+	// other).
+	ActionFedClear = "fed_clear"
 )
 
 // validActions holds every Action* constant of this package. A new constant goes here too
@@ -74,8 +88,9 @@ var validActions = map[string]bool{
 	ActionPoll: true, ActionAck: true, ActionRegister: true, ActionProfile: true,
 	ActionVisibility: true, ActionDeregister: true, ActionBalance: true, ActionLedger: true,
 	ActionRedemptions: true, ActionKeys: true,
-	ActionSession: true, ActionRevoke: true,
+	ActionSession: true, ActionRevoke: true, ActionReview: true, ActionLiabProof: true,
 	ActionFedForward: true, ActionFedBucket: true, ActionFedCards: true,
+	ActionFedSettle: true, ActionFedReviews: true, ActionFedClear: true,
 }
 
 // ValidAction reports whether action is a relayauth action of this wire version. A retired action

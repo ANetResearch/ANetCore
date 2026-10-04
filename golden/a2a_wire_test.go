@@ -114,7 +114,7 @@ func goldenTaskDoc(t *testing.T) ([]byte, *tsir.TaskDoc) {
 }
 
 // VEC-DELEGATE-2: a delegation with every field populated, ContextID (7) and Metadata (8)
-// included. Pinned by CID because the object embeds a signed TaskDoc and a KEL; the key set says
+// included; key 6 is retired. Pinned by CID because the object embeds a signed TaskDoc and a KEL; the key set says
 // which field went missing when the CID moves.
 func TestVEC_DELEGATE_2(t *testing.T) {
 	c := identity.SuiteController()
@@ -126,7 +126,6 @@ func TestVEC_DELEGATE_2(t *testing.T) {
 	req := &delegation.DelegateReq{
 		TaskDoc: raw, Envelope: doc.Envelope, KEL: kel, InteractionID: "ix-golden-1",
 		Attachments: goldenAttachments(t),
-		Payment:     []byte(`{"x402Version":2}`),
 		ContextID:   "ctx-golden-1",
 		Metadata:    []byte(goldenMetadata),
 	}
@@ -134,8 +133,11 @@ func TestVEC_DELEGATE_2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertKeys(t, "delegation", b, []uint64{1, 2, 3, 4, 5, 6, 7, 8})
-	const wantCID = "bafyreigmaetwyfizucuxcrtla4o6dycxl7cb6agzlkwm6kjrxkijxdalrm"
+	// Key 6 (payment, the prepayment) is retired in 0.3.0 (core G6).
+	assertKeys(t, "delegation", b, []uint64{1, 2, 3, 4, 5, 7, 8})
+	// Re-pinned without key 6; golden/py/test_gen_v016.py (hpp_go_pins) checks it against the
+	// independent encoder.
+	const wantCID = "bafyreigtnplj2z3v4lgrxuwzbfj7vbatwnsps434fyzrw256isumge6x44"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("delegation wire CID\n got  %s\n want %s", got, wantCID)
 	}
@@ -152,29 +154,17 @@ func TestVEC_DELEGATE_2(t *testing.T) {
 	}
 }
 
-// VEC-RESULT-2: a completion with every field populated, Metadata (5) included.
+// VEC-RESULT-2: a completion with every field populated, Metadata (5) included. The receipt is
+// the evidence v2 receipt of EV2-1, and the completion verifies against the task EV2-1 describes.
 func TestVEC_RESULT_2(t *testing.T) {
 	c := identity.SuiteController()
-	deliverable := []byte(`{"ok":true}`)
-	rc := goldenReceipt(suiteAID)
-	cid, err := anetcid.Sum(deliverable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rc.ResultCID = cid // bound to the deliverable, so the vector also verifies
-	if err := rc.Sign(c); err != nil {
-		t.Fatal(err)
-	}
-	receipt, err := rc.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
+	ev := goldenReceiptV2(t)
 	kel, err := identity.MarshalKEL(c.KEL())
 	if err != nil {
 		t.Fatal(err)
 	}
 	rr := &delegation.ResultResp{
-		Status: delegation.StatusDone, Deliverable: deliverable, Receipt: receipt, KEL: kel,
+		Status: delegation.StatusDone, Deliverable: ev.Deliverable, Receipt: ev.Wire, KEL: kel,
 		Metadata: []byte(goldenMetadata),
 	}
 	b, err := rr.Marshal()
@@ -182,7 +172,8 @@ func TestVEC_RESULT_2(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertKeys(t, "result", b, []uint64{1, 2, 3, 4, 5})
-	const wantCID = "bafyreid3yzaskr7sbwgi2yo5c7sglhu63twrx4lc2qdg64jm4l7hvv2p2i"
+	// golden/py/test_gen_v016.py (hpp_go_pins) checks it against the independent encoder.
+	const wantCID = "bafyreidvksgikd2irratvzdboplknauyhsewiq72m6ljbvwc4dvaulxpla"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)
 	}
@@ -193,8 +184,8 @@ func TestVEC_RESULT_2(t *testing.T) {
 	if string(back.Metadata) != goldenMetadata {
 		t.Errorf("metadata did not round-trip: %q", back.Metadata)
 	}
-	if _, err := delegation.VerifyResultWithKEL(back, c.KEL(), rc.InteractionID, rc.RequesterAID,
-		rc.ProviderAID, rc.CompletedAt); err != nil {
+	if _, err := delegation.VerifyResultForRequest(back, c.KEL(), delegation.ResultCheck{IX: ev.IX, Provider: c.AID(),
+		TaskDoc: ev.TaskDoc, DelegatedDay: ev.CompletedDay, Today: ev.CompletedDay}, ev.CompletedDay*86_400_000); err != nil {
 		t.Errorf("the golden completion must verify: %v", err)
 	}
 }

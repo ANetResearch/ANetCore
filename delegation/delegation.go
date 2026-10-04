@@ -1,18 +1,20 @@
 // Package delegation defines the payloads that ride the Hub relay for a task delegation, plus the
 // verification a provider runs before storing a task and a requester runs before accepting a result.
 //
-//	DelegateReq — a SIGNED TaskDoc (the request) with its detached Envelope and the signer's KEL inline,
-//	              so the provider can verify the signature without any shared registry, and the
-//	              requester-chosen InteractionID both sides key the interaction by.
-//	ResultResp  — the completion: status + the deliverable bytes + the provider-signed Receipt.
+//	DelegateReq — a SIGNED TaskDoc (the request) with its detached Envelope, and the
+//	              requester-chosen InteractionID both sides key the interaction by. The TaskDoc's
+//	              first task carries the task binding (binding.go).
+//	ResultResp  — the completion: status + the deliverable bytes + the provider-signed receipt
+//	              (evidence v2).
 //	ChatMsg     — a conversation message within an interaction.
 //	StatusMsg   — a provider's task-state update (anet.status/1, A2A-DESIGN §3.4).
+//	CardGet,
+//	CardResp    — the extended card request and answer (card.go).
 //
 // All are CoreDet-CBOR and travel as opaque relay payloads; the Hub never decodes them. Verification is
 // end-to-end (VerifyDelegateReqWithKEL for the request and VerifyResultForRequest for the receipt, each
-// against a KEL the receiver resolved; VerifyResultWithKEL is the latter without the request binding,
-// and the older VerifyDelegateReq and VerifyResult read the KEL from the body), so the centralized
-// relay moves bytes it cannot forge.
+// against a KEL the receiver resolved; the older VerifyDelegateReq reads the KEL from the body), so the
+// centralized relay moves bytes it cannot forge.
 package delegation
 
 import (
@@ -50,18 +52,11 @@ type DelegateReq struct {
 	// provider up front). Like KEL/Envelope they are transport, NOT part of the signed TaskDoc/request
 	// CID; each attachment is self-verified by its own content CID.
 	Attachments []Attachment `cbor:"5,keyasint,omitempty"`
-	// Payment is an x402 PaymentPayload (JSON), when this delegation is
-	// paying for itself.
-	//
-	// Beside the TaskDoc rather than inside it, because the TaskDoc is
-	// what the request CID covers and what the receipt anchors: a task is
-	// the same task whether or not it was paid for, and folding the
-	// payment in would make an unpaid retry of the identical work a
-	// different request.
-	Payment []byte `cbor:"6,keyasint,omitempty"`
+	// Key 6 is retired (it was payment, the prepayment the hub's gateway removal took with it; core
+	// G6). It is never assigned again.
 
-	// ContextID is the A2A contextId the requester groups this task under (A2A-DESIGN §3.4). Like
-	// Payment it is outside the signed TaskDoc, so it does not change the request CID. Under wire 2
+	// ContextID is the A2A contextId the requester groups this task under (A2A-DESIGN §3.4). It is
+	// outside the signed TaskDoc, so it does not change the request CID. Under wire 2
 	// the whole DelegateReq is the body of a sealed anet.delegate/1 envelope, and the envelope's
 	// inner signature is what authenticates this field.
 	ContextID string `cbor:"7,keyasint,omitempty"`
@@ -97,7 +92,7 @@ func UnmarshalDelegateReq(b []byte) (*DelegateReq, error) {
 }
 
 // ResultResp is the relayed completion payload: Status is queued/done/failed; when done, Deliverable and
-// the provider-signed Receipt (evidence.Receipt.Marshal) are present.
+// the provider-signed receipt (an evidence.ReceiptWire) are present.
 type ResultResp struct {
 	Status      string `cbor:"1,keyasint"`
 	Deliverable []byte `cbor:"2,keyasint,omitempty"`
@@ -354,126 +349,120 @@ func TaskGoal(td *tsir.TaskDoc) string {
 	return td.Tasks[0].Intent.Summary
 }
 
-// ErrUnverifiable is returned when a completion carries no key history, so
-// its receipt cannot be checked at all. Distinct from a failed check: an
-// older provider produces this, a lying one produces an error.
-// VerifyResultWithKEL returns it (wrapped) when the caller supplies no KEL.
-var ErrUnverifiable = errors.New("delegation: completion carries no provider KEL")
-
-// VerifyResult checks that a completion is the signed answer to the request
-// it claims to answer.
-//
-// The signature alone proves far less than it looks like it proves. It says
-// some provider signed some receipt — not that the receipt belongs to this
-// interaction, that it names us as the requester, or that it covers the
-// bytes actually delivered. A provider could return one result and a valid
-// receipt for a different one, and a caller checking only the signature
-// would accept it. So every field the receipt asserts is bound here to
-// something the caller already knows, and ResultCID is bound to the
-// deliverable's own hash.
-//
-// now is the time the receipt is judged against for key revocation; pass 0
-// to fall back to the conservative rule in identity.VerifyObject.
-//
-// Deprecated: the provider KEL is taken from the completion body, so the provider chooses the key
-// history its own receipt is checked against. Wire-2 receivers use VerifyResultWithKEL with the KEL
-// resolved from the sealed envelope and the peer record (A2A-DESIGN §3.4, C4d).
-func VerifyResult(r *ResultResp, interactionID, requesterAID, providerAID string, now uint64) (*evidence.Receipt, error) {
-	if r == nil || len(r.Receipt) == 0 {
-		return nil, fmt.Errorf("delegation: completion carries no receipt")
-	}
-	if len(r.KEL) == 0 {
-		return nil, ErrUnverifiable
-	}
-	rc, err := evidence.UnmarshalReceipt(r.Receipt)
-	if err != nil {
-		return nil, fmt.Errorf("delegation: undecodable receipt: %w", err)
-	}
-	kel, err := identity.UnmarshalKEL(r.KEL)
-	if err != nil {
-		return nil, fmt.Errorf("delegation: bad provider KEL: %w", err)
-	}
-	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, "", now)
-}
-
-// VerifyResultWithKEL is VerifyResult with the provider KEL supplied by the caller (A2A-DESIGN
-// §3.4, §3.6; review items C4b and C4d). kel is the provider's KEL as resolved from the sealed
-// envelope and the stored peer record; msgTime is the envelope's inner ts in unix milliseconds
-// (0 selects the conservative rule in identity.VerifyObject). The receipt bindings are the same as
-// VerifyResult's: signer, provider, requester, interaction and deliverable hash.
-//
-// The body's KEL field is never used to check the receipt. When present it must be equal to kel or
-// a prefix of it, else the completion is refused with ErrBodyKELMismatch. An empty kel yields an
-// error wrapping ErrUnverifiable: the receipt was not checked, which is a different state from a
-// receipt that failed the check.
-//
-// It does not bind the receipt's RequestCID. A requester that holds the request it sent uses
-// VerifyResultForRequest.
-func VerifyResultWithKEL(r *ResultResp, kel []identity.SignedEvent, interactionID, requesterAID, providerAID string, msgTime uint64) (*evidence.Receipt, error) {
-	return VerifyResultForRequest(r, kel, interactionID, requesterAID, providerAID, "", msgTime)
-}
+// ErrUnverifiable is returned when the caller supplies no provider KEL, so the receipt could not be
+// checked at all. Distinct from a failed check: not knowing and knowing-it-is-false are different
+// states.
+var ErrUnverifiable = errors.New("delegation: no provider KEL to check the receipt against")
 
 // ErrRequestMismatch is returned when a receipt names a request other than the one the caller
 // sent.
 var ErrRequestMismatch = errors.New("delegation: receipt is for another request")
 
-// VerifyResultForRequest is VerifyResultWithKEL that also binds the receipt's RequestCID to
-// requestCID, the CID of the request (TaskDoc) bytes the requester sent (anetcid.Sum over them).
-// An empty requestCID skips that one binding, as for the other identifiers.
+// ErrReceiptMismatch is returned when a receipt is well signed but is not the receipt for this
+// task: another provider, another interaction, another requester or review key, another result,
+// or a day outside the task's.
+var ErrReceiptMismatch = errors.New("delegation: the receipt is not for this task")
+
+// ResultCheck is what a requester holds about a task it sent; a completion's receipt is checked
+// against it (HPP PAY-V8). Every field is required.
+type ResultCheck struct {
+	// IX is the interaction id.
+	IX string
+	// Provider is the AID the task went to: the receipt's signer and provider must both be it.
+	Provider string
+	// TaskDoc is the TaskDoc bytes the requester sent (DelegateReq key 1). Their CID is the
+	// request CID the receipt must name, and their task binding gives the ix_commit,
+	// requester_commit and review_key it must carry.
+	TaskDoc []byte
+	// DelegatedDay is the UTC day the delegation was sent, and Today the UTC day now. The receipt's
+	// completed_day must lie in DelegatedDay − 1 … Today + 1.
+	DelegatedDay uint64
+	Today        uint64
+}
+
+// VerifyResultForRequest checks that a completion is the signed answer to the request the caller
+// sent (HPP PAY-V8) and returns the receipt body.
 //
-// Without it a provider can sign a receipt that names a request never made — the CID of any
-// bytes it likes — for the result it delivered. The receipt verifies, the requester reviews the
-// work, and a third party checking the pair with evidence.VerifyInterlock against those bytes is
-// shown the requester vouching for a request it never sent, while the request it did send no
-// longer matches. A mismatch is ErrRequestMismatch.
-func VerifyResultForRequest(r *ResultResp, kel []identity.SignedEvent, interactionID, requesterAID, providerAID, requestCID string, msgTime uint64) (*evidence.Receipt, error) {
+// The signature alone proves less than it looks like. It says some provider signed some receipt —
+// not that the receipt belongs to this task, carries the commitments this requester chose, or
+// covers the bytes that actually arrived. So every field the receipt asserts is bound to something
+// the caller holds:
+//
+//   - signer == receipt.provider == want.Provider, under kel (the provider's KEL as resolved from
+//     the sealed envelope and the stored peer record) at msgTime (the envelope's inner ts, unix
+//     ms);
+//   - ix_commit == IXCommit(want.IX, the TaskDoc's anet.nonce); requester_commit and review_key
+//     equal the TaskDoc's;
+//   - request_cid == CID(want.TaskDoc) (ErrRequestMismatch);
+//   - result_cid == CID(the deliverable that arrived);
+//   - completed_day in want.DelegatedDay − 1 … want.Today + 1.
+//
+// The body's own KEL (ResultResp key 4) is never used to check the receipt; when present it must
+// be equal to kel or a prefix of it (ErrBodyKELMismatch). With no kel the answer is
+// ErrUnverifiable. Any other refusal means the result is refused (result-refused, engine §4.5).
+func VerifyResultForRequest(r *ResultResp, kel []identity.SignedEvent, want ResultCheck, msgTime uint64) (*evidence.ReceiptBody, error) {
 	if r == nil || len(r.Receipt) == 0 {
 		return nil, fmt.Errorf("delegation: completion carries no receipt")
+	}
+	if want.IX == "" || want.Provider == "" || len(want.TaskDoc) == 0 {
+		return nil, fmt.Errorf("delegation: the check needs the interaction, the provider and the TaskDoc sent")
 	}
 	if len(kel) == 0 {
 		return nil, fmt.Errorf("%w (no resolved provider KEL supplied)", ErrUnverifiable)
 	}
-	rc, err := evidence.UnmarshalReceipt(r.Receipt)
-	if err != nil {
-		return nil, fmt.Errorf("delegation: undecodable receipt: %w", err)
-	}
 	if err := checkBodyKEL(r.KEL, kel); err != nil {
 		return nil, err
 	}
-	return bindReceipt(rc, r.Deliverable, kel, interactionID, requesterAID, providerAID, requestCID, msgTime)
-}
-
-// bindReceipt verifies the receipt signature against kel at msgTime and binds each field the
-// receipt asserts to what the caller knows. An empty interactionID, requesterAID, providerAID or
-// requestCID skips that one binding.
-func bindReceipt(rc *evidence.Receipt, deliverable []byte, kel []identity.SignedEvent, interactionID, requesterAID, providerAID, requestCID string, msgTime uint64) (*evidence.Receipt, error) {
-	if err := rc.Verify(kel, msgTime); err != nil {
+	w, err := evidence.UnmarshalReceiptWire(r.Receipt)
+	if err != nil {
+		return nil, fmt.Errorf("delegation: undecodable receipt: %w", err)
+	}
+	rc, err := w.Verify(kel, msgTime)
+	if err != nil {
 		return nil, fmt.Errorf("delegation: receipt signature invalid: %w", err)
 	}
-	if providerAID != "" && rc.ProviderAID != providerAID {
-		return nil, fmt.Errorf("delegation: receipt signed by %s, but the task went to %s",
-			rc.ProviderAID, providerAID)
+	if rc.Provider != want.Provider {
+		return nil, fmt.Errorf("%w: receipt signed by %s, but the task went to %s", ErrReceiptMismatch, rc.Provider, want.Provider)
 	}
-	if requesterAID != "" && rc.RequesterAID != requesterAID {
-		return nil, fmt.Errorf("delegation: receipt names %s as requester, not us", rc.RequesterAID)
+	var td tsir.TaskDoc
+	if err := coredet.Unmarshal(want.TaskDoc, &td); err != nil {
+		return nil, fmt.Errorf("delegation: the TaskDoc sent does not decode: %w", err)
 	}
-	if interactionID != "" && rc.InteractionID != interactionID {
-		return nil, fmt.Errorf("delegation: receipt is for interaction %s, not %s",
-			rc.InteractionID, interactionID)
+	binding, err := ReadTaskBinding(&td)
+	if err != nil {
+		return nil, fmt.Errorf("delegation: the TaskDoc sent carries no task binding to check the receipt against: %w", err)
 	}
-	if requestCID != "" && rc.RequestCID != requestCID {
-		return nil, fmt.Errorf("%w: it names %s, the request sent was %s", ErrRequestMismatch,
-			rc.RequestCID, requestCID)
+	ixc, err := binding.IXCommit(want.IX)
+	if err != nil {
+		return nil, fmt.Errorf("delegation: ix_commit of %q: %w", want.IX, err)
 	}
-	// The binding that makes the rest worth having: the signature must cover
-	// the bytes that actually arrived.
-	cid, err := anetcid.Sum(deliverable)
+	switch {
+	case !equal32(rc.IXCommit, ixc):
+		return nil, fmt.Errorf("%w: its ix_commit is not that of interaction %s", ErrReceiptMismatch, want.IX)
+	case !equal32(rc.RequesterCommit, binding.RequesterCommit):
+		return nil, fmt.Errorf("%w: its requester_commit is not the one this requester sent", ErrReceiptMismatch)
+	case !equal32(rc.ReviewKey, binding.ReviewKey):
+		return nil, fmt.Errorf("%w: its review_key is not the one this requester sent", ErrReceiptMismatch)
+	}
+	requestCID, err := anetcid.Sum(want.TaskDoc)
 	if err != nil {
 		return nil, err
 	}
-	if rc.ResultCID != cid {
-		return nil, fmt.Errorf("delegation: receipt covers %s but the deliverable hashes to %s",
-			rc.ResultCID, cid)
+	if rc.RequestCID != requestCID {
+		return nil, fmt.Errorf("%w: it names %s, the request sent was %s", ErrRequestMismatch, rc.RequestCID, requestCID)
+	}
+	// The binding that makes the rest worth having: the signature must cover the bytes that
+	// actually arrived.
+	resultCID, err := anetcid.Sum(r.Deliverable)
+	if err != nil {
+		return nil, err
+	}
+	if rc.ResultCID != resultCID {
+		return nil, fmt.Errorf("%w: receipt covers %s but the deliverable hashes to %s", ErrReceiptMismatch, rc.ResultCID, resultCID)
+	}
+	if rc.CompletedDay+1 < want.DelegatedDay || rc.CompletedDay > want.Today+1 {
+		return nil, fmt.Errorf("%w: completed on day %d, the task ran from day %d to day %d", ErrReceiptMismatch,
+			rc.CompletedDay, want.DelegatedDay, want.Today)
 	}
 	return rc, nil
 }

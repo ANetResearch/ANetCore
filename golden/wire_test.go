@@ -22,7 +22,6 @@ import (
 	"github.com/ANetResearch/ANetCore/ael"
 	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/delegation"
-	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/ANetResearch/ANetCore/payment"
 )
@@ -54,105 +53,6 @@ func TestVEC_SUITE_IDENTITY_1(t *testing.T) {
 	}
 }
 
-func goldenReceipt(provider string) *evidence.Receipt {
-	return &evidence.Receipt{
-		InteractionID: "ix-golden-1",
-		RequesterAID:  "did:anet:golden-requester",
-		ProviderAID:   provider,
-		RequestCID:    "bafyreigoldenrequest",
-		ResultCID:     "bafyreigoldenresult",
-		CompletedAt:   1767225600000,
-	}
-}
-
-// VEC-RECEIPT-1: the provider-signed completion proof.
-//
-// The preimage is pinned as well as the CID because they fail differently.
-// A changed CID says something moved; the preimage hex says which byte.
-func TestVEC_RECEIPT_1(t *testing.T) {
-	rc := goldenReceipt(plainAID)
-	pre, err := rc.CanonicalPreimage()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const wantPre = "a6016b69782d676f6c64656e2d310278196469643a616e65743a676f6c64656e2d72657175657374657203783b62616679726569636733706165756f326e74346e3537356164676e6f76747232793761697a7469373634336678686b367a626d6961616137713779047462616679726569676f6c64656e72657175657374057362616679726569676f6c64656e726573756c74061b0000019b76daa800"
-	if got := hex.EncodeToString(pre); got != wantPre {
-		t.Errorf("receipt preimage\n got  %s\n want %s", got, wantPre)
-	}
-	const wantCID = "bafyreigtf7cdis7ixmicflpcjguilxuw4swic74dd23vkqqsidbuxp56oe"
-	cid, err := rc.CID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cid != wantCID {
-		t.Errorf("receipt CID\n got  %s\n want %s", cid, wantCID)
-	}
-}
-
-// VEC-RECEIPT-WIRE-1: the receipt as it actually travels, signature and all.
-//
-// Separate from the preimage vector, and this is the one that would have
-// caught a bug the org credential shipped with: Envelope is cbor:"-", so
-// marshalling the object alone silently drops the signature and every
-// receipt arrives unsigned. The preimage vector cannot see that — the
-// envelope is not in the preimage, by design. Only the wire form can.
-func TestVEC_RECEIPT_WIRE_1(t *testing.T) {
-	rc := goldenReceipt(suiteAID)
-	c := identity.SuiteController()
-	if err := rc.Sign(c); err != nil {
-		t.Fatal(err)
-	}
-	const wantSig = "63bcfe645859e261136ad82adf1a5901abd3860da9939d4a7352758618e98fdc" +
-		"3cefd10635e02a98999cab6f9f04421aac6f42e4d275b249a3fab350d0616501"
-	if got := hex.EncodeToString(rc.Envelope.Sig); got != wantSig {
-		t.Errorf("receipt signature\n got  %s\n want %s", got, wantSig)
-	}
-	wire, err := rc.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const wantWireCID = "bafyreibxhcta2n225rc2rmoma5mfbhaypfaljbuwpjd2sdclawemzx4uc4"
-	if got := anetcid.MustSum(wire); got != wantWireCID {
-		t.Errorf("receipt wire CID\n got  %s\n want %s", got, wantWireCID)
-	}
-	// And it must survive the round trip carrying its signature.
-	back, err := evidence.UnmarshalReceipt(wire)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if back.Envelope == nil {
-		t.Fatal("the signature did not survive the wire — every receipt would arrive unsigned")
-	}
-	if err := back.Verify(c.KEL(), rc.CompletedAt); err != nil {
-		t.Errorf("the round-tripped receipt must still verify: %v", err)
-	}
-}
-
-// VEC-REVIEW-1: the requester-signed rating, anchored to a receipt CID.
-func TestVEC_REVIEW_1(t *testing.T) {
-	rv := &evidence.Review{
-		InteractionID: "ix-golden-1",
-		ReviewerAID:   "did:anet:golden-requester",
-		SubjectAID:    plainAID,
-		ReceiptCID:    "bafyreigtf7cdis7ixmicflpcjguilxuw4swic74dd23vkqqsidbuxp56oe",
-		Rating:        5,
-		Comment:       "golden",
-		CreatedAt:     1767225600000,
-	}
-	pre, err := rv.CanonicalPreimage()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const wantPre = "a7016b69782d676f6c64656e2d3102783b62616679726569636733706165756f326e74346e3537356164676e6f76747232793761697a7469373634336678686b367a626d69616161377137790378196469643a616e65743a676f6c64656e2d72657175657374657204050566676f6c64656e06783b6261667972656967746637636469733769786d6963666c70636a6775696c7875773473776963373464643233766b71717369646275787035366f65071b0000019b76daa800"
-	if got := hex.EncodeToString(pre); got != wantPre {
-		t.Errorf("review preimage\n got  %s\n want %s", got, wantPre)
-	}
-	const wantCID = "bafyreifgduxrtwuxzawpoq4wymaygk6joaqjrhewow3y6e4rw7grtuwfqm"
-	if got := anetcid.MustSum(pre); got != wantCID {
-		t.Errorf("review CID\n got  %s\n want %s", got, wantCID)
-	}
-}
-
 // VEC-CHATMSG-1: every field of the message type that drifted.
 //
 // All seven keys populated on purpose. The drift was keys 4-7 existing on
@@ -175,24 +75,19 @@ func TestVEC_CHATMSG_1(t *testing.T) {
 	}
 }
 
-// VEC-RESULT-1: the completion payload carrying deliverable and receipt.
+// VEC-RESULT-1: the completion payload carrying deliverable and receipt. The receipt is the
+// evidence v2 receipt of the golden vector EV2-1 (goldenReceiptV2).
 func TestVEC_RESULT_1(t *testing.T) {
-	rc := goldenReceipt(suiteAID)
-	if err := rc.Sign(identity.SuiteController()); err != nil {
-		t.Fatal(err)
-	}
-	receipt, err := rc.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
+	ev := goldenReceiptV2(t)
 	rr := &delegation.ResultResp{
-		Status: delegation.StatusDone, Deliverable: []byte(`{"ok":true}`), Receipt: receipt,
+		Status: delegation.StatusDone, Deliverable: ev.Deliverable, Receipt: ev.Wire,
 	}
 	b, err := rr.Marshal()
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantCID = "bafyreibeqvgtgbtcyrlys4okd3s3qnt3xcaj6hfc5yg24rwkjx5h7zmwse"
+	// golden/py/test_gen_v016.py (hpp_go_pins) checks it against the independent encoder.
+	const wantCID = "bafyreif77cc4odlswpsaxjezuhgnssjgal5t25wqsbozwuqnogx62wrmum"
 	if got := anetcid.MustSum(b); got != wantCID {
 		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)
 	}
@@ -288,51 +183,6 @@ func goldenAuthorization() *payment.Authorization {
 		IssuedAt:      1767225600000,
 		NotAfter:      1767225900000,
 		InteractionID: "ix-golden-1",
-	}
-}
-
-// VEC-PAYMENT-VOUCHER-1: a hub's signed statement that work is paid for,
-// carried by the buyer to the provider.
-//
-// This vector is load-bearing in an unusual way. The voucher is the only
-// object in the suite where the party that verifies it (the provider) and
-// the party that issued it (the hub) never speak during the exchange —
-// the buyer walks it between them. There is no round trip in which a
-// mismatch could be noticed and retried: a provider computing a different
-// preimage than the hub signed simply refuses paid work, and the buyer,
-// who has already been charged, is the one holding the loss.
-func TestVEC_PAYMENT_VOUCHER_1(t *testing.T) {
-	v := &payment.Voucher{
-		AuthID:     "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4",
-		Payer:      plainAID,
-		PayTo:      "did:anet:golden-provider",
-		Capability: "image.caption",
-		Amount:     1250,
-		Network:    payment.CreditNetwork("did:anet:golden-hub"),
-		NotAfter:   1767225900000,
-		Nonce:      "golden-voucher-nonce",
-	}
-	pre, err := v.CanonicalPreimage()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const wantCID = "bafyreih2ahmnrfe6fiq3xz5rawhsv2ao5ma5mmnqlpmav4x37v5lf4hez4"
-	if got := anetcid.MustSum(pre); got != wantCID {
-		t.Errorf("voucher CID\n got  %s\n want %s", got, wantCID)
-	}
-
-	// ArgsCID is optional and omitempty, so a voucher that pins arguments
-	// must NOT collide with one that does not. If omitempty were dropped,
-	// the empty string would encode and every existing voucher id would
-	// change silently.
-	pinned := *v
-	pinned.ArgsCID = "bafyreiaoua3g6ex7ltybwopp4pvxlvfhp6k5zxwlrnlb4vlv3iw3apgoy4"
-	pinnedPre, err := pinned.CanonicalPreimage()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if anetcid.MustSum(pinnedPre) == wantCID {
-		t.Error("a voucher pinning its arguments must not share an id with one that does not")
 	}
 }
 

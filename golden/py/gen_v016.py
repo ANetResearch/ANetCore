@@ -1952,9 +1952,14 @@ def relayauth3_pins() -> list[tuple[str, str]]:
         ("keys", "agent", "POST", "/agents/" + a + "/keys", b'{"prev_seq":0}'),
         ("session", "agent", "POST", "/relay/session", b'{"epk":"' + b"A" * 43 + b'"}'),
         ("revoke", "agent", "POST", "/mailbox/revoke", b'{"cap_ids":["' + b"A" * 22 + b'"]}'),
+        ("review", "agent", "POST", "/reviews", b'{"receipt":"oQE","review":"oQE","rsalt":"' + b"A" * 43 + b'"}'),
+        ("liab_proof", "agent", "GET", "/agents/" + a + "/liability-proof?to_day=20454", b""),
         ("fed_forward", "peer-hub", "POST", "/fed/v3/forward", b"\xa6\x01\x02"),
         ("fed_bucket", "peer-hub", "POST", "/fed/v3/directory:bucket", b'{"prefix":"AA","bits":8}'),
         ("fed_cards", "peer-hub", "GET", "/fed/v3/cards?cursor=0", b""),
+        ("fed_settle", "peer-hub", "POST", "/fed/v3/settle", b'{"x402Version":2}'),
+        ("fed_reviews", "peer-hub", "GET", "/fed/v3/reviews?cursor=0", b""),
+        ("fed_clear", "peer-hub", "POST", "/fed/v3/clear", b'{"receipts":[]}'),
     ]
     signer_aid = {"agent": SS_AGENT_AID, "peer-hub": SS_OTHER_HUB_AID}
     out = []
@@ -1962,6 +1967,325 @@ def relayauth3_pins() -> list[tuple[str, str]]:
         pre = relayauth_preimage(action, signer_aid[signer], SS_HUB_AID, SS_TS, method, target, body)
         out.append((pre, b16(ed25519_sign(seed("RELAYAUTH-3", signer), pre.encode("ascii")))))
     return out
+
+
+# --- HPP: evidence v2 (EV2-1, REVIEW-2) ---------------------------------------------------------
+#
+# ReceiptBody (core §2.9): 0 "anet.receipt/2", 1 ix_commit (L27), 2 requester_commit (L28),
+# 3 review_key, 4 provider, 5 request_cid, 6 result_cid, 7 completed_day. ReceiptWire {1: body bstr,
+# 2: aobj envelope {1 signer_aid, 2 key_state_seq, 3 alg -8, 4 sig}}; the provider's identity key
+# signs the body bytes (L29). ReviewBody: 0 "anet.review/2", 1 receipt_cid, 2 subject, 3 rating,
+# 4 comment (absent when empty), 5 created_day; ReviewWire {1: body, 2: pub, 3: sig}, signed by the
+# one-time review key (L30). ReviewAttBody: 0 "anet.review-att/1", 1 review_cid, 2 receipt_cid,
+# 3 subject, 4 tag (L31), 5 tag_key_id, 6 day, 7 hub; ReviewAttWire like ReceiptWire, signed by the
+# hub (L32). receipt_cid and review_cid are the CIDs of the body bytes (CORE-K12).
+#
+# The provider is the frozen conformance identity (identity/suite.go: icp of the seeds
+# SHA-256("anet-suite-identity-v1/cur"), ".../nxt", toad 0, ts 1760000000000), so the Go test signs
+# with the real code path; the review key, the salt, the nonce, the tag key and the attesting hub
+# come from seed(<vector id>, <role>).
+
+RECEIPT_TYPE = "anet.receipt/2"
+REVIEW_TYPE = "anet.review/2"
+REVIEW_ATT_TYPE = "anet.review-att/1"
+IX_LABEL = b"anet-receipt-ix/v2"
+REQUESTER_LABEL = b"anet-receipt-requester/v2"
+REVIEW_TAG_LABEL = b"anet-review-tag/v1"
+SETTLE_GUARD_LABEL = b"anet-settle-guard/v1"
+PAY_BIND_LABEL = b"anet/x402-bind/v1"
+SUITE_AID = "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke"
+SUITE_TS = 1760000000000
+EV2_DAY = 20454  # 2026-01-01
+ALG_EDDSA = -8
+
+
+def b64u(b: bytes) -> str:
+    """base64url without padding (CORE-E5)."""
+    return base64.urlsafe_b64encode(bytes(b)).rstrip(b"=").decode("ascii")
+
+
+def _commit_text(*fields: str):
+    """CORE-E9 plus "not empty": the text fields of an evidence commitment."""
+    for f in fields:
+        if not f:
+            raise GoldenError("an evidence commitment field is empty")
+    _no_nul(*fields)
+
+
+def ix_commit_preimage(ix: str, nonce: str) -> bytes:
+    """L27: "anet-receipt-ix/v2" 0x00 ix 0x00 anet.nonce (as written, not decoded)."""
+    _commit_text(ix, nonce)
+    return IX_LABEL + b"\x00" + ix.encode("utf-8") + b"\x00" + nonce.encode("utf-8")
+
+
+def requester_commit_preimage(requester_aid: str, rsalt: bytes) -> bytes:
+    """L28: "anet-receipt-requester/v2" 0x00 requester_aid 0x00 rsalt(32)."""
+    _commit_text(requester_aid)
+    if len(rsalt) != 32:
+        raise GoldenError("rsalt is 32 bytes")
+    return REQUESTER_LABEL + b"\x00" + requester_aid.encode("utf-8") + b"\x00" + bytes(rsalt)
+
+
+def review_tag_message(reviewer_aid: str, subject_aid: str) -> bytes:
+    """L31: the HMAC message "anet-review-tag/v1" 0x00 reviewer_aid 0x00 subject_aid."""
+    _commit_text(reviewer_aid, subject_aid)
+    return REVIEW_TAG_LABEL + b"\x00" + reviewer_aid.encode("utf-8") + b"\x00" + subject_aid.encode("utf-8")
+
+
+def review_tag(key: bytes, reviewer_aid: str, subject_aid: str) -> bytes:
+    if len(key) != 32:
+        raise GoldenError("a review tag key is 32 bytes")
+    return hmac_sha256(key, review_tag_message(reviewer_aid, subject_aid))[:16]
+
+
+def settle_guard_preimage(payer: str, pay_bind: str) -> bytes:
+    """L33: "anet-settle-guard/v1" 0x00 payer 0x00 pay_bind."""
+    _commit_text(payer, pay_bind)
+    return SETTLE_GUARD_LABEL + b"\x00" + payer.encode("utf-8") + b"\x00" + pay_bind.encode("utf-8")
+
+
+def pay_bind_preimage(ix: str, task_nonce: str) -> bytes:
+    """L34 (carried): "anet/x402-bind/v1" 0x00 ix 0x00 taskNonce; PayBind is the hex of its SHA-256."""
+    _no_nul(ix, task_nonce)
+    return PAY_BIND_LABEL + b"\x00" + ix.encode("utf-8") + b"\x00" + task_nonce.encode("utf-8")
+
+
+def suite_kel() -> KelLog:
+    cur = sha256(b"anet-suite-identity-v1/cur")
+    nxt = sha256(b"anet-suite-identity-v1/nxt")
+    kel = KelLog().add(kel_icp(cur, nxt, SUITE_TS, 0), cur)
+    if kel.aid != SUITE_AID:
+        raise GoldenError("the conformance identity moved: %s" % kel.aid)
+    return kel
+
+
+def envelope(aid: str, seq: int, sig: bytes) -> dict:
+    return {1: aid, 2: seq, 3: ALG_EDDSA, 4: sig}
+
+
+def ev2_task() -> dict:
+    """The EV2-1 task as its requester holds it: ix, the binding contexts and the TaskDoc bytes."""
+    V = "EV2-1"
+    ix = "ix-golden-1"
+    nonce = b64u(seed(V, "nonce")[:16])
+    requester = aid_for(V, "requester")
+    rsalt = seed(V, "rsalt")
+    review_seed = seed(V, "review-key")
+    review_pub = ed25519_public(review_seed)
+    rcommit = sha256(requester_commit_preimage(requester, rsalt))
+
+    def ctx(k, v):
+        return {1: k, 2: v, 4: "text", 5: "private"}
+    # tsir.TaskDoc {1 version {1 major}, 4 tasks [{10 intent {1 summary, 3 body}, 13 contexts}]}
+    taskdoc = cbor({1: {1: 1}, 4: [{10: {1: "caption", 3: "caption the image"},
+                                    13: [ctx("anet.nonce", nonce), ctx("anet.requester_commit", b64u(rcommit)),
+                                         ctx("anet.review_key", b64u(review_pub))]}]})
+    deliverable = b'{"ok":true}'
+    return {"ix": ix, "nonce": nonce, "requester": requester, "rsalt": rsalt, "review_seed": review_seed,
+            "review_pub": review_pub, "requester_commit": rcommit, "taskdoc": taskdoc, "request_cid": cid(taskdoc),
+            "deliverable": deliverable, "result_cid": cid(deliverable)}
+
+
+def ev2_receipt() -> dict:
+    """The EV2-1 receipt: body, signature by the conformance identity, wire."""
+    tk = ev2_task()
+    kel = suite_kel()
+    body = cbor({0: RECEIPT_TYPE, 1: sha256(ix_commit_preimage(tk["ix"], tk["nonce"])), 2: tk["requester_commit"],
+                 3: tk["review_pub"], 4: kel.aid, 5: tk["request_cid"], 6: tk["result_cid"], 7: EV2_DAY})
+    sig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), body)
+    wire = cbor({1: body, 2: envelope(kel.aid, 0, sig)})
+    return {"task": tk, "kel": kel, "body": body, "sig": sig, "wire": wire}
+
+
+def hpp_go_pins() -> dict:
+    """The bytes that the gen "go" vectors of this area (CARD-1, TASKDOC-3, SUPPLY-EPOCH-1) and the
+    0.2 completion vectors carrying the EV2-1 receipt (VEC_RESULT_1, VEC_RESULT_2, VEC_DELEGATE_2)
+    pin in their Go tests, computed here independently; test_gen_v016.py checks that each value is
+    a literal of the Go test named."""
+    pins = {}
+    card = b'{"name":"golden","capabilities":{"extendedAgentCard":true}}'
+    pins["golden/a2a_wire_v3_test.go"] = [b16(cbor({1: card})), b16(cbor({2: "not_configured"})), b16(cbor({2: "busy"}))]
+
+    def sd(role):
+        return seed("TASKDOC-3", role)
+    file_cid = "bafkreif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu"
+    args = '{"prompt":"describe it","$files":[{"name":"a.txt","mime":"text/plain","size":3,"cid":"' + file_cid + '"}]}'
+    goal = "invoke capability image.caption"
+
+    def ctx(k, v):
+        return {1: k, 2: v, 4: "text", 5: "private"}
+    rc = sha256(requester_commit_preimage(SUITE_AID, sd("rsalt")))
+    td = cbor({1: {1: 1}, 4: [{10: {1: goal, 3: goal}, 11: [{1: "image.caption", 2: "capability", 3: "must"}],
+                               13: [{1: "args", 2: args, 4: "json"}, ctx("anet.nonce", b64u(sd("nonce")[:16])),
+                                    ctx("anet.requester_commit", b64u(rc)), ctx("anet.review_key", b64u(ed25519_public(sd("review-key"))))]}]})
+    pins["golden/taskdoc_v3_test.go"] = [b16(td), cid(td)]
+
+    # SUPPLY-EPOCH-1 states the LIAB-1 tree; the hub is the conformance identity.
+    liab = gen_liab_1()["build"]
+    payload = {"v": 2, "from_day": liab["to_day"] - 6, "to_day": liab["to_day"], "root": liab["root"],
+               "outstanding": liab["outstanding"], "depth": liab["depth"]}
+    genesis = cid(cbor("anet:ael:genesis"))
+    rec = {1: SUITE_AID, 2: 0, 3: genesis, 4: "anet.supply.epoch", 5: 2, 6: payload, 7: (liab["to_day"] + 1) * 86400000,
+           8: SUITE_AID, 9: 0}
+    pre = cbor(rec)
+    sig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), pre)
+    pins["golden/supply_epoch_test.go"] = [b16(pre), b16(sig), b16(cbor({**rec, 11: cid(pre), 12: sig}))]
+
+    r = ev2_receipt()
+    deliverable, wire, kel = r["task"]["deliverable"], r["wire"], r["kel"].wire()
+    meta = b'{"a2a.serviceParameters":{"A2A-Version":"1.0"}}'
+    pins["golden/wire_test.go"] = [cid(cbor({1: "done", 2: deliverable, 3: wire}))]
+    gtd = {1: {1: 1}, 4: [{10: {1: "golden task", 3: "describe the image"}}]}
+    gsig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), cbor(gtd))
+    att = {1: "a.txt", 2: "text/plain", 3: 3, 4: "bafkreif2pall7dybz7vecqka3zo24irdwabwdi4wc55jznaq75q7eaavvu", 5: b"abc"}
+    delegate = {1: cbor(gtd), 2: envelope(SUITE_AID, 0, gsig), 3: kel, 4: "ix-golden-1", 5: [att], 7: "ctx-golden-1", 8: meta}
+    pins["golden/a2a_wire_test.go"] = [cid(cbor({1: "done", 2: deliverable, 3: wire, 4: kel, 5: meta})), cid(cbor(delegate))]
+    return pins
+
+
+@vector("EV2-1", "ANetCore/evidence/testdata/vec-ev2-1.json")
+def gen_ev2_1():
+    V = "EV2-1"
+    r = ev2_receipt()
+    tk, kel, body = r["task"], r["kel"], r["body"]
+    ixc_pre = ix_commit_preimage(tk["ix"], tk["nonce"])
+    rq_pre = requester_commit_preimage(tk["requester"], tk["rsalt"])
+    pb_pre = pay_bind_preimage(tk["ix"], tk["nonce"])
+    pay_bind = b16(sha256(pb_pre))
+    sg_pre = settle_guard_preimage(tk["requester"], pay_bind)
+    wire = r["wire"]
+    env = envelope(kel.aid, 0, r["sig"])
+
+    def rewire(new_body):
+        return b16(cbor({1: new_body, 2: env}))
+
+    # SI-81: the receipt's signature, by the same key and key state, carried by a payment
+    # authorization (PaymentAuthorizationWire {1: auth, 2: envelope}) that pays the task.
+    auth = {1: kel.aid, 2: aid_for(V, "payee"), 3: 7919, 4: "hub:" + aid_for(V, "hub"), 5: "golden-nonce",
+            6: 1767225600000, 7: 1767225900000, 8: pay_bind}
+    moved = cbor({1: auth, 2: env})
+    for ix, nonce in (("a\x00b", "c"), ("a", "b\x00c")):
+        for fn in (ix_commit_preimage, pay_bind_preimage):
+            try:
+                fn(ix, nonce)
+            except GoldenError:
+                continue
+            raise GoldenError("%s accepted a field holding U+0000" % fn.__name__)
+    return {
+        "id": V,
+        "description": ("Evidence v2 receipt: the ix and requester commitments (L27, L28), the settle guard (L33) over the "
+                        "task's PayBind (L34), ReceiptBody and ReceiptWire signed by the provider's identity (L29). The "
+                        "provider is the conformance identity; the other inputs come from the seeds named. Negatives: "
+                        "each must be refused (decode: not a receipt, the hub answers receipt_not_reviewable; signature: "
+                        "does not verify)."),
+        "labels": {"ix_commit": IX_LABEL.decode(), "requester_commit": REQUESTER_LABEL.decode(),
+                   "settle_guard": SETTLE_GUARD_LABEL.decode(), "pay_bind": PAY_BIND_LABEL.decode()},
+        "task": {
+            "ix": tk["ix"],
+            "nonce": tk["nonce"], "nonce_seed": "anet-golden/v016/%s/nonce (first 16 bytes, base64url)" % V,
+            "requester_aid": tk["requester"],
+            "rsalt": b16(tk["rsalt"]),
+            "review_key_seed": b16(tk["review_seed"]), "review_key": b16(tk["review_pub"]),
+            "taskdoc": b16(tk["taskdoc"]), "request_cid": tk["request_cid"],
+            "deliverable": b16(tk["deliverable"]), "result_cid": tk["result_cid"],
+            "completed_day": EV2_DAY,
+        },
+        "provider": {"aid": kel.aid, "kel": b16(kel.wire())},
+        "ix_commit": {"preimage": b16(ixc_pre), "hash": b16(sha256(ixc_pre))},
+        "requester_commit": {"preimage": b16(rq_pre), "hash": b16(sha256(rq_pre))},
+        "pay_bind": {"preimage": b16(pb_pre), "hex": pay_bind},
+        "settle_guard": {"payer": tk["requester"], "pay_bind": pay_bind, "preimage": b16(sg_pre), "hash": b16(sha256(sg_pre))},
+        "receipt": {
+            "body": b16(body), "body_cid": cid(body), "sig": b16(r["sig"]),
+            "envelope": {"signer_aid": kel.aid, "key_state_seq": 0, "alg": ALG_EDDSA},
+            "wire": b16(wire), "verify_at": EV2_DAY * 86400000,
+        },
+        "negatives": [
+            {"name": "sig_byte_changed", "note": "the last byte of the wire (of the signature) changed", "wire": b16(flip(wire)), "refused": "signature"},
+            {"name": "body_byte_changed", "note": "the last byte of completed_day in the body changed, the envelope kept",
+             "wire": rewire(flip(body)), "refused": "signature"},
+            {"name": "ix_commit_dropped", "note": "body without key 1", "wire": rewire(drop_key(body, 1)), "refused": "decode"},
+            {"name": "body_key_8", "note": "body with an unregistered key 8", "wire": rewire(add_key(body, 8, 0)), "refused": "decode"},
+            {"name": "wire_key_3", "note": "wire with an unregistered key 3", "wire": b16(add_key(wire, 3, 0)), "refused": "decode"},
+            {"name": "type_tag_v1", "note": "key 0 is anet.receipt/1", "wire": rewire(cbor({**uncbor(body), 0: "anet.receipt/1"})), "refused": "decode"},
+            {"name": "receipt_signature_on_authorization", "note": "SI-81: the receipt's signature carried by a payment authorization",
+             "authorization_wire": b16(moved), "verify_at": 1767225600001, "refused": "signature"},
+        ],
+        "nul_refused": [
+            {"ix": "a\x00b", "nonce": "c", "note": "refused by the L27 function and by PayBind (L34)"},
+            {"ix": "a", "nonce": "b\x00c", "note": "the same bytes with the boundary moved; refused the same way"},
+        ],
+    }
+
+
+@vector("REVIEW-2", "ANetCore/evidence/testdata/vec-review-2.json")
+def gen_review_2():
+    V = "REVIEW-2"
+    r = ev2_receipt()
+    tk, provider = r["task"], r["kel"].aid
+    receipt_cid = cid(r["body"])
+    body = cbor({0: REVIEW_TYPE, 1: receipt_cid, 2: provider, 3: 5, 4: "准时、清楚", 5: EV2_DAY + 1})
+    sig = ed25519_sign(tk["review_seed"], body)
+    wire = cbor({1: body, 2: tk["review_pub"], 3: sig})
+    tag_key = seed(V, "tag-key")
+    tag = review_tag(tag_key, tk["requester"], provider)
+    hk0, hk1 = seed(V, "hub-k0"), seed(V, "hub-k1")
+    hub = KelLog().add(kel_icp(hk0, hk1, SUITE_TS, 0), hk0)
+    att_body = cbor({0: REVIEW_ATT_TYPE, 1: cid(body), 2: receipt_cid, 3: provider, 4: tag, 5: 1, 6: EV2_DAY + 2, 7: hub.aid})
+    att_sig = ed25519_sign(hk0, att_body)
+    att = cbor({1: att_body, 2: envelope(hub.aid, 0, att_sig)})
+    other = seed(V, "other-key")
+
+    def review_wire(b, key_seed=None, pub=None):
+        key_seed = key_seed or tk["review_seed"]
+        return b16(cbor({1: b, 2: pub or ed25519_public(key_seed), 3: ed25519_sign(key_seed, b)}))
+
+    rv = uncbor(body)
+    return {
+        "id": V,
+        "description": ("Evidence v2 review of the EV2-1 receipt: ReviewBody and ReviewWire signed by the one-time review key (L30); "
+                        "the review tag (L31) of the requester for the provider under a hub tag key; ReviewAttBody and ReviewAttWire "
+                        "signed by a hub (L32). Negatives say which refusal each must get: decode (receipt_not_reviewable), "
+                        "signer (a key other than the receipt's review_key), signature, rating or comment (bad_request), "
+                        "nul (a subject holding U+0000, bad_request, CORE-E9)."),
+        "labels": {"tag": REVIEW_TAG_LABEL.decode()},
+        "receipt": {"wire": b16(r["wire"]), "body_cid": receipt_cid, "provider_kel": b16(r["kel"].wire())},
+        "review": {"key_seed": b16(tk["review_seed"]), "pub": b16(tk["review_pub"]), "body": b16(body),
+                   "review_cid": cid(body), "sig": b16(sig), "wire": b16(wire)},
+        "tag": {"key": b16(tag_key), "reviewer_aid": tk["requester"], "subject_aid": provider,
+                "message": b16(review_tag_message(tk["requester"], provider)), "tag": b16(tag)},
+        "hub": {"aid": hub.aid, "labels": ["anet-golden/v016/%s/hub-k0" % V, "anet-golden/v016/%s/hub-k1" % V], "kel": b16(hub.wire())},
+        "attestation": {"body": b16(att_body), "sig": b16(att_sig), "wire": b16(att), "verify_at": (EV2_DAY + 2) * 86400000},
+        "negatives": [
+            {"name": "another_review_key", "note": "signed by another key, which it carries", "review_wire": review_wire(body, key_seed=other),
+             "refused": "signer"},
+            {"name": "pub_swapped", "note": "carries the receipt's review_key, signed by another key",
+             "review_wire": review_wire(body, key_seed=other, pub=tk["review_pub"]), "refused": "signature"},
+            {"name": "rating_6", "note": "rating 6", "review_wire": review_wire(cbor({**rv, 3: 6})), "refused": "rating"},
+            {"name": "comment_281", "note": "a comment of 281 characters", "review_wire": review_wire(cbor({**rv, 4: "评" * 281})),
+             "refused": "comment"},
+            {"name": "review_key_6", "note": "review body with an unregistered key 6", "review_wire": review_wire(add_key(body, 6, 0)),
+             "refused": "decode"},
+            {"name": "created_day_dropped", "note": "review body without key 5, signed by the review key",
+             "review_wire": review_wire(drop_key(body, 5)), "refused": "decode"},
+            {"name": "sig_byte_changed", "note": "the last byte of the wire (of the signature) changed", "review_wire": b16(flip(wire)),
+             "refused": "signature"},
+            {"name": "subject_nul", "note": "U+0000 in the subject (CORE-E9)", "review_wire": review_wire(cbor({**rv, 2: provider[:8] + "\x00" + provider[8:]})),
+             "refused": "nul"},
+            {"name": "attestation_tag_15", "note": "a 15-byte tag", "attestation_wire": b16(cbor({1: cbor({**uncbor(att_body), 4: tag[:15]}),
+                                                                                               2: envelope(hub.aid, 0, att_sig)})),
+             "refused": "decode"},
+            {"name": "attestation_day_dropped", "note": "attestation body without key 6, signed by the hub",
+             "attestation_wire": b16(cbor({1: drop_key(att_body, 6), 2: envelope(hub.aid, 0, ed25519_sign(hk0, drop_key(att_body, 6)))})),
+             "refused": "decode"},
+            {"name": "attestation_day_changed", "note": "the attestation's day one later (one byte of the body), the signature kept",
+             "attestation_wire": b16(cbor({1: cbor({**uncbor(att_body), 6: EV2_DAY + 3}), 2: envelope(hub.aid, 0, att_sig)})),
+             "refused": "signature"},
+            {"name": "attestation_by_the_provider", "note": "the attestation's body signed by the provider's key under the hub's AID",
+             "attestation_wire": b16(cbor({1: att_body, 2: envelope(hub.aid, 0, ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), att_body))})),
+             "refused": "signature"},
+        ],
+    }
 
 
 # --- HPP: the liability tree (LIAB-1) and the registration proof of work (REGPOW-1) ------------

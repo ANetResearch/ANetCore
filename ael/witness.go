@@ -29,6 +29,8 @@ import (
 // witness did not collude. That is a weaker assumption when the witnesses
 // are parties with no reason to help — a peer hub with its own users, or
 // an agent whose balance is at stake.
+//
+//anet:wire AELHeadAttestation
 type HeadAttestation struct {
 	// ChainDID is whose chain was observed.
 	ChainDID string `cbor:"1,keyasint"`
@@ -46,6 +48,7 @@ type HeadAttestation struct {
 	Envelope *aobj.Envelope `cbor:"-"`
 }
 
+//anet:wire AELHeadAttestation
 type attestationPreimage struct {
 	ChainDID   string `cbor:"1,keyasint"`
 	Seq        uint64 `cbor:"2,keyasint"`
@@ -137,6 +140,7 @@ func (a *HeadAttestation) Verify(kel []identity.SignedEvent, expectWitness strin
 		uint64(now), pre, a.Envelope.Sig)
 }
 
+//anet:wire AELHeadAttestationWire
 type wireAttestation struct {
 	Body     attestationPreimage `cbor:"1,keyasint"`
 	Envelope *aobj.Envelope      `cbor:"2,keyasint"`
@@ -147,10 +151,12 @@ func (a *HeadAttestation) Marshal() ([]byte, error) {
 	return coredet.Marshal(wireAttestation{Body: a.canonical(), Envelope: a.Envelope})
 }
 
-// UnmarshalHeadAttestation decodes a wire attestation.
+// UnmarshalHeadAttestation decodes a wire attestation, strictly: a key the
+// attestation does not define is refused rather than dropped (CORE-E3,
+// CORE-E4).
 func UnmarshalHeadAttestation(b []byte) (*HeadAttestation, error) {
 	var w wireAttestation
-	if err := coredet.Unmarshal(b, &w); err != nil {
+	if err := coredet.UnmarshalStrict(b, &w); err != nil {
 		return nil, err
 	}
 	return &HeadAttestation{

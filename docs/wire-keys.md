@@ -2432,6 +2432,8 @@ or the relayauth text preimage (L22).
 | ANetCore | `(*tsir.TaskDoc).Sign` | TaskDocPreimage |
 | ANetCore | `(*ael.EventRecord).Sign` | AELRecord |
 | ANetCore | `(*ael.HeadAttestation).Sign` | AELHeadAttestation |
+| ANetCore | `(*evidence.ReceiptBody).Sign` | ReceiptBody |
+| ANetCore | `(*evidence.ReviewAttBody).Sign` | ReviewAttBody |
 
 ## Fields that must not hold U+0000
 

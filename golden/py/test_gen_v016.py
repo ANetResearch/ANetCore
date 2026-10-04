@@ -472,6 +472,31 @@ class Repository(unittest.TestCase):
             with self.assertRaises(g.GoldenError):
                 call()
 
+    def test_hpp_go_pins_match_the_go_tests(self):
+        """CARD-1, TASKDOC-3 and SUPPLY-EPOCH-1 are held by Go tests (gen "go"), and so are the 0.2
+        completion vectors that carry the EV2-1 receipt; the bytes they pin must be the ones
+        computed here independently."""
+        for path, values in g.hpp_go_pins().items():
+            src = (g.CORE_DIR / path).read_text(encoding="utf-8")
+            for v in values:
+                self.assertIn('"%s"' % v, src, "%s does not pin %s" % (path, v[:24]))
+
+    def test_evidence_helpers_refuse_nul_and_empty(self):
+        """CORE-E9 (and "not empty") in the independent implementation of L27, L28, L31, L33 and
+        L34: no evidence vector is built on a field that holds U+0000."""
+        for call in (lambda: g.ix_commit_preimage("a\x00b", "c"),
+                     lambda: g.ix_commit_preimage("a", "b\x00c"),
+                     lambda: g.ix_commit_preimage("", "c"),
+                     lambda: g.requester_commit_preimage("r\x00", bytes(32)),
+                     lambda: g.requester_commit_preimage("r", bytes(31)),
+                     lambda: g.review_tag(bytes(32), "r", "s\x00"),
+                     lambda: g.review_tag(bytes(16), "r", "s"),
+                     lambda: g.settle_guard_preimage("p", ""),
+                     lambda: g.pay_bind_preimage("a\x00b", "c")):
+            with self.assertRaises(g.GoldenError):
+                call()
+        self.assertEqual(g.suite_kel().aid, g.SUITE_AID)
+
 
 if __name__ == "__main__":
     unittest.main()

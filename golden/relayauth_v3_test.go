@@ -76,6 +76,13 @@ var ra3Rows = []ra3Row{
 	{relayauth.ActionRevoke, "agent", "POST", "/mailbox/revoke", "7b226361705f696473223a5b2241414141414141414141414141414141414141414141225d7d",
 		"anet-relay/v2/revoke/bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/8iCwniFQMcKqCkCtuYw1dHb4BQ2WdZjZ26TIIbGUibM",
 		"e03dda4f5a4d65f963065945c12b91bd41baac6b15961aff0e8b043182229481be6420346f65428229e78a9485a03442410048c1ffe2e357e6203d7e6d9c0107"},
+	// Hub and payment privacy: the review upload and the liability proof (agent).
+	{relayauth.ActionReview, "agent", "POST", "/reviews", "7b2272656365697074223a226f5145222c22726576696577223a226f5145222c227273616c74223a2241414141414141414141414141414141414141414141414141414141414141414141414141414141414141227d",
+		"anet-relay/v2/review/bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/1ZMPOqrWnPG0oFXHqRFzUA4aZqjv525fWyCabYOT5WA",
+		"1c3fcc895d54bb39b5c1808da7fc9b9972f17f7c15cb47518588813539ffc5e6eadea652c676fe550556f3871ec614e190264ae04942439d71f40afebee57209"},
+	{relayauth.ActionLiabProof, "agent", "GET", "/agents/" + ra3AgentAID + "/liability-proof?to_day=20454", "",
+		"anet-relay/v2/liab_proof/bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/dirWmXPn75gkAYw7eUB4GUhGLDDQU4EWyvPspwjNWEM",
+		"179a4de2b055134f4d918d2789ed5b3536c6ad0a1116c7e6fa3e08ca7934fb1590d7a9566028b01c5179f25e92e133e51130bf7777467b04c200e6edf3576107"},
 	{relayauth.ActionFedForward, "peer-hub", "POST", "/fed/v3/forward", "a60102",
 		"anet-relay/v2/fed_forward/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/6Tqoo1hDOID93zWOkH3AMDNCzyRh4rymndO1zfO86yc",
 		"306b34c8a8e1397da1ec40742eebad7c05ad318a6ef93a1c2959faede22bb1bdb73b27bdbef061a790a76fec0bdff98766bf8098d079fe4a0699f5d072df5504"},
@@ -85,17 +92,22 @@ var ra3Rows = []ra3Row{
 	{relayauth.ActionFedCards, "peer-hub", "GET", "/fed/v3/cards?cursor=0", "",
 		"anet-relay/v2/fed_cards/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/raCoqeEz9zLlBlFAnQMJvYISRTsONrLfA9xRdoAPtVI",
 		"07c29358e3cab28c0eb10bd13388652a9923226b3d726144a5f29966d940206eb3a17beaf92a87a76118326faccaa4f95c4eb41be4697b331ea25bab0d632c06"},
+	// The federation routes of hub and payment privacy (peer hub).
+	{relayauth.ActionFedSettle, "peer-hub", "POST", "/fed/v3/settle", "7b227834303256657273696f6e223a327d",
+		"anet-relay/v2/fed_settle/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/QPEtLOVRuhUpXT66s0-hr0xyt5tDIra6y-Gz0BH28jk",
+		"7e5120b5451f01af9c64baa7d6b01787bcd45dd389222eec470139cdfcc98d020e68ded9c8bd3c4fcee358f27232168d52f943be73e1d2bcbe2af7d830e6190a"},
+	{relayauth.ActionFedReviews, "peer-hub", "GET", "/fed/v3/reviews?cursor=0", "",
+		"anet-relay/v2/fed_reviews/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/7wVGLDMcEPsU2iotGL5X_2YF0xX20DMpNw3yTkQFfko",
+		"5454a3764d2082153d7fb16d3c46ad589d52d528662c236c3a031be62023e71d8ccf25d067d7a23a2d98ae81c5a3bebc8f47dca04c8e6d4796a98ad114f64e04"},
+	{relayauth.ActionFedClear, "peer-hub", "POST", "/fed/v3/clear", "7b227265636569707473223a5b5d7d",
+		"anet-relay/v2/fed_clear/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/Emm6QsmD7tlipy4gFT6EjHBEEFOBtM0-NEsYzGSw7bE",
+		"e2cfb983af964c8f6b88a3ad8d348b4c46b28f7e57210a49c3fd662946d40909229ee0de1b2156210652f81f17f89e06d97496fb2dc9476a5528bbe10f743004"},
 }
 
 // ra3Pending: registered actions whose constant another work item adds, with that item's marker.
 // The item that adds the constant moves the action into ra3Rows with its pinned bytes.
 var ra3Pending = map[string]string{
-	"review":      "v030-todo(PAY-2)",
-	"liab_proof":  "v030-todo(PAY-2)",
-	"fed_settle":  "v030-todo(PAY-2)",
-	"fed_reviews": "v030-todo(PAY-2)",
-	"fed_clear":   "v030-todo(PAY-2)",
-	"fed_status":  "v030-todo(RC-3)",
+	"fed_status": "v030-todo(RC-3)",
 }
 
 func ra3Key(role string) (string, ed25519.PrivateKey) {

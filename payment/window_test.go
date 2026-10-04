@@ -10,8 +10,8 @@ import (
 
 // The validity window is compared without adding the skew to the signer's value. NotAfter +
 // ClockSkew used to overflow for a NotAfter near math.MaxInt64 and wrap negative, so an
-// authorization or voucher meant never to expire was refused as expired at every moment (ANet
-// docs/notes/0033).
+// authorization meant never to expire was refused as expired at every moment (ANet
+// an internal note).
 func TestWindowEdgesDoNotOverflow(t *testing.T) {
 	c := identity.SuiteController()
 	const now = int64(1767225600000)
@@ -22,13 +22,6 @@ func TestWindowEdgesDoNotOverflow(t *testing.T) {
 		}
 		if err := a.Verify(c.KEL(), now); err != nil {
 			t.Errorf("authorization valid until %d refused at %d: %v", notAfter, now, err)
-		}
-		v := &payment.Voucher{AuthID: "a", PayTo: "q", Capability: "cap", Network: "hub:x", NotAfter: notAfter, Nonce: "n"}
-		if err := v.Sign(c); err != nil {
-			t.Fatal(err)
-		}
-		if err := v.Verify(c.KEL(), c.AID(), "q", "cap", "hub:x", now); err != nil {
-			t.Errorf("voucher valid until %d refused at %d: %v", notAfter, now, err)
 		}
 	}
 	// The window still closes: just past NotAfter + ClockSkew, and before IssuedAt - ClockSkew.
@@ -45,12 +38,5 @@ func TestWindowEdgesDoNotOverflow(t *testing.T) {
 		if err := a.Verify(c.KEL(), at); err != nil {
 			t.Errorf("authorization for %d..%d refused at the skew edge %d: %v", a.IssuedAt, a.NotAfter, at, err)
 		}
-	}
-	v := &payment.Voucher{AuthID: "a", PayTo: "q", Capability: "cap", Network: "hub:x", NotAfter: math.MinInt64 + 5, Nonce: "n"}
-	if err := v.Sign(c); err != nil {
-		t.Fatal(err)
-	}
-	if err := v.Verify(c.KEL(), c.AID(), "q", "cap", "hub:x", math.MaxInt64); err == nil {
-		t.Error("voucher long expired accepted")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/dirbox"
+	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/regpow"
 	"github.com/ANetResearch/ANetCore/relayauth"
 )
@@ -29,8 +30,8 @@ func TestPreimageRejectsNUL(t *testing.T) {
 		"L9":  {nulDirHash, ""},          // dirbox h: aid
 		"L19": {nil, "v030-todo(KEL-3)"}, // next-key derivation: aid
 		"L23": {regpowNUL, ""},           // regpow hash: hub_aid, aid
-		"L27": {nil, "v030-todo(PAY-2)"}, // ix_commit: ix, anet.nonce
-		"L28": {nil, "v030-todo(PAY-2)"}, // requester_commit: requester_aid
+		"L27": {nulIXCommit, ""},         // ix_commit: ix, anet.nonce
+		"L28": {nulRequesterCommit, ""},  // requester_commit: requester_aid
 	}
 	r := reg(t)
 	listed := map[string]bool{}
@@ -141,4 +142,25 @@ func regpowNUL(field string) error {
 		return errHub
 	}
 	return errAID
+}
+
+// nulIXCommit puts field into ix and into anet.nonce, one at a time (L27). A field holding U+0000
+// counts as refused only when both positions refuse it; a clean field counts as accepted only when
+// both accept it.
+func nulIXCommit(field string) error {
+	_, errIX := evidence.IXCommit(field, "nonce")
+	_, errNonce := evidence.IXCommit("ix-1", field)
+	if strings.Contains(field, "\x00") {
+		if errIX == nil || errNonce == nil {
+			return nil
+		}
+		return errIX
+	}
+	return errors.Join(errIX, errNonce)
+}
+
+// nulRequesterCommit puts field into requester_aid (L28).
+func nulRequesterCommit(field string) error {
+	_, err := evidence.RequesterCommit(field, make([]byte, evidence.RSaltSize))
+	return err
 }
