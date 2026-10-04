@@ -1950,7 +1950,7 @@
               ]
             },
             {"name": "ledger_hw", "type": "uint", "req": "must"},
-            {"name": "record", "type": "object", "req": "must"}
+            {"name": "record", "type": "b64url", "req": "must"}
           ]
         },
         "reasons": ["proof_unavailable"],
@@ -2738,7 +2738,9 @@
       {"code": "quota_below_default"},
       {"code": "hub_recovery_setup_required"},
       {"code": "hub_running"},
-      {"code": "hub_identity_v02"}
+      {"code": "hub_identity_v02"},
+      {"code": "hub_data_too_new"},
+      {"code": "quota_bad_value"}
     ],
     "x402": [
       {"code": "payee_not_local", "note": "new errorReason"},
