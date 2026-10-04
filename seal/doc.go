@@ -68,6 +68,16 @@
 // holder's over this envelope. A new mailbox key (a new epoch) voids every
 // capability the old one signed.
 //
+// # Delivery tokens
+//
+// The recipient answers an envelope it has decided for good with a dack
+// (dack.go): a 16-byte token, tok(1) "processed" or tok(2) "refused", and a
+// 64-byte encrypted note with an optional reason code and wait, all under the
+// envelope's ack_key. The sender keeps the ack_key of every version it sent and
+// checks a dack with VerifyDAck; it asks a hub about a queued envelope by the
+// key's Handle. Only the two ends hold the ack_key, so nothing between them can
+// make a dack, and every dack has the same length.
+//
 // # Receive path
 //
 // The receive pipeline (engine §4.2) is split into steps. This package

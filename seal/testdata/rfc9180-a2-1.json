@@ -1,5 +1,5 @@
 {
-  "source": "RFC 9180 Appendix A.2.1, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, Base setup (mode 0). pkRm and enc also match crypto/hpke/testdata/rfc9180.json of Go 1.26.",
+  "source": "RFC 9180 Appendix A.2.1, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, Base setup (mode 0), with the exported values of A.2.1.2. pkRm and enc also match crypto/hpke/testdata/rfc9180.json of Go 1.26.",
   "mode": 0,
   "kem_id": 32,
   "kdf_id": 1,
@@ -14,6 +14,23 @@
       "aad": "436f756e742d30",
       "ct": "1c5250d8034ec2b784ba2cfd69dbdb8af406cfe3ff938e131f0def8c8b60b4db21993c62ce81883d2dd1b51a28",
       "pt": "4265617574792069732074727574682c20747275746820626561757479"
+    }
+  ],
+  "exports": [
+    {
+      "exporter_context": "",
+      "L": 32,
+      "exported_value": "4bbd6243b8bb54cec311fac9df81841b6fd61f56538a775e7c80a9f40160606e"
+    },
+    {
+      "exporter_context": "00",
+      "L": 32,
+      "exported_value": "8c1df14732580e5501b00f82b10a1647b40713191b7c1240ac80e2b68808ba69"
+    },
+    {
+      "exporter_context": "54657374436f6e74657874",
+      "L": 32,
+      "exported_value": "5acb09211139c43b3090489a9da433e8a30ee7188ba8b0a9a1ccf0c229283e53"
     }
   ]
 }

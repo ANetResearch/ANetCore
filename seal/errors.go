@@ -46,7 +46,7 @@ const (
 	ReasonAIDMismatch   = "aid-mismatch"           // key set AID, KEL AID and expected AID are not all equal
 	ReasonBadKeySet     = "bad-keyset"             // key set fails its decoding, structure or validity rules (EncKeySet.checkStructure)
 	ReasonNoUsableKey   = "no-usable-key"          // no key in the set is valid now under a supported suite
-	ReasonInvalidInput  = "invalid-input"          // caller passed an object Seal or SignEncKeySet cannot produce a valid encoding from
+	ReasonInvalidInput  = "invalid-input"          // caller passed an object Seal, SignEncKeySet or MakeDAck cannot produce a valid encoding from
 	ReasonInternalError = "internal"               // entropy or encoder failure on the sending side; not a property of any received bytes
 
 	// The first-layer plaintext (Wrap) and the second layer, sealed to the

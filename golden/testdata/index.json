@@ -77,19 +77,19 @@
       "id": "DACK-1",
       "gen": "go+python",
       "owner": "DLV, CUX",
-      "covers": "from SEALED-2A and SEALED-2B: ack_key, handle, tok(1), tok(2), note_key; notes under a fixed nonce (outcome 1 empty, busy 30 s, caller_busy, quota_caller_per_day); a whole dack",
+      "covers": "from SEALED-2A and SEALED-2B: ack_key, handle, tok(1), tok(2), note_key; notes under a fixed nonce (outcome 1 empty, busy 30 s, caller_busy, quota_caller_per_day); a whole dack; VerifyDAck on each and on the negatives (a changed byte, another dack's note, format byte not 0x01, L = 31, non-zero padding, reasons breaking CORE-K19, retry_after over 86 400, wrong key, wrong length); what MakeDAck refuses; RetryBucket",
       "labels": ["L11", "L12", "L13", "L14"],
       "objects": [],
-      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-dack-1.json", "todo": "v030-todo(RC-1)"}]
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-dack-1.json"}]
     },
     {
       "id": "rfc9180",
       "gen": "rfc",
       "owner": "DLV",
-      "covers": "RFC 9180 Appendix A.2.1 (suite 1); the three exports of the appendix are still to be added",
+      "covers": "RFC 9180 Appendix A.2.1 (suite 1): the encryption of sequence 0 and the three exported values of A.2.1.2, which Recipient.Export reproduces (the export the ack_key is)",
       "labels": ["L11"],
       "objects": [],
-      "at": [{"repo": "ANetCore", "path": "seal/testdata/rfc9180-a2-1.json", "rework": "v030-todo(RC-1)"}]
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/rfc9180-a2-1.json"}]
     },
     {
       "id": "KEL-2A",

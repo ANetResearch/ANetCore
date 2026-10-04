@@ -12,7 +12,10 @@ import (
 // Suite 1 is the RFC 9180 ciphersuite 0x0020/0x0001/0x0003. The published
 // vector is run through the same HPKE instantiation Open uses; only the
 // receiving side is exercised, because Go's sender draws its ephemeral key
-// from the system source and cannot reproduce ikmE (§17).
+// from the system source and cannot reproduce ikmE (§17). The recipient
+// context's secret exports must be the RFC's (A.2.1.2): the ack_key is such an
+// export (core §3.2 L11, DLV §7.1 G1). That Seal's sender-side export equals
+// the recipient's is TestSealAckKeyIsTheRecipientsExport.
 func TestRFC9180Suite1Vector(t *testing.T) {
 	raw, err := os.ReadFile("testdata/rfc9180-a2-1.json")
 	if err != nil {
@@ -31,6 +34,11 @@ func TestRFC9180Suite1Vector(t *testing.T) {
 			Ct  string `json:"ct"`
 			Pt  string `json:"pt"`
 		} `json:"encryptions"`
+		Exports []struct {
+			Context string `json:"exporter_context"`
+			L       int    `json:"L"`
+			Value   string `json:"exported_value"`
+		} `json:"exports"`
 	}
 	if err := json.Unmarshal(raw, &v); err != nil {
 		t.Fatal(err)
@@ -70,6 +78,18 @@ func TestRFC9180Suite1Vector(t *testing.T) {
 		}
 		if !bytes.Equal(pt, h(e.Pt)) {
 			t.Fatalf("encryption %d: plaintext %x, want %s", i, pt, e.Pt)
+		}
+	}
+	if len(v.Exports) != 3 {
+		t.Fatalf("%d exports, want the 3 of RFC 9180 A.2.1.2", len(v.Exports))
+	}
+	for _, e := range v.Exports {
+		got, err := r.Export(string(h(e.Context)), e.L)
+		if err != nil {
+			t.Fatalf("export %q: %v", e.Context, err)
+		}
+		if !bytes.Equal(got, h(e.Value)) {
+			t.Fatalf("export %q\n got  %x\n want %s", e.Context, got, e.Value)
 		}
 	}
 }
