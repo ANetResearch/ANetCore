@@ -44,7 +44,6 @@
     {"todo": "v030-todo(PAY-3)", "repo": "ANetHub", "kind": "string", "value": "anet.credit.retired", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(PAY-3)", "repo": "ANetHub", "kind": "string", "value": "anet.credit.opening", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(SS-5)", "repo": "ANetHub", "kind": "action", "value": "p2p", "note": "retired relayauth action (rendezvous routes removed)"},
-    {"todo": "v030-todo(SS-4)", "repo": "ANetHub", "kind": "action", "value": "send", "note": "retired relayauth action (relay v3)"},
     {"todo": "v030-todo(SS-6)", "repo": "ANetHub", "kind": "action", "value": "fedkeys", "note": "retired relayauth action (federation v3)"},
     {"todo": "v030-todo(SS-6)", "repo": "ANetHub", "kind": "signer", "go": "(*internal/federation.Signer).send", "note": "relayauth v2 on requests to peer hubs; its one caller is the v0.2 /fed/v2/keys request (retired action fedkeys); federation v3 lists it with the fed_* actions it signs or removes it"},
     {"todo": "v030-todo(SS-6)", "repo": "ANetHub", "kind": "signer", "go": "(*internal/federation.Service).TryForward", "note": "signs the federation v2 forward envelope, which is not a registered object; federation v3 forwards with relayauth fed_* (core CORE-L5)"},
