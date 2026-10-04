@@ -254,6 +254,9 @@ func restorePending(c *Controller, fp *Pending, head KeyState) (*pending, error)
 			return nil, inconsistent("a witness designation pending on an identity that is not an agent with only its icp")
 		}
 	case PendingRot:
+		if head.Toad == ToadAgent && len(c.kel) == 1 {
+			return nil, inconsistent("an agent's first rot is its witness designation, pending as kind witness")
+		}
 	case PendingDip:
 		if fp.Next != nil || fp.Emergency {
 			return nil, inconsistent("a pending dip with a next key or the emergency flag")

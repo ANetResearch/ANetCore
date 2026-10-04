@@ -271,16 +271,22 @@ func (c *Controller) BuildWitnessDesignation(witness string, next []byte, ts uin
 }
 
 // BuildRotation builds a rot at ts that reveals revealed (the key the KEL head committed, derived
-// from the recovery seed; nil reveals the hot key the icp committed, which only an identity that
-// has not rotated yet holds) and commits next. An agent's rot names witness, its current witness
-// or the hub it switches to; a hub's names none. emergency sets key 12 (zero grace). A revealed key
-// whose digest is not the committed one is ErrRecoveryMismatch. The event becomes the pending
-// event and the controller signs with revealed from now on (C-21).
+// from the recovery seed; nil reveals the hot key the icp committed, which only a hub identity that
+// has not rotated yet holds and reveals this way, C-32) and commits next. An agent's rot names
+// witness, its current witness or the hub it switches to; a hub's names none. emergency sets key 12
+// (zero grace). A revealed key whose digest is not the committed one is ErrRecoveryMismatch. The
+// event becomes the pending event and the controller signs with revealed from now on (C-21).
+//
+// An agent reveals its hot key only in its witness designation (C-31), so that its first rot is
+// always pending as kind witness: BuildRotation refuses nil for an agent.
 func (c *Controller) BuildRotation(revealed ed25519.PrivateKey, next []byte, witness string, emergency bool, ts uint64) (SignedEvent, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.canBuildLocked(); err != nil {
 		return SignedEvent{}, err
+	}
+	if revealed == nil && c.toadLocked() == ToadAgent {
+		return SignedEvent{}, errors.New("identity: an agent reveals the hot key its icp committed only by designating its witness (BuildWitnessDesignation)")
 	}
 	key, err := c.revealedLocked(revealed)
 	if err != nil {

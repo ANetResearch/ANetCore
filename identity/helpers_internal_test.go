@@ -52,7 +52,16 @@ func testRotateWith(c *Controller, ts uint64, emergency bool) error {
 	if c.Toad() == ToadAgent {
 		witness = testWitness
 	}
-	ev, err := c.BuildRotation(k, testNewNext(), witness, emergency, ts)
+	var ev SignedEvent
+	if c.Toad() == ToadAgent && k == nil {
+		// an agent's first rotation is its witness designation (C-31, D-13)
+		if emergency {
+			return errors.New("test: an agent's first rotation designates its witness and is not an emergency")
+		}
+		ev, err = c.BuildWitnessDesignation(witness, testNewNext(), ts)
+	} else {
+		ev, err = c.BuildRotation(k, testNewNext(), witness, emergency, ts)
+	}
 	if err != nil {
 		return err
 	}

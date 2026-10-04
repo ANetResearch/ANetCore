@@ -237,6 +237,16 @@ func TestWitnessDesignationRules(t *testing.T) {
 	if _, err := a.BuildWitnessDesignation(a.AID(), testNewNext(), 2000); err == nil {
 		t.Fatal("an agent named itself its witness")
 	}
+	// the hot key of an agent is revealed by its witness designation and in no other way (C-31):
+	// a rot that reveals it, even naming a witness, is not built
+	for _, emergency := range []bool{false, true} {
+		if _, err := a.BuildRotation(nil, testNewNext(), SuiteController().AID(), emergency, 2000); err == nil {
+			t.Fatalf("an agent revealed its hot key in a rot (emergency %v), not in its witness designation", emergency)
+		}
+	}
+	if _, ok := a.Pending(); ok || len(a.KEL()) != 1 {
+		t.Fatal("a refused rot left the agent with a pending event")
+	}
 	ev, err := a.BuildWitnessDesignation(SuiteController().AID(), testNewNext(), 2000)
 	if err != nil {
 		t.Fatal(err)
@@ -246,6 +256,62 @@ func TestWitnessDesignationRules(t *testing.T) {
 	}
 	if _, err := a.BuildWitnessDesignation(SuiteController().AID(), testNewNext(), 3000); err == nil {
 		t.Fatal("a second witness designation")
+	}
+}
+
+// Only an identity in state ok builds events (C-21, KEL D-30, D-40): a stopped identity was
+// rotated or recovered elsewhere and a deactivated one is over, so neither reveals a key, and the
+// pending event of one that stopped meanwhile is not rebuilt either. The refusals change nothing.
+func TestTransitionsNeedStateOK(t *testing.T) {
+	for _, state := range []string{StateStopped, StateDeactivated} {
+		t.Run(state, func(t *testing.T) {
+			c, _ := testIncept()
+			if err := testRotate(c, 2000); err != nil {
+				t.Fatal(err)
+			}
+			k, _ := testNextKey(c)
+			before := mustExport(t, c)
+			if err := c.SetState(state); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.BuildRotation(k, testNewNext(), "", false, 3000); err == nil {
+				t.Fatal("rot built")
+			}
+			if _, err := c.BuildRotation(k, testNewNext(), "", true, 3000); err == nil {
+				t.Fatal("emergency rot built")
+			}
+			if _, err := c.BuildDeactivation(k, 3000); err == nil {
+				t.Fatal("dip built")
+			}
+			if err := c.SetState(StateOK); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(mustExport(t, c), before) {
+				t.Fatal("a refused build changed the controller")
+			}
+			// a rot built while ok, then the identity stops: Restamp does not rebuild it
+			if _, err := c.BuildRotation(k, testNewNext(), "", false, 3000); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.SetState(state); err != nil {
+				t.Fatal(err)
+			}
+			pending := mustExport(t, c)
+			if _, err := c.Restamp(4000); err == nil {
+				t.Fatal("restamped the pending event of an identity that is not ok")
+			}
+			if !bytes.Equal(mustExport(t, c), pending) {
+				t.Fatal("a refused Restamp changed the controller")
+			}
+		})
+	}
+	// an agent that never designated a witness, stopped: its hot key stays unrevealed
+	a, _ := InceptAgent(1000)
+	if err := a.SetState(StateStopped); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.BuildWitnessDesignation(SuiteController().AID(), testNewNext(), 2000); err == nil {
+		t.Fatal("a stopped agent designated a witness")
 	}
 }
 
@@ -610,6 +676,10 @@ func TestRestoreARecoverFile(t *testing.T) {
 	if sig, seq := r.Sign([]byte("x")); sig != nil || seq != 1 {
 		t.Fatal("a recovered identity signed before its rotation was built")
 	}
+	// a snapshot of it holds no key either, and signs nothing (rather than failing on a nil key)
+	if sig, seq := r.Snapshot().Sign([]byte("x")); sig != nil || seq != 1 {
+		t.Fatal("a snapshot of a recovered identity signed before its rotation was built")
+	}
 	if _, err := r.BuildRotation(k, next, w, true, 3000); !errors.Is(err, ErrEventPending) {
 		t.Fatalf("a second event over the recover's material: %v", err)
 	}
@@ -683,11 +753,57 @@ func TestRestoreRefusesInconsistentFiles(t *testing.T) {
 		return exportFile(t, c)
 	}
 	_, other := rotated()
+	// recoverFile is the file a recover writes (KEL D-45): the KEL, no current key, and the material
+	// of an emergency rot without its event. With wrongKey, the material reveals a key the head did
+	// not commit; nothing but the digest check sees it, as there is no event to rebuild.
+	recoverFile := func(wrongKey bool) *IdentityFile {
+		c, f := rotated()
+		k, _ := testNextKey(c)
+		key := k.Seed()
+		if wrongKey {
+			key = other.Cur
+		}
+		f.Cur = nil
+		f.Pending = &Pending{Kind: PendingRot, Revealed: key, Next: testNewNext(), HubURL: "https://w1.example", Emergency: true, Since: 3000}
+		return f
+	}
+	// deactivatedWithPending is a deactivated identity with rot material that reveals the key its
+	// dip revealed: that key is the one the last rot committed, so the digest check passes it.
+	deactivatedWithPending := func() *IdentityFile {
+		c, _ := testIncept()
+		if err := testRotate(c, 2000); err != nil {
+			t.Fatal(err)
+		}
+		k, _ := testNextKey(c)
+		if err := testDeactivate(c, 3000); err != nil {
+			t.Fatal(err)
+		}
+		f := exportFile(t, c)
+		f.Pending = &Pending{Kind: PendingRot, Revealed: k.Seed(), Next: testNewNext(), Since: 4000}
+		return f
+	}
+	// witnessEmergency is a witness designation pending with key 12, its event built to match
+	// its material, so that only the rule on the material refuses it (D-13 has no emergency).
+	witnessEmergency := func() *IdentityFile {
+		c, _ := InceptAgent(1000)
+		p := &pending{kind: PendingWitness, revealed: c.hot, next: testNewNext(), emergency: true, since: 2000}
+		ev, err := c.buildEvent(p, w, 2000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := exportFile(t, c)
+		f.Pending = &Pending{Kind: PendingWitness, Revealed: c.hot.Seed(), Next: p.next, Emergency: true, Event: mustCoredet(t, ev), Since: 2000}
+		return f
+	}
 	cases := []struct {
 		name string
 		f    func() *IdentityFile
 		want error
 	}{
+		{"recover material whose key the head did not commit", func() *IdentityFile { return recoverFile(true) }, ErrIdentityFileInconsistent},
+		{"an event pending after the deactivation", deactivatedWithPending, ErrIdentityFileInconsistent},
+		{"a witness designation pending as an emergency", witnessEmergency, ErrIdentityFileInconsistent},
+		{"an agent's first rot pending as kind rot", func() *IdentityFile { f := pendingWitness(); f.Pending.Kind = PendingRot; return f }, ErrIdentityFileInconsistent},
 		{"cur is not the head's key", func() *IdentityFile { f := exportFile(t, agent); f.Cur = f.HotNext; return f }, ErrIdentityFileInconsistent},
 		{"cur of another identity", func() *IdentityFile { _, f := rotated(); f.Cur = other.Cur; return f }, ErrIdentityFileInconsistent},
 		{"cur is not a seed", func() *IdentityFile { f := exportFile(t, agent); f.Cur = f.Cur[:31]; return f }, ErrIdentityFileInconsistent},
@@ -738,6 +854,20 @@ func TestRestoreRefusesInconsistentFiles(t *testing.T) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}
 		})
+	}
+	// the controls of the cases above: the same shapes with the right key, or without the one
+	// contradiction, restore
+	if _, err := Restore(marshalFile(t, recoverFile(false))); err != nil {
+		t.Fatalf("recover material revealing the committed key: %v", err)
+	}
+	if f := deactivatedWithPending(); true {
+		f.Pending = nil
+		if _, err := Restore(marshalFile(t, f)); err != nil {
+			t.Fatalf("the deactivated identity without material: %v", err)
+		}
+	}
+	if _, err := Restore(marshalFile(t, pendingWitness())); err != nil {
+		t.Fatalf("a witness designation pending as kind witness: %v", err)
 	}
 	// the written seed of the pending key is the one key the event may reveal; a file written
 	// after switching cur to it (and so without the head's key) is still the same identity

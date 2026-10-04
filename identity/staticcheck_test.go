@@ -67,9 +67,39 @@ func goFiles(t *testing.T, withTests bool) (*token.FileSet, map[string]*ast.File
 	return fset, out
 }
 
+// identitytestPath is the package that keeps the next keys of the test identities it rotates in
+// process memory.
+const identitytestPath = "github.com/ANetResearch/ANetCore/identity/identitytest"
+
+// KEL C-31: no next key beyond the icp's hot key exists outside the recovery seed. The package
+// identity/identitytest keeps the next keys of the identities it rotates, so it is for tests only:
+// no non-test file of the repository imports it.
+func TestIdentitytestOnlyInTests(t *testing.T) {
+	fset, files := goFiles(t, false)
+	looked := 0
+	for rel, f := range files {
+		if filepath.ToSlash(filepath.Dir(rel)) == "identity/identitytest" {
+			continue
+		}
+		looked++
+		for _, imp := range f.Imports {
+			if p, _ := strconv.Unquote(imp.Path.Value); p == identitytestPath {
+				t.Errorf("%s: imports %s, which is for tests only", fset.Position(imp.Pos()), p)
+			}
+		}
+	}
+	if looked < 10 {
+		t.Fatalf("looked at %d files: the check looks at nothing", looked)
+	}
+}
+
 // KEL C-23: Controller.CurrentPrivateKey is deleted. No identifier of that name exists anywhere in
-// the repository, tests included, and no exported function or method of package identity hands out
-// a private key: the identity signs through identity.Signer, and nothing else gets its key.
+// the repository, tests included, and no exported method of package identity hands out a private
+// key: what holds an identity's key (the Controller, a snapshot) signs through identity.Signer,
+// and nothing else gets the key.
+//
+// Functions are not methods of a key holder: RecoverySeed (C-35) returns the key it derives from a
+// recovery seed its caller already holds, and who may call it is its own static check (SI-38).
 func TestNoCurrentPrivateKey(t *testing.T) {
 	fset, files := goFiles(t, true)
 	for _, f := range files {
@@ -86,12 +116,12 @@ func TestNoCurrentPrivateKey(t *testing.T) {
 		}
 		for _, d := range f.Decls {
 			fd, ok := d.(*ast.FuncDecl)
-			if !ok || !fd.Name.IsExported() || fd.Type.Results == nil {
+			if !ok || fd.Recv == nil || !fd.Name.IsExported() || fd.Type.Results == nil {
 				continue
 			}
 			for _, r := range fd.Type.Results.List {
 				if sel, ok := r.Type.(*ast.SelectorExpr); ok && sel.Sel.Name == "PrivateKey" {
-					t.Errorf("%s: exported %s returns a private key", fset.Position(fd.Pos()), fd.Name.Name)
+					t.Errorf("%s: exported method %s returns a private key", fset.Position(fd.Pos()), fd.Name.Name)
 				}
 			}
 		}

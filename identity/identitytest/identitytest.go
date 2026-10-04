@@ -115,7 +115,17 @@ func rotate(c *identity.Controller, ts uint64, witness string, emergency bool) e
 			witness = Witness
 		}
 	}
-	ev, err := c.BuildRotation(revealed, NewNext(), witness, emergency, ts)
+	var ev identity.SignedEvent
+	if c.Toad() == identity.ToadAgent && revealed == nil {
+		// an agent's first rotation is its witness designation, which reveals the icp's hot key
+		// and is never an emergency (KEL D-13)
+		if emergency {
+			return errors.New("identitytest: an agent's first rotation designates its witness and is not an emergency")
+		}
+		ev, err = c.BuildWitnessDesignation(witness, NewNext(), ts)
+	} else {
+		ev, err = c.BuildRotation(revealed, NewNext(), witness, emergency, ts)
+	}
 	if err != nil {
 		return err
 	}
