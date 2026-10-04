@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -261,6 +262,52 @@ func TestSEALED_2A(t *testing.T) {
 	t.Run("signature under the KEL", func(t *testing.T) {
 		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, v.Inner.TS+minuteMS, DefaultRotationGrace); err != nil {
 			t.Fatal(err)
+		}
+	})
+	// The objects inside the inner pass their own checks, so a change of their layout turns this
+	// vector red here (core §5.2): key 12 under VerifyEncKeySet, key 14 under CheckGrant.
+	mbox := ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "mbox"))
+	var set *EncKeySet
+	t.Run("key set under the KEL", func(t *testing.T) {
+		signed, err := UnmarshalSignedEncKeySet(o.Inner.Keys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if set, err = VerifyEncKeySet(signed, o.Inner.From, o.KEL, v.Inner.TS+minuteMS); err != nil {
+			t.Fatal(err)
+		}
+		if signed.KeyStateSeq != v.Sender.KeyStateSeq || set.AID != v.Sender.AID || len(set.Keys) != 1 ||
+			set.Mbox.Epoch != 1 || !bytes.Equal(set.Mbox.Pub, mbox.Public().(ed25519.PublicKey)) {
+			t.Fatalf("key set %+v signed at %d", set, signed.KeyStateSeq)
+		}
+		re, err := set.Marshal()
+		if err != nil || !bytes.Equal(re, signed.Set) {
+			t.Fatalf("Go encodes the key set differently (%v)", err)
+		}
+	})
+	t.Run("grant", func(t *testing.T) {
+		if set == nil {
+			t.Fatal("the key set the grant is checked against did not verify")
+		}
+		g, body, err := CheckGrant(&o.Inner, set, v.Inner.TS+minuteMS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		holder := ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "holder"))
+		want := CapBody{Type: CapType, Owner: v.Sender.AID, Epoch: 1, CapID: goldenSeed("SEALED-2A", "cap-id")[:CapIDLen],
+			Class: CapClassContact, CapExp: v.Inner.TS + 30*dayMS, Holder: holder.Public().(ed25519.PublicKey)}
+		if !reflect.DeepEqual(*body, want) || !bytes.Equal(g.HolderSeed, holder.Seed()) || g.Home != v.Witness.AID ||
+			g.IX != nil || g.P2P != nil || g.Pay != nil {
+			t.Fatalf("grant %+v, cap body %+v", g, body)
+		}
+		// Go issues the same grant: the same capability bytes and signature, the same grant bytes.
+		c, err := SignCap(mbox, &want)
+		if err != nil || !reflect.DeepEqual(*c, g.Cap) {
+			t.Fatalf("SignCap gives %+v (%v)", c, err)
+		}
+		b, err := (&Grant{Cap: *c, HolderSeed: holder.Seed(), Home: v.Witness.AID}).Marshal()
+		if err != nil || !bytes.Equal(b, v.Inner.Grant) {
+			t.Fatalf("Go encodes the grant differently (%v)", err)
 		}
 	})
 	t.Run("negatives", func(t *testing.T) {

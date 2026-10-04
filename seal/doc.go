@@ -16,6 +16,14 @@
 //   - SealedInner (inner): sender, key state, recipient, type, interaction,
 //     message id, time window, body, the sender's KEL and witness notice,
 //     its key set, a grant, its interaction key, and the signature.
+//   - Access, Cap, CapBody: the delivery credential in outer key 7. Kind 0
+//     is a first-contact delivery under a hub session; kind 1 carries a
+//     capability the recipient issued (CapBody, signed by the recipient's
+//     mailbox key in its key set) and the holder's proof of possession over
+//     env_digest. Nothing in it names the sender.
+//   - Grant (inner key 14): a capability the sender of a message issues to
+//     its recipient, with the holder key's seed, so the recipient can later
+//     deliver to the sender under it.
 //
 // All objects are CoreDet-CBOR maps with integer keys (core §2.1-§2.3). Times
 // are unix milliseconds.
@@ -38,15 +46,28 @@
 // adds the credential with SetAccess on each attempt. env_digest (EnvDigest)
 // covers every outer field but the credential.
 //
+// # Credentials
+//
+// The recipient issues a capability with SignCap and hands it to its peer in
+// a Grant; the peer keeps it after CheckGrant and, for each envelope it sends,
+// signs a proof with SignAccess over that envelope's env_digest. A hub admits
+// the envelope after VerifyAccess against the recipient's published mailbox
+// key: the capability's owner is the envelope's to, its epoch the mailbox
+// key's, its signature good, its expiry in the window and the proof the
+// holder's over this envelope. A new mailbox key (a new epoch) voids every
+// capability the old one signed.
+//
 // # Receive path
 //
 // The receive pipeline (engine §4.2) is split into steps. This package
 // implements the steps that depend only on the bytes, a clock and a KEL:
 //
 //	step 1-4  Open           outer checks, kid lookup, layer-1 open (ack_key), Wrap, inner decode
+//	step 1a   VerifyAccess   a kind-1 credential issued by this node, under its own mailbox key
 //	step 5    CheckTime      now <= exp, ts <= now + 5 min, exp - ts <= 15 days
 //	step 7    VerifyInnerSig signature under the resolved KEL, rotation grace
 //	step 8    VerifyInnerKeys + DecideHighWater  the attached key set
+//	step 8    CheckGrant     the grant, against that key set (a bad grant is ignored)
 //
 // Which keys each message type must carry (step 4a), the sender's KEL (step
 // 6), the witness notice (step 6½), authorization (step 9) and the replay

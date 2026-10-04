@@ -440,6 +440,93 @@ class SealV2(unittest.TestCase):
                                          bytes.fromhex(v["inner"]["sig"])))
 
 
+class AccessAndGrant(unittest.TestCase):
+    """The reference checks behind ACCESS-1 and GRANT-1: each refuses at the step it names, and
+    the vectors' cases are judged by it, not only declared."""
+
+    def setUp(self):
+        self.mbox, self.holder = g.seed("test", "mbox"), g.seed("test", "holder")
+        self.owner, self.now = "bafyowner", g.SS_TS
+        self.body = g.cap_body_map(self.owner, 1, bytes(range(16)), 1, self.now + g.SEAL_DAY, g.ed25519_public(self.holder))
+        self.outer = {1: 2, 2: self.owner, 3: 1, 4: bytes(16), 5: bytes(32), 6: b"ct"}
+
+    def env(self, body: bytes, holder=None, outer=None, sig=None) -> bytes:
+        o = outer or self.outer
+        d = g.seal_env_digest(self.outer)
+        a = {1: 1, 2: {1: body, 2: sig or g.ed25519_sign(self.mbox, body)},
+             3: g.ed25519_sign(holder or self.holder, g.access_input(self.body[3], d))}
+        return g.cbor({**o, 7: a})
+
+    def verify(self, env: bytes, epoch=1, mbox=None, now=None) -> str:
+        return g.verify_access(env, epoch, g.ed25519_public(mbox or self.mbox), now if now is not None else self.now)
+
+    def test_verify_access_steps(self):
+        body = g.cbor(self.body)
+        self.assertEqual(self.verify(self.env(body)), "")
+        self.assertEqual(self.verify(g.cbor({**self.outer, 7: {1: 0}})), "parse")
+        self.assertEqual(self.verify(self.env(g.cbor({**self.body, 4: 3}))), "decode")
+        self.assertEqual(self.verify(self.env(g.cbor({**self.body, 0: "anet.cap/2"}))), "type")
+        self.assertEqual(self.verify(self.env(g.cbor({**self.body, 1: "bafyother"}))), "owner")
+        self.assertEqual(self.verify(self.env(body), epoch=2), "epoch")
+        self.assertEqual(self.verify(self.env(body), mbox=g.seed("test", "other")), "sig")
+        self.assertEqual(self.verify(self.env(body), now=self.body[5] + g.CAP_GRACE + 1), "exp")
+        self.assertEqual(self.verify(self.env(body, holder=g.seed("test", "other"))), "proof")
+        self.assertEqual(self.verify(self.env(body, outer={**self.outer, 6: b"other"})), "proof")
+
+    def test_cap_body_decode_is_strict(self):
+        body = g.cbor(self.body)
+        self.assertEqual(g.decode_cap_body(body), self.body)
+        for bad in (g.cbor({**self.body, 7: 1}), g.cbor({k: v for k, v in self.body.items() if k != 6}),
+                    g.cbor({**self.body, 3: bytes(15)}), g.cbor({**self.body, 2: -1}), g.cbor({**self.body, 4: True}),
+                    g._cbor_map_in_order([(1, self.owner), (0, g.CAP_TYPE)] + [(k, self.body[k]) for k in range(2, 7)]),
+                    g.cbor([1])):
+            self.assertIsNone(g.decode_cap_body(bad), bad.hex())
+
+    def test_access_input(self):
+        self.assertEqual(g.access_input(bytes(16), bytes(32)), b"anet-access/v2\x00" + bytes(48))
+        for cid, d in ((bytes(15), bytes(32)), (bytes(16), bytes(31))):
+            with self.assertRaises(g.GoldenError):
+                g.access_input(cid, d)
+
+    def test_check_grant_steps(self):
+        body = g.cbor(self.body)
+        base = {1: {1: body, 2: g.ed25519_sign(self.mbox, body)}, 2: self.holder, 3: "bafyhome"}
+        pub = g.ed25519_public(self.mbox)
+
+        def check(gr, frm=self.owner, ix="ix", keys=self.owner):
+            return g.check_grant(g.cbor(gr), frm, ix, keys, 1, pub, self.now)
+
+        self.assertEqual(check(base), "")
+        self.assertEqual(check({**base, 6: 1}), "decode")
+        for k in (3, 4, 5, 6):  # a null is not an absent key, "" or false
+            self.assertEqual(check({**base, k: None}), "decode", k)
+        self.assertEqual(check({**base, 3: "a\x00b"}), "decode")
+        self.assertEqual(check(base, frm="bafyother", keys="bafyother"), "owner")
+        self.assertEqual(check(base, keys="bafyother"), "keys")
+        self.assertEqual(check({**base, 2: g.seed("test", "other")}), "holder")
+        self.assertEqual(check({**base, 4: "ix-2"}), "ix")
+        self.assertEqual(check({**base, 4: "ix", 5: "192.0.2.1:1"}), "p2p")
+        self.assertEqual(check({**base, 4: "ix", 6: True}), "pay")
+        self.assertEqual(check({**base, 4: "ix"}), "")
+
+    def test_vectors_judge_their_cases(self):
+        """A case whose declared step the reference does not reach makes the generator fail."""
+        orig = g.verify_access
+        try:
+            g.verify_access = lambda *a: "never"
+            with self.assertRaises(g.GoldenError):
+                g.gen_access_1()
+        finally:
+            g.verify_access = orig
+        orig = g.check_grant
+        try:
+            g.check_grant = lambda *a: "never"
+            with self.assertRaises(g.GoldenError):
+                g.gen_grant_1()
+        finally:
+            g.check_grant = orig
+
+
 class Repository(unittest.TestCase):
     def test_every_registered_vector_reproduces(self):
         """What the CI job golden-xcheck runs, on this checkout."""
