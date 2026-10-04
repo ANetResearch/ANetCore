@@ -210,13 +210,11 @@ func verifyAnetSignature(sig Signature, stripped, raw []byte, aid string, kels *
 // replays to AID, and key state <seq> is current (see below). A KeyResolver for a2a-go can be
 // built on it: fetch the KEL for the kid's AID, then call CurrentKey.
 //
-// A key state is current when no rotation or deactivation event follows it in the KEL. The
-// states from the last rotation (or the inception) to the end of the KEL are therefore all
-// current and share one key: ixn and drt events advance the key-state seq without changing
-// the signing key, and a card signed before such an event was signed by the key that is still
-// in force. JWKS lists exactly these states. A deactivated KEL has no current state. A card
-// signed under a rotated key is rejected with no grace period: a card is a statement about the
-// present, unlike an envelope whose signing time can be bounded.
+// The current key state is the head of the KEL, and only while it is active (KEL C-11): in KEL
+// v2 every event after the inception is a rotation or a deactivation, so every state but the
+// head has been replaced. JWKS lists exactly that state. A deactivated KEL has no current state.
+// A card signed under a rotated key is rejected with no grace period: a card is a statement about
+// the present, unlike an envelope whose signing time can be bounded.
 func CurrentKey(kid string, kel []identity.SignedEvent) (ed25519.PublicKey, error) {
 	aid, seq, err := ParseKID(kid)
 	if err != nil {
@@ -251,21 +249,18 @@ func currentKey(kel []identity.SignedEvent, aid string, seq uint64) (ed25519.Pub
 }
 
 // currentRange returns the index of the first current key state; states lo..len(kel)-1 are
-// current. ok is false when the KEL ends in a deactivation. The KEL must already have passed
-// identity.Replay, which guarantees that index i holds seq i.
+// current, which in KEL v2 is the head alone (KEL C-11). ok is false when the KEL ends in a
+// deactivation. The KEL must already have passed identity.Replay, which guarantees that index i
+// holds seq i.
 //
-// The rule is computed from the event types rather than from KeyState.Status so that it does
-// not depend on how Replay's post-pass propagates retirement across ixn and drt events.
+// The rule is computed from the event type rather than from KeyState.Status, so that it reads
+// the KEL a verifier was given and nothing derived from it.
 func currentRange(kel []identity.SignedEvent) (lo int, ok bool) {
-	for i := len(kel) - 1; i > 0; i-- {
-		switch kel[i].Event.Type {
-		case identity.Deactivation:
-			return 0, false
-		case identity.Rotation:
-			return i, true
-		}
+	last := len(kel) - 1
+	if kel[last].Event.Type == identity.Deactivation {
+		return 0, false
 	}
-	return 0, true
+	return last, true
 }
 
 func signatureEntries(card *value) ([]Signature, error) {

@@ -89,8 +89,8 @@ func (a *HeadAttestation) WitnessAID() string {
 // attestation carries no information — the chain's owner asserting its
 // own head is what the chain already does — and publishing one alongside
 // genuine attestations would pad a witness list with self-reference.
-func (a *HeadAttestation) Sign(c *identity.Controller) error {
-	if a.ChainDID == c.AID() {
+func (a *HeadAttestation) Sign(s identity.Signer) error {
+	if a.ChainDID == s.AID() {
 		return errors.New("ael: a chain cannot witness itself")
 	}
 	// HeadID alone says whether there is a head. Seq must NOT be part of
@@ -105,8 +105,8 @@ func (a *HeadAttestation) Sign(c *identity.Controller) error {
 	if err != nil {
 		return err
 	}
-	sig, seq := c.Sign(pre)
-	a.Envelope = &aobj.Envelope{SignerAID: c.AID(), KeyStateSeq: seq,
+	sig, seq := s.Sign(pre)
+	a.Envelope = &aobj.Envelope{SignerAID: s.AID(), KeyStateSeq: seq,
 		Alg: aobj.AlgEdDSA, Sig: sig}
 	return nil
 }

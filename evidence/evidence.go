@@ -232,7 +232,7 @@ func (b *ReceiptBody) CID() (string, error) {
 
 // Sign returns the receipt as it travels, signed by c. c must be the provider: an empty Provider is
 // filled with c's AID, and any other is refused (ErrSigner).
-func (b *ReceiptBody) Sign(c *identity.Controller) (*ReceiptWire, error) {
+func (b *ReceiptBody) Sign(c identity.Signer) (*ReceiptWire, error) {
 	body := b.withType()
 	switch {
 	case body.Provider == "":
@@ -563,7 +563,7 @@ func (b *ReviewAttBody) CID() (string, error) {
 
 // Sign returns the attestation as it travels, signed by the hub c. An empty Hub is filled with c's
 // AID; any other is refused (ErrSigner).
-func (b *ReviewAttBody) Sign(c *identity.Controller) (*ReviewAttWire, error) {
+func (b *ReviewAttBody) Sign(c identity.Signer) (*ReviewAttWire, error) {
 	body := b.withType()
 	switch {
 	case body.Hub == "":

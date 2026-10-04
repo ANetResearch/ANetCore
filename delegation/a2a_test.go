@@ -9,6 +9,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // Tests for the ANetCore v0.15.0 delegation increments (A2A-DESIGN §3.4): the new optional fields,
@@ -142,11 +143,11 @@ func marshalKEL(t *testing.T, kel []identity.SignedEvent) []byte {
 }
 
 func TestVerifyDelegateReqWithKEL(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mallory, err := identity.Incept()
+	mallory, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,9 +173,9 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 	})
 
 	t.Run("body KEL is a prefix of the resolved KEL", func(t *testing.T) {
-		a2, _ := identity.Incept()
+		a2, _ := identitytest.Hub()
 		r := signedReq(t, a2, "x")
-		if err := a2.Rotate(1767225601000); err != nil {
+		if err := identitytest.Rotate(a2, 1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, _, err := VerifyDelegateReqWithKEL(r, a2.KEL(), 1767225600000); err != nil {
@@ -192,10 +193,10 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 	})
 
 	t.Run("body KEL runs ahead of the resolved KEL", func(t *testing.T) {
-		a3, _ := identity.Incept()
+		a3, _ := identitytest.Hub()
 		r := signedReq(t, a3, "x")
 		stale := append([]identity.SignedEvent(nil), a3.KEL()...)
-		if err := a3.Rotate(1767225601000); err != nil {
+		if err := identitytest.Rotate(a3, 1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		r.KEL = marshalKEL(t, a3.KEL())
@@ -257,12 +258,12 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 // resolved KEL, not on the shorter KEL the body carried. Bob signs at seq 0 and later rotates at
 // t=5000; his message still carries the pre-rotation KEL.
 func TestVerifyDelegateReqWithKELUsesMsgTimeAndResolvedKEL(t *testing.T) {
-	bob, err := identity.Incept()
+	bob, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := signedReq(t, bob, "x") // body KEL = [icp]
-	if err := bob.Rotate(5000); err != nil {
+	if err := identitytest.Rotate(bob, 5000); err != nil {
 		t.Fatal(err)
 	}
 	resolved := bob.KEL() // [icp, rot@5000]

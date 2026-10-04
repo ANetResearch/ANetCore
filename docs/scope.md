@@ -41,7 +41,7 @@ entry, but the ones below are recorded because they carry a decision (A2A-DESIGN
   envelope format. No external dependency is added.
   `seal` reads `crypto/rand` in the functions that create new material: the HPKE ephemeral key
   when sealing, a fresh message id, and a newly generated encryption key pair, as
-  `identity.Incept` already does. It reads no clock (callers pass `now`) and
+  `identity.InceptAgent` and `identity.InceptHub` already do. It reads no clock (callers pass `now`) and
   performs no I/O. Opening and verification are deterministic and are pinned by golden vectors
   with a recipient key fixed by `DeriveKeyPair(ikm)`.
 

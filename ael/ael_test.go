@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/aobj"
-	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // VEC-AEL-GENESIS-1 (evidence-spec §6.1): GENESIS_PREV literal is frozen.
@@ -73,7 +73,7 @@ func TestVEC_AEL_CHAIN_2(t *testing.T) {
 
 // Ledger append + verify-before-store + chain linkage, with a real did:anet signer.
 func TestLedgerAppendChain(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	gen := &EventRecord{
 		ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
@@ -120,7 +120,7 @@ func TestLedgerAppendChain(t *testing.T) {
 
 // Fork-trap: two distinct records at one (chain_did, seq) ⇒ EquivocationProof + sticky quarantine.
 func TestLedgerEquivocationQuarantine(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	gen := &EventRecord{ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
 		VersionMajor: VersionMajor2, Payload: map[uint64]any{1: "init"}, Timestamp: 1700000000000}
@@ -183,7 +183,7 @@ func TestVEC_AEL_EV1_Signature(t *testing.T) {
 // F1: the sticky-quarantine guard runs FIRST in Append — before verify. A broken-signature
 // append to an already-quarantined chain returns CHAIN_QUARANTINED, NOT INVALID_SIGNATURE.
 func TestQuarantineGuardFirst(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	gen := &EventRecord{ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
 		VersionMajor: VersionMajor2, Payload: map[uint64]any{1: "init"}, Timestamp: 1700000000000}
@@ -216,7 +216,7 @@ func TestQuarantineGuardFirst(t *testing.T) {
 // F2: a non-MAJOR-2 record is rejected by the version gate (VERSION_UNSUPPORTED) before it is
 // ever hashed/verified as MAJOR-2.
 func TestWrongMajorRejected(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	r := &EventRecord{ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
 		VersionMajor: 1, Payload: map[uint64]any{1: "init"}, Timestamp: 1700000000000}
@@ -233,7 +233,7 @@ func TestWrongMajorRejected(t *testing.T) {
 // F3: the revocation gate is as-of the record's timestamp. A record signed under the retiring
 // seq0 key but time-stamped AFTER the rotation → REVOKED_KEY (msgTime=0 used to disable this).
 func TestRevokedKeyImport(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	// genesis under seq0, time-stamped before any rotation.
 	gen := &EventRecord{ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
@@ -248,7 +248,7 @@ func TestRevokedKeyImport(t *testing.T) {
 		VersionMajor: VersionMajor2, Payload: map[uint64]any{1: "x"}, Timestamp: 6000}
 	_ = bad.Sign(c) // still key_state_seq 0
 	// rotate the controller at T=5000 — seq0 is now retired as-of 5000 < bad.Timestamp(6000).
-	if err := c.Rotate(5000); err != nil {
+	if err := identitytest.Rotate(c, 5000); err != nil {
 		t.Fatal(err)
 	}
 	err := l.Append(bad, c.KEL())
@@ -260,7 +260,7 @@ func TestRevokedKeyImport(t *testing.T) {
 // F5: an out-of-order future-seq record STAGES (no SEQ_GAP); when the gap fills it drains
 // contiguously and the head advances.
 func TestOutOfOrderStaging(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	gen := &EventRecord{ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
 		VersionMajor: VersionMajor2, Payload: map[uint64]any{1: "init"}, Timestamp: 1000}
@@ -294,7 +294,7 @@ func TestOutOfOrderStaging(t *testing.T) {
 // F6: equivocation persists BOTH records and appends a converge.fork_detected anchor, sets
 // sticky QUARANTINED, and still returns the *EquivocationProof.
 func TestEquivocationPersistsBothAndForkEvent(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	l := NewLedger()
 	gen := &EventRecord{ChainDID: c.AID(), Seq: 0, PrevID: GenesisPrev(), EventType: EvGenesis,
 		VersionMajor: VersionMajor2, Payload: map[uint64]any{1: "init"}, Timestamp: 1000}

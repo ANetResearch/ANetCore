@@ -85,6 +85,10 @@ const (
 	// KeyspaceDerived: a map that is built, hashed or signed but never decoded from the wire
 	// (preimages, HPKE info). It has no negative decoding cases.
 	KeyspaceDerived = "derived"
+	// KeyspaceExternal: a signed input that is not a CBOR map at all and is defined outside
+	// anet (the A2A card JWS signing input, core CORE-S1). It has no keys and no negative
+	// decoding cases; it is registered so that the signers can name what they sign.
+	KeyspaceExternal = "external"
 )
 
 // Key statuses.

@@ -796,6 +796,15 @@
       ]
     },
     {
+      "name": "A2ACardJWS",
+      "group": "carried",
+      "class": "D",
+      "keyspace": "external",
+      "owner": "CORE",
+      "desc": "The JWS signing input of an A2A agent card signature (A2A §8.4, RFC 7515 §5.1): ASCII(BASE64URL(protected header)) '.' BASE64URL(RFC 8785 form of the card without signatures). Not a CBOR map, so it has no keys; it starts with eyJ, which no CBOR map and no text preimage does (core §3.4). Signed under kid did:anet:<AID>#<seq> by the identity's current key (a2acard.SignWithSnapshot); its vectors are the a2a-python ones (CORE-G3).",
+      "keys": []
+    },
+    {
       "name": "EffectEvidence",
       "group": "c1",
       "class": "plain",
@@ -2809,7 +2818,7 @@
     {"class": "prose", "match": "regexp", "value": "^anet-[a-z-]+:$", "note": "log prefixes"}
   ],
   "signers": {
-    "methods": ["(*github.com/ANetResearch/ANetCore/identity.Controller).Sign", "(*github.com/ANetResearch/ANetCore/identity.Controller).CurrentPrivateKey"],
+    "methods": ["(github.com/ANetResearch/ANetCore/identity.Signer).Sign", "(github.com/ANetResearch/ANet/module.PaymentSeam).Sign", "(github.com/ANetResearch/ANet/module.HubSeam).Sign"],
     "calls": [
       {"repo": "ANetCore", "func": "(*payment.Authorization).Sign", "signs": "PaymentAuthorization"},
       {"repo": "ANetCore", "func": "(*payment.Receipt).Sign", "signs": "PaymentReceipt"},
@@ -2817,7 +2826,17 @@
       {"repo": "ANetCore", "func": "(*ael.EventRecord).Sign", "signs": "AELRecord"},
       {"repo": "ANetCore", "func": "(*ael.HeadAttestation).Sign", "signs": "AELHeadAttestation"},
       {"repo": "ANetCore", "func": "(*evidence.ReceiptBody).Sign", "signs": "ReceiptBody"},
-      {"repo": "ANetCore", "func": "(*evidence.ReviewAttBody).Sign", "signs": "ReviewAttBody"}
+      {"repo": "ANetCore", "func": "(*evidence.ReviewAttBody).Sign", "signs": "ReviewAttBody"},
+      {"repo": "ANetCore", "func": "a2acard.SignWithSnapshot", "signs": "A2ACardJWS"},
+      {"repo": "ANet", "func": "(*internal/daemon.Daemon).hubSigned", "signs": "L22"},
+      {"repo": "ANet", "func": "(*internal/daemon.Daemon).sealWithOpts", "signs": "InnerSigPreimage"},
+      {"repo": "ANet", "func": "(*internal/daemon.Daemon).setupKeyRing", "signs": "EncKeySet"},
+      {"repo": "ANet", "func": "(*internal/daemon.Daemon).maintainKeyRing", "signs": "EncKeySet"},
+      {"repo": "ANet", "func": "(*module/x402.Module).Authorize", "signs": "PaymentAuthorization"},
+      {"repo": "ANet", "func": "(*module/x402.Module).WitnessHub", "signs": "AELHeadAttestation"},
+      {"repo": "ANet", "func": "(*module/x402.Module).signedGet", "signs": "L22"},
+      {"repo": "ANet", "func": "tools/anetfixture.cmdSeal", "signs": "InnerSigPreimage"},
+      {"repo": "ANet", "func": "tools/anetfixture.v2Headers", "signs": "L22"}
     ]
   },
   "scan": {
