@@ -1656,6 +1656,194 @@ def gen_kel_2b():
     ])
 
 
+# --- KEL: the recovery seed and the recovery file (KEL-3): RECOVERY-1 -----------------------------
+#
+# L19: seed(aid, seq) = HKDF-SHA256(ikm = RS, salt = "anet-kel-next/v1", info = UTF-8(aid) || 0x00 ||
+# u64be(seq), L = 32); the key is the Ed25519 key of that seed and next_digest = SHA-256(its public
+# key), the digest of KeyEvent key 6. The AID must not hold U+0000 (CORE-E9).
+# RecoveryBlob (core §2.6): 0 "anet.recovery/1", 1 aid, 2 kdf, 3 "xchacha20poly1305", 4 nonce (24),
+# 5 hub (written even when empty), 6 commits [seq, next_digest], 7 ct. kdf is {1: "argon2id", 2: 3,
+# 3: 65536, 4: 4, 5: salt (16)} or {1: "local"}. L20: ct = XChaCha20-Poly1305(key, nonce, RS,
+# aad = coredet(the blob without key 7)), key = argon2id(NFC(passphrase), salt, t = 3, m = 64 MiB,
+# p = 4, 32) or the 32-byte local recovery key. The text file (KEL §2.4): "anet-recovery v1", "AID
+# <aid>", "hub <url>" (left out when there is none), "commits <seq> <hex>", a blank line, then the
+# standard base64 of the blob in lines of 64 characters. The caller's note lines are not part of
+# the vector.
+
+RECOVERY_TYPE = "anet.recovery/1"
+RECOVERY_HEADER = "anet-recovery v1"
+RECOVERY_NEXT_LABEL = b"anet-kel-next/v1"
+RECOVERY_AEAD = "xchacha20poly1305"
+RECOVERY_ARGON2 = (3, 65536, 4)  # t, m in KiB, p
+RECOVERY_VID = "RECOVERY-1"
+RECOVERY_PASSPHRASE = "anet recovery vector passphrase v1"
+RECOVERY_HUB = "https://hub.example"
+RECOVERY_ABOUT = (
+    "Recovery seed and recovery file (L19, L20). aid is the KEL-2B agent; rs = SHA-256 of rs_label. "
+    "next_keys: seed = HKDF-SHA256(ikm = rs, salt = \"anet-kel-next/v1\", info = UTF-8(aid) || 0x00 || u64be(seq), L = 32), "
+    "pub its Ed25519 public key, next_digest = SHA-256(pub). "
+    "passphrase_file: salt is the first 16 and nonce the first 24 bytes of SHA-256 of their labels; "
+    "key = argon2id(NFC(passphrase), salt, t = 3, m = 65536 KiB, p = 4, 32); aad = coredet(RecoveryBlob without key 7); "
+    "blob = coredet(RecoveryBlob) with ct = XChaCha20-Poly1305(key, nonce, rs, aad); text is the file as written, "
+    "before the caller's note lines. local_file: the same seed under kdf {1: \"local\"}, key = local_key = SHA-256 of its label. "
+    "Each negative is a file opened with the interface and secret given, and the error class it must give; "
+    "each derive negative is refused by next-key derivation.")
+
+
+def recovery_seed(rs: bytes, aid: str, seq: int) -> bytes:
+    """L19: the seed of the key the event at seq reveals."""
+    if not aid:
+        raise GoldenError("next-key derivation: empty AID")
+    _no_nul(aid)
+    return hkdf(rs, RECOVERY_NEXT_LABEL, aid.encode("utf-8") + b"\x00" + struct.pack(">Q", seq), 32)
+
+
+def recovery_next_digest(rs: bytes, aid: str, seq: int) -> bytes:
+    return sha256(ed25519_public(recovery_seed(rs, aid, seq)))
+
+
+def recovery_kdf_argon2id(salt: bytes) -> dict:
+    t, m, p = RECOVERY_ARGON2
+    return {1: "argon2id", 2: t, 3: m, 4: p, 5: salt}
+
+
+def recovery_blob(aid: str, kdf: dict, nonce: bytes, hub: str, seq: int, digest: bytes, ct=None) -> dict:
+    m = {0: RECOVERY_TYPE, 1: aid, 2: kdf, 3: RECOVERY_AEAD, 4: nonce, 5: hub, 6: [seq, digest]}
+    if ct is not None:
+        m[7] = ct
+    return m
+
+
+def recovery_seal(rs: bytes, aid: str, hub: str, seq: int, digest: bytes, kdf: dict, key: bytes, nonce: bytes):
+    """(aad, blob bytes) of rs sealed under key; the commitment is taken as given."""
+    aad = cbor(recovery_blob(aid, kdf, nonce, hub, seq, digest))
+    ct = xchacha20poly1305_seal(key, nonce, rs, aad)
+    return aad, cbor(recovery_blob(aid, kdf, nonce, hub, seq, digest, ct))
+
+
+def recovery_text(aid: str, hub: str, seq: int, digest: bytes, blob: bytes) -> str:
+    lines = [RECOVERY_HEADER, "AID " + aid]
+    if hub:
+        lines.append("hub " + hub)
+    lines += ["commits %d %s" % (seq, b16(digest)), ""]
+    enc = base64.b64encode(blob).decode("ascii")
+    lines += [enc[i:i + 64] for i in range(0, len(enc), 64)]
+    return "\n".join(lines) + "\n"
+
+
+def _replace_once(s: str, old: str, new: str) -> str:
+    if s.count(old) != 1:
+        raise GoldenError("RECOVERY-1: %r occurs %d times" % (old, s.count(old)))
+    return s.replace(old, new)
+
+
+@vector("RECOVERY-1", "ANetCore/identity/testdata/vec-recovery-1.json")
+def gen_recovery_1():
+    vid = RECOVERY_VID
+    label = lambda role: "anet-golden/v016/%s/%s" % (vid, role)  # noqa: E731
+    aid = kel_2b().aid
+    rs = seed(vid, "rs")
+    next_keys = []
+    for seq in (2, 3, 4):
+        s = recovery_seed(rs, aid, seq)
+        pub = ed25519_public(s)
+        next_keys.append({"seq": seq, "seed": b16(s), "pub": b16(pub), "next_digest": b16(sha256(pub))})
+    d2, d3 = recovery_next_digest(rs, aid, 2), recovery_next_digest(rs, aid, 3)
+    commits = {"seq": 2, "next_digest": b16(d2)}
+
+    salt, nonce = seed(vid, "salt")[:16], seed(vid, "nonce")[:24]
+    t, m, p = RECOVERY_ARGON2
+    key = argon2id(nfc(RECOVERY_PASSPHRASE).encode("utf-8"), salt, t, m, p, 32)
+    kdf = recovery_kdf_argon2id(salt)
+    p_aad, p_blob = recovery_seal(rs, aid, RECOVERY_HUB, 2, d2, kdf, key, nonce)
+    p_text = recovery_text(aid, RECOVERY_HUB, 2, d2, p_blob)
+
+    lk = seed(vid, "local-key")
+    l_nonce = seed(vid, "local-nonce")[:24]
+    l_aad, l_blob = recovery_seal(rs, aid, RECOVERY_HUB, 2, d2, {1: "local"}, lk, l_nonce)
+    l_text = recovery_text(aid, RECOVERY_HUB, 2, d2, l_blob)
+
+    # sanity: both blocks open with their own key, and only with it
+    if xchacha20poly1305_open(key, nonce, uncbor(p_blob)[7], p_aad) != rs or \
+            xchacha20poly1305_open(lk, l_nonce, uncbor(l_blob)[7], l_aad) != rs:
+        raise GoldenError("RECOVERY-1: a block does not open")
+
+    def again(blob: bytes, digest: bytes = d2) -> str:
+        """The passphrase file's header over another block."""
+        return recovery_text(aid, RECOVERY_HUB, 2, digest, blob)
+
+    def neg_pass(name, text, cls, passphrase=RECOVERY_PASSPHRASE):
+        return {"name": name, "open": "passphrase", "passphrase": passphrase, "text": text, "error": cls}
+
+    def neg_local(name, text, k, cls):
+        return {"name": name, "open": "local", "local_key": b16(k), "text": text, "error": cls}
+
+    commits_seq = b"\x82\x02\x58\x20"
+    if p_blob.count(commits_seq) != 1:
+        raise GoldenError("RECOVERY-1: the commits array is not found once in the block")
+    t4 = uncbor(p_blob)
+    t4[2][2] = 4
+    _, wrong_commits = recovery_seal(rs, aid, RECOVERY_HUB, 2, d3, kdf, key, nonce)
+    relabelled = uncbor(p_blob)
+    relabelled[2] = {1: "local"}
+    negatives = [
+        neg_pass("wrong passphrase", p_text, "recovery-passphrase", "anet recovery vector passphrase v2"),
+        neg_pass("AID in the header changed", _replace_once(p_text, "AID %s\n" % aid, "AID %s\n" % kel_2a().aid),
+                 "recovery-wrong-identity"),
+        neg_pass("commits seq in the header changed", _replace_once(p_text, "commits 2 ", "commits 3 "),
+                 "recovery-wrong-identity"),
+        neg_pass("commits digest in the header changed", _replace_once(p_text, b16(d2), b16(d3)), "recovery-wrong-identity"),
+        neg_pass("hub in the header changed",
+                 _replace_once(p_text, "hub %s\n" % RECOVERY_HUB, "hub https://other.example\n"), "recovery-wrong-identity"),
+        neg_pass("one byte of the ciphertext changed", again(flip(p_blob)), "recovery-passphrase"),
+        neg_pass("key 6 dropped from the block", again(drop_key(p_blob, 6)), "recovery-format"),
+        neg_pass("unregistered key 8 added to the block", again(add_key(p_blob, 8)), "recovery-format"),
+        neg_pass("the block not in canonical form (commits seq in two bytes)",
+                 again(p_blob.replace(commits_seq, b"\x82\x18\x02\x58\x20")), "recovery-format"),
+        neg_pass("argon2id t changed to 4", again(cbor(t4)), "recovery-format"),
+        neg_pass("commits not derived from the sealed seed", again(wrong_commits, d3), "recovery-format"),
+        neg_pass("the local file opened with the passphrase interface", l_text, "recovery-unprotected"),
+        neg_local("the passphrase file opened with the local-key interface", p_text, lk, "recovery-format"),
+        neg_local("the passphrase file opened with the local-key interface and its own argon2id key", p_text, key,
+                  "recovery-format"),
+        neg_local("the passphrase block relabelled local, opened with its own argon2id key", again(cbor(relabelled)), key,
+                  "recovery-format"),
+        neg_local("wrong local key", l_text, seed(vid, "wrong-local-key"), "recovery-format"),
+        neg_local("one byte of the local ciphertext changed", recovery_text(aid, RECOVERY_HUB, 2, d2, flip(l_blob)), lk,
+                  "recovery-format"),
+    ]
+    derive_negatives = [
+        {"name": "AID holding U+0000", "aid": aid[:8] + "\x00" + aid[8:], "seq": 2, "error": "next-key-input"},
+        {"name": "empty AID", "aid": "", "seq": 2, "error": "next-key-input"},
+    ]
+    for n in derive_negatives:
+        try:
+            recovery_seed(rs, n["aid"], n["seq"])
+        except GoldenError:
+            continue
+        raise GoldenError("RECOVERY-1: %s was derived" % n["name"])
+    return {
+        "id": vid,
+        "about": RECOVERY_ABOUT,
+        "aid": aid,
+        "rs_label": label("rs"),
+        "rs": b16(rs),
+        "next_keys": next_keys,
+        "passphrase_file": {
+            "passphrase": RECOVERY_PASSPHRASE, "salt_label": label("salt"), "salt": b16(salt),
+            "nonce_label": label("nonce"), "nonce": b16(nonce), "hub": RECOVERY_HUB, "commits": commits,
+            "key": b16(key), "aad": b16(p_aad), "blob": b16(p_blob), "text": p_text,
+        },
+        "local_file": {
+            "local_key_label": label("local-key"), "local_key": b16(lk), "nonce_label": label("local-nonce"),
+            "nonce": b16(l_nonce), "hub": RECOVERY_HUB, "commits": commits, "aad": b16(l_aad), "blob": b16(l_blob),
+            "text": l_text,
+        },
+        "negatives": negatives,
+        "derive_negatives": derive_negatives,
+    }
+
+
 # --- SS: relayauth (RELAYAUTH-3 pins), the first-contact session (SESSION-1), the directory box (DIR-1)
 
 SS_AGENT_AID = "bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay"

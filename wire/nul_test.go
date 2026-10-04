@@ -8,6 +8,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/dirbox"
 	"github.com/ANetResearch/ANetCore/evidence"
+	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/ANetResearch/ANetCore/regpow"
 	"github.com/ANetResearch/ANetCore/relayauth"
 )
@@ -25,13 +26,13 @@ func TestPreimageRejectsNUL(t *testing.T) {
 		fn   func(field string) error
 		todo string
 	}{
-		"L7":  {nulSessionKey, ""},       // session key delivery: hubAID
-		"L8":  {nulSessionMAC, ""},       // session MAC: method, pathAndQuery, X-ANet-Home
-		"L9":  {nulDirHash, ""},          // dirbox h: aid
-		"L19": {nil, "v030-todo(KEL-3)"}, // next-key derivation: aid
-		"L23": {regpowNUL, ""},           // regpow hash: hub_aid, aid
-		"L27": {nulIXCommit, ""},         // ix_commit: ix, anet.nonce
-		"L28": {nulRequesterCommit, ""},  // requester_commit: requester_aid
+		"L7":  {nulSessionKey, ""},      // session key delivery: hubAID
+		"L8":  {nulSessionMAC, ""},      // session MAC: method, pathAndQuery, X-ANet-Home
+		"L9":  {nulDirHash, ""},         // dirbox h: aid
+		"L19": {nulNextKey, ""},         // next-key derivation: aid
+		"L23": {regpowNUL, ""},          // regpow hash: hub_aid, aid
+		"L27": {nulIXCommit, ""},        // ix_commit: ix, anet.nonce
+		"L28": {nulRequesterCommit, ""}, // requester_commit: requester_aid
 	}
 	r := reg(t)
 	listed := map[string]bool{}
@@ -163,4 +164,20 @@ func nulIXCommit(field string) error {
 func nulRequesterCommit(field string) error {
 	_, err := evidence.RequesterCommit(field, make([]byte, evidence.RSaltSize))
 	return err
+}
+
+// nulNextKey derives a next key and its digest with field as the AID (L19). A field holding
+// U+0000 counts as refused only when both refuse it; a clean field counts as accepted only when
+// both accept it.
+func nulNextKey(field string) error {
+	rs := [32]byte{1}
+	_, errSeed := identity.RecoverySeed(rs, field, 2)
+	_, errDigest := identity.NextDigest(rs, field, 2)
+	if strings.Contains(field, "\x00") {
+		if errSeed == nil || errDigest == nil {
+			return nil
+		}
+		return errSeed
+	}
+	return errors.Join(errSeed, errDigest)
 }
