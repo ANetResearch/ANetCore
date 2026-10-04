@@ -1027,6 +1027,8 @@ func TestRecoveryBlockKeysAreChecked(t *testing.T) {
 		{name: "key 1: an AID with a space", edit: func(b *recoveryBlob) { setAID(b, "bafy x") }},
 		{name: "key 1: an AID holding U+0000", edit: func(b *recoveryBlob) { setAID(b, "bafy\x00x") }},
 		{name: "key 1: an AID with a byte-order mark", edit: func(b *recoveryBlob) { setAID(b, "\ufeff"+aid) }},
+		{name: "key 1: an AID in upper case", edit: func(b *recoveryBlob) { setAID(b, strings.ToUpper(aid)) }},
+		{name: "key 1: not an AID", edit: func(b *recoveryBlob) { setAID(b, "bafy-not-an-aid") }},
 		{name: "key 2: argon2id t = 4", edit: func(b *recoveryBlob) { b.KDF.T = 4 }},
 		{name: "key 2: argon2id m = 1 GiB", edit: func(b *recoveryBlob) { b.KDF.MKiB = 1 << 20 }},
 		{name: "key 2: argon2id m = 8 KiB", edit: func(b *recoveryBlob) { b.KDF.MKiB = 8 }},

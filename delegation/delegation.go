@@ -265,6 +265,12 @@ const (
 // reasoning (key 6), in bytes (CUX-P1, CUX-P2).
 const MaxPreviewTail = 8192
 
+// MaxPreviewIDLen bounds a preview frame's msg_id (key 9) and answers (key 13), in bytes (CUX-P2).
+// With it and MaxPreviewTail a frame that ValidatePreview accepts has a bounded size (two tails
+// and a fixed part); ids the daemon makes are far shorter, and a sender whose answers is longer
+// sends no preview for that task.
+const MaxPreviewIDLen = 256
+
 // ChatMsg is the body of anet.message/1 (core §2.4.2): a conversation message for an ongoing
 // interaction, or a preview frame (kind stream_preview). It carries no signature of its own: the
 // sealed envelope's inner signature covers its bytes, and the hub never sees them.
@@ -371,7 +377,8 @@ func (m *ChatMsg) previewKey() int {
 //   - carries attachments (key 3) or metadata (key 10);
 //   - has a body (key 2) or reasoning (key 6) over MaxPreviewTail bytes, or not valid UTF-8;
 //   - lacks stream_seq (key 4; 0 is no value), stream_at_ms (key 5), msg_id (key 9) or answers
-//     (key 13).
+//     (key 13);
+//   - has a msg_id (key 9) or answers (key 13) over MaxPreviewIDLen bytes.
 //
 // Whether the frame is shown — the interaction, the message it answers, its order — is the
 // receiver's decision (CUX-P14), not this function's.
@@ -407,6 +414,10 @@ func ValidatePreview(m *ChatMsg) error {
 		return bodyErr("a preview frame needs a msg_id (key 9)")
 	case m.Answers == "":
 		return bodyErr("a preview frame needs answers, the message it answers (key 13)")
+	case len(m.MsgID) > MaxPreviewIDLen:
+		return bodyErr("a preview frame's msg_id (key 9) is %d bytes, over %d", len(m.MsgID), MaxPreviewIDLen)
+	case len(m.Answers) > MaxPreviewIDLen:
+		return bodyErr("a preview frame's answers (key 13) is %d bytes, over %d", len(m.Answers), MaxPreviewIDLen)
 	}
 	return nil
 }

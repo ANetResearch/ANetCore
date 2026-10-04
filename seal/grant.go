@@ -5,9 +5,10 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
-	"strings"
+	"net"
 
 	"github.com/ANetResearch/ANetCore/coredet"
+	"github.com/ANetResearch/ANetCore/identity"
 )
 
 // Grant is inner key 14 (core §2.3): a capability the sender of a message
@@ -64,10 +65,11 @@ func rawBool(m fieldMap, k uint64) (bool, error) {
 
 // decodeGrant is the strict decode of a Grant (step 1 of SSR-W7): a map with
 // no key but 1-6 (no extension range, CORE-E3); key 1 a well-formed Cap
-// (decodeCap); key 2 an ed25519.SeedSize-byte string; key 3 an AID (text, not
-// empty, no U+0000: it becomes the X-ANet-Home header, CORE-E9); keys 4 and 5
-// text and key 6 a boolean when present. Cap.Body is decoded by
-// decodeCapBody, a step of its own.
+// (decodeCap); key 2 an ed25519.SeedSize-byte string; key 3 an AID
+// (identity.ValidAID: it becomes the X-ANet-Home header, so it must be the one
+// spelling of an AID and cannot hold U+0000, CORE-E9); key 4 text; key 5 text
+// that is a direct address (checkP2PAddr); key 6 a boolean. Keys 4-6 are
+// optional. Cap.Body is decoded by decodeCapBody, a step of its own.
 func decodeGrant(raw []byte) (*Grant, error) {
 	m, err := decodeFields(raw)
 	if err != nil {
@@ -95,8 +97,8 @@ func decodeGrant(raw []byte) (*Grant, error) {
 	if g.Home, err = rawText(m, 3); err != nil {
 		return nil, fmt.Errorf("grant home: %w", err)
 	}
-	if g.Home == "" || strings.IndexByte(g.Home, 0) >= 0 {
-		return nil, errors.New("grant home must be an AID: not empty, no U+0000")
+	if !identity.ValidAID(g.Home) {
+		return nil, errors.New("grant home is not an AID (identity.ValidAID)")
 	}
 	optText := func(k uint64, name string) (*string, error) {
 		if _, ok := m[k]; !ok {
@@ -114,6 +116,11 @@ func decodeGrant(raw []byte) (*Grant, error) {
 	if g.P2P, err = optText(5, "p2p"); err != nil {
 		return nil, err
 	}
+	if g.P2P != nil {
+		if err := checkP2PAddr(*g.P2P); err != nil {
+			return nil, fmt.Errorf("grant p2p: %w", err)
+		}
+	}
 	if _, ok := m[6]; ok {
 		v, err := rawBool(m, 6)
 		if err != nil {
@@ -122,6 +129,40 @@ func decodeGrant(raw []byte) (*Grant, error) {
 		g.Pay = &v
 	}
 	return &g, nil
+}
+
+// maxP2PAddrLen is the longest Grant key 5 may be (core §2.3): room for a DNS
+// name of 253 bytes, or a bracketed IPv6 literal, a colon and five port digits.
+const maxP2PAddrLen = 262
+
+// checkP2PAddr is the rule of Grant key 5 (core §2.3): at most maxP2PAddrLen
+// bytes, a host and a port as net.SplitHostPort splits them (an IPv6 literal
+// in brackets), the host not empty and the port a decimal number 1-65535.
+// Whether the daemon dials the address is its dial filter's decision, not
+// this one's: this only makes sure the value is an address at all.
+func checkP2PAddr(a string) error {
+	if len(a) > maxP2PAddrLen {
+		return fmt.Errorf("%d bytes, over %d", len(a), maxP2PAddrLen)
+	}
+	host, port, err := net.SplitHostPort(a)
+	if err != nil {
+		return fmt.Errorf("%q is not host:port", a)
+	}
+	if host == "" {
+		return fmt.Errorf("%q has no host", a)
+	}
+	n := 0
+	for _, c := range []byte(port) {
+		if c < '0' || c > '9' || n > 65535 {
+			n = -1
+			break
+		}
+		n = n*10 + int(c-'0')
+	}
+	if port == "" || n < 1 || n > 65535 {
+		return fmt.Errorf("port %q is not a number from 1 to 65535", port)
+	}
+	return nil
 }
 
 // UnmarshalGrant decodes a Grant strictly (step 1 of CheckGrant): a failure
@@ -198,7 +239,8 @@ func grantPlacement(g *Grant, body *CapBody) *stepError {
 // access-invalid, with the step's name as Detail:
 //
 //	decode  the grant does not decode strictly (decodeGrant)
-//	body    Cap.body is not a strict CoreDet CapBody (decodeCapBody)
+//	body    Cap.body is not a strict CoreDet CapBody (decodeCapBody; a holder
+//	        key of small order is refused here, CORE-K8a)
 //	type    its type tag is not CapType
 //	owner   its owner is not inner.From: a grant hands over the sender's own
 //	        capability, never someone else's
@@ -247,7 +289,7 @@ func CheckGrant(inner *SealedInner, keys *EncKeySet, now uint64) (*Grant, *CapBo
 	if keys.Mbox.Epoch == 0 || body.Epoch != keys.Mbox.Epoch {
 		return bad("epoch", fmt.Errorf("signed at mailbox epoch %d, the sender's key set has %d", body.Epoch, keys.Mbox.Epoch))
 	}
-	if len(keys.Mbox.Pub) != ed25519.PublicKeySize || !ed25519.Verify(keys.Mbox.Pub, g.Cap.Body, g.Cap.Sig) {
+	if len(keys.Mbox.Pub) != ed25519.PublicKeySize || smallOrder(keys.Mbox.Pub) || !ed25519.Verify(keys.Mbox.Pub, g.Cap.Body, g.Cap.Sig) {
 		return bad("sig", errors.New("the signature is not by the sender's mailbox key"))
 	}
 	// 5. The seed is the holder's.

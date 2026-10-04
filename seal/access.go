@@ -74,8 +74,10 @@ func (b *CapBody) Marshal() ([]byte, error) { return coredet.Marshal(*b) }
 // the keys 0-6 (no extension range, CORE-E3), each of its type, cap_id
 // CapIDLen bytes and holder an Ed25519 public key; and the bytes must be the
 // CoreDet encoding of what they decode to (CORE-E2), so one capability has one
-// encoding. It does not judge the values: the type tag, the epoch and the
-// class are steps of their own in VerifyAccess and CheckGrant.
+// encoding. A holder key of small order is refused here too (CORE-K8a): it is
+// no key at all, since anyone can sign under it. It does not judge the other
+// values: the type tag, the epoch and the class are steps of their own in
+// VerifyAccess and CheckGrant.
 func decodeCapBody(b []byte) (*CapBody, error) {
 	m, err := decodeFields(b)
 	if err != nil {
@@ -118,6 +120,8 @@ func decodeCapBody(b []byte) (*CapBody, error) {
 		return nil, fmt.Errorf("cap body cap_id is %d bytes, want %d", len(c.CapID), CapIDLen)
 	case len(c.Holder) != ed25519.PublicKeySize:
 		return nil, fmt.Errorf("cap body holder is %d bytes, want %d", len(c.Holder), ed25519.PublicKeySize)
+	case smallOrder(c.Holder):
+		return nil, errors.New("cap body holder is a point of small order, under which anyone could prove possession (CORE-K8a)")
 	}
 	re, err := c.Marshal()
 	if err != nil {
@@ -210,7 +214,7 @@ func firstKeyOutside(m fieldMap, lo, hi uint64) (uint64, bool) {
 // applies to the body alone, so an issuer cannot sign a capability that every
 // verifier refuses: the type tag, an owner (an AID: not empty, no U+0000), an
 // epoch of at least 1, a CapIDLen-byte id, a known class, an expiry and an
-// Ed25519 holder key. Whether cap_exp is in the window depends on when it is
+// Ed25519 holder key that is not of small order (CORE-K8a). Whether cap_exp is in the window depends on when it is
 // used; SSR-W4 sets how far ahead an issuer writes it.
 func (b *CapBody) checkIssue() error {
 	switch {
@@ -228,6 +232,8 @@ func (b *CapBody) checkIssue() error {
 		return errors.New("cap_exp is 0")
 	case len(b.Holder) != ed25519.PublicKeySize:
 		return fmt.Errorf("holder is %d bytes, want %d", len(b.Holder), ed25519.PublicKeySize)
+	case smallOrder(b.Holder):
+		return errors.New("holder is a point of small order, under which anyone could prove possession (CORE-K8a)")
 	}
 	return nil
 }
@@ -301,13 +307,15 @@ func capExpInWindow(capExp, now uint64) bool {
 // in the fixed order of SSR-W23 (CORE-K2), and the first that fails is
 // reported; every failure is access-invalid, with the step's name as Detail:
 //
-//	decode  Cap.body is not a strict CoreDet CapBody (decodeCapBody), or its
+//	decode  Cap.body is not a strict CoreDet CapBody (decodeCapBody: among
+//	        others, its holder is a key of small order, CORE-K8a), or its
 //	        class is neither contact nor stranger
 //	type    its type tag is not CapType
 //	owner   its owner is not owner (a capability delivers only to its issuer)
 //	epoch   its epoch is not mbox.epoch (a new mailbox key voids every
 //	        capability the old one signed, SSR-W11)
-//	sig     Cap.sig does not verify under mbox.pub
+//	sig     Cap.sig does not verify under mbox.pub, or mbox.pub is a key of
+//	        small order (a published key set never has one, CORE-K8a)
 //	exp     cap_exp is outside [now - CapExpGraceMS, now + CapExpMaxAheadMS]
 //	proof   the proof does not verify under CapBody.holder over (cap_id,
 //	        envDigest): wrong holder key, or the access was made for another
@@ -347,7 +355,7 @@ func VerifyAccess(a *Access, envDigest [32]byte, mbox Mbox, owner string, now ui
 	if mbox.Epoch == 0 || body.Epoch != mbox.Epoch {
 		return bad("epoch", "signed at mailbox epoch %d, the owner's is %d", body.Epoch, mbox.Epoch)
 	}
-	if len(mbox.Pub) != ed25519.PublicKeySize || !ed25519.Verify(mbox.Pub, a.Cap.Body, a.Cap.Sig) {
+	if len(mbox.Pub) != ed25519.PublicKeySize || smallOrder(mbox.Pub) || !ed25519.Verify(mbox.Pub, a.Cap.Body, a.Cap.Sig) {
 		return bad("sig", "the signature is not by the owner's mailbox key")
 	}
 	if !capExpInWindow(body.CapExp, now) {

@@ -127,7 +127,8 @@ func NextSeq(now, lastSeq uint64) uint64 {
 //     MaxKeyValidityMS;
 //  3. a repeated kid, a kid that is not KID(suite, pub), or not_before out
 //     of ascending order;
-//  4. no mailbox signing key, its epoch 0, or its public key not 32 bytes;
+//  4. no mailbox signing key, its epoch 0, its public key not 32 bytes, or
+//     a public key of small order (core CORE-K8a, smallOrder);
 //  5. no key valid at now + ClockSkewMS (checkValidAt).
 //
 // Epochs need not be aligned on the UTC day for a set to verify: aligning
@@ -162,6 +163,9 @@ func (s *EncKeySet) checkStructure() error {
 	}
 	if len(s.Mbox.Pub) != ed25519.PublicKeySize {
 		return fail(ReasonBadKeySet, "mbox pub is %d bytes, want %d", len(s.Mbox.Pub), ed25519.PublicKeySize)
+	}
+	if smallOrder(s.Mbox.Pub) {
+		return fail(ReasonBadKeySet, "mbox pub is a point of small order, under which anyone could sign capabilities")
 	}
 	return nil
 }

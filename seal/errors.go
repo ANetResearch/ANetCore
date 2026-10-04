@@ -151,7 +151,8 @@ func withAck(key AckKey, err error) error { return &ackError{key: key, err: err}
 // AckKeyOf returns the ack_key carried by an error of Open, and whether there
 // is one. It is true exactly for the failures after layer 1 was opened (a
 // malformed Wrap, a closed interaction, a failed interaction-key lookup or
-// second layer, a malformed inner, to-mismatch, exp-mismatch, the KEL caps):
+// second layer, an interaction key of another interaction or peer
+// (ikey-mismatch), a malformed inner, to-mismatch, exp-mismatch, the KEL caps):
 // the envelope was sealed to this node, so its sender is owed a token. It is
 // false for a failure of ParseOuter, an unknown kid and a failed layer-1 open
 // (DLV-C-API-2), for nil, and for an error this package did not produce.

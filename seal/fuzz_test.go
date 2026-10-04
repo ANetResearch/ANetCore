@@ -791,7 +791,7 @@ func FuzzCap(f *testing.F) {
 		if _, err := encodeAccess(&Access{Kind: AccessKindCap, Cap: c, Proof: make([]byte, SigLen)}); err != nil {
 			t.Fatalf("an accepted cap does not make an access: %v", err)
 		}
-		g := Grant{Cap: *c, HolderSeed: make([]byte, ed25519.SeedSize), Home: "h"}
+		g := Grant{Cap: *c, HolderSeed: make([]byte, ed25519.SeedSize), Home: testHomeAID}
 		if d, err := decodeGrant(mustEncode(t, g)); err != nil || !reflect.DeepEqual(d.Cap, *c) {
 			t.Fatalf("an accepted cap does not make a grant: %v", err)
 		}
@@ -930,8 +930,12 @@ func FuzzGrant(f *testing.F) {
 			t.Fatal("kept p2p outside a contact peer grant")
 		case g.Pay != nil && g.IX != nil:
 			t.Fatal("kept pay in a one-shot grant")
-		case g.Home == "" || strings.IndexByte(g.Home, 0) >= 0:
+		case !identity.ValidAID(g.Home):
 			t.Fatalf("kept home %q", g.Home)
+		case g.P2P != nil && checkP2PAddr(*g.P2P) != nil:
+			t.Fatalf("kept p2p %q", *g.P2P)
+		case smallOrder(body.Holder):
+			t.Fatal("kept a holder key of small order")
 		}
 		if u, err := UnmarshalGrant(raw); err != nil || !reflect.DeepEqual(u, g) {
 			t.Fatalf("UnmarshalGrant disagrees with CheckGrant: %v", err)
