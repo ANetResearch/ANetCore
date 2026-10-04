@@ -131,7 +131,8 @@ const (
 // Access is the delivery credential in outer key 7 (core §2.1). It is outside
 // the HPKE info, the inner signature and env_digest, so a sender can change it
 // without sealing again (SSR-W2). This package checks its structure; the
-// credential itself is checked by VerifyAccess (SS-1) and the hub.
+// credential itself is checked by VerifyAccess, at the hub and at the
+// recipient.
 //
 //anet:wire Access
 type Access struct {
@@ -239,7 +240,7 @@ type SealedInner struct {
 	// Grant is key 14 as one CBOR item: a Grant map the sender issues to the
 	// recipient. Open keeps it as received whatever it holds; a grant that
 	// does not decode or check is ignored, never a reason to refuse the
-	// message (CORE-K4; CheckGrant, SS-1).
+	// message (CORE-K4; CheckGrant).
 	Grant cbor.RawMessage
 	RK    *RK    // 15: the sender's interaction key in this interaction
 	Sig   []byte // 20: Ed25519 over the preimage; set by Seal
@@ -281,7 +282,7 @@ func HPKEInfo(to string, suite Suite, kid []byte) ([]byte, error) {
 // key but 1, 2 and 3 (Access has no extension range, CORE-E3); kind 0 with
 // neither cap nor proof, or kind 1 with both; cap a map with exactly a byte
 // string body and a SigLen-byte sig; proof SigLen bytes. Kind 2 and every
-// other value are refused. CapBody is not decoded here (VerifyAccess, SS-1).
+// other value are refused. CapBody is not decoded here (VerifyAccess).
 func decodeAccess(raw []byte) (*Access, error) {
 	m, err := decodeFields(raw)
 	if err != nil {
@@ -311,26 +312,9 @@ func decodeAccess(raw []byte) (*Access, error) {
 	default:
 		return nil, fmt.Errorf("access kind %d is not 0 or 1", a.Kind)
 	}
-	cm, err := decodeFields(m[2])
-	if err != nil {
-		return nil, fmt.Errorf("access cap: %w", err)
+	if a.Cap, err = decodeCap(m[2]); err != nil {
+		return nil, fmt.Errorf("access: %w", err)
 	}
-	for k := range cm {
-		if k < 1 || k > 2 {
-			return nil, fmt.Errorf("access cap has key %d", k)
-		}
-	}
-	var c Cap
-	if c.Body, err = rawBytes(cm, 1); err != nil {
-		return nil, fmt.Errorf("access cap body: %w", err)
-	}
-	if c.Sig, err = rawBytes(cm, 2); err != nil {
-		return nil, fmt.Errorf("access cap sig: %w", err)
-	}
-	if len(c.Sig) != SigLen {
-		return nil, fmt.Errorf("access cap sig is %d bytes, want %d", len(c.Sig), SigLen)
-	}
-	a.Cap = &c
 	if a.Proof, err = rawBytes(m, 3); err != nil {
 		return nil, fmt.Errorf("access proof: %w", err)
 	}
@@ -808,7 +792,7 @@ type Opened struct {
 	// layer was sealed to; nil for one layer.
 	IKID []byte
 	// Access is outer key 7 as ParseOuter decoded it (Outer.Access). Its
-	// structure is checked; the credential is not (VerifyAccess, SS-1).
+	// structure is checked; the credential is not (VerifyAccess).
 	Access *Access
 	// RK is inner key 15 (Inner.RK), nil when absent.
 	RK *RK
@@ -816,7 +800,7 @@ type Opened struct {
 	// nil exactly when KEL is. CheckNotice (KEL-4) checks the content.
 	Notices [][]byte
 	// Grant is inner key 14 as received (Inner.Grant), nil when absent. It
-	// may not decode; CheckGrant (SS-1) decides whether to keep it (CORE-K4).
+	// may not decode; CheckGrant decides whether to keep it (CORE-K4).
 	Grant cbor.RawMessage
 }
 

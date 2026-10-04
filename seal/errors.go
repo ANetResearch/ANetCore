@@ -18,7 +18,7 @@ const (
 	ReasonBadVersion     = "bad-version"     // outer v is not EnvelopeVersion
 	ReasonUnknownSuite   = "unknown-suite"   // suite not implemented by this build
 	ReasonWrongRecipient = "wrong-recipient" // outer to != the opening node's AID
-	ReasonAccessInvalid  = "access-invalid"  // outer key 7 is missing or not a well-formed Access (Detail "parse")
+	ReasonAccessInvalid  = "access-invalid"  // a capability fails a check; Detail names the step: outer key 7 missing or malformed ("parse"), a step of VerifyAccess, or of CheckGrant (the grant is ignored, not the message)
 
 	// Key lookup and layer-1 decryption (steps 2-3). No ack_key exists yet.
 	ReasonUnknownKey = "sealed-to-unknown-key" // kid not in the key ring (never held, or past retention)
