@@ -163,14 +163,15 @@ func (d *TaskDoc) CID() (string, error) {
 	return anetcid.Sum(pre)
 }
 
-// Sign attaches a detached owner signature over the canonical preimage (sign-binds-CID).
-func (d *TaskDoc) Sign(c *identity.Controller) error {
+// Sign attaches a detached owner signature over the canonical preimage (sign-binds-CID), made
+// by s.
+func (d *TaskDoc) Sign(s identity.Signer) error {
 	pre, err := d.CanonicalPreimage()
 	if err != nil {
 		return err
 	}
-	sig, seq := c.Sign(pre)
-	d.Envelope = &aobj.Envelope{SignerAID: c.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
+	sig, seq := s.Sign(pre)
+	d.Envelope = &aobj.Envelope{SignerAID: s.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
 	return nil
 }
 

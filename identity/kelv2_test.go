@@ -709,7 +709,7 @@ func TestDuplicitousRotByStolenPriorKey(t *testing.T) {
 // A key retired by a rot no longer verifies an object that carries no time (C-10 step 6). Under
 // v1, msgTime 0 meant "unknown, so accept" for every state but the dip's.
 func TestRetiredKeyWithZeroMsgTime(t *testing.T) {
-	c, err := Incept()
+	c, err := testIncept()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +718,7 @@ func TestRetiredKeyWithZeroMsgTime(t *testing.T) {
 	if err := VerifyObject(c.KEL(), c.AID(), seq0, 0, obj, sig0); err != nil {
 		t.Fatalf("the active key at msgTime 0: %v", err)
 	}
-	if err := c.Rotate(5000); err != nil {
+	if err := testRotate(c, 5000); err != nil {
 		t.Fatal(err)
 	}
 	err = VerifyObject(c.KEL(), c.AID(), seq0, 0, obj, sig0)
@@ -998,50 +998,6 @@ func TestNoIxnDrtSymbols(t *testing.T) {
 			}
 			return true
 		})
-	}
-}
-
-// ---- Controller (interim, until KEL-2) ---------------------------------------------------------
-
-// The interim Controller builds v2 events: its rot and dip are signed by the key they reveal, and
-// it refuses a ts that does not follow the previous event's.
-func TestControllerBuildsV2Events(t *testing.T) {
-	c, err := Incept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Rotate(1); err == nil {
-		t.Fatal("a rot at the icp's ts was built")
-	}
-	if err := c.Rotate(2000); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Rotate(3000); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.Deactivate(4000); err != nil {
-		t.Fatal(err)
-	}
-	b := mustMarshal(t, c.KEL())
-	states, err := replayBytes(b)
-	if err != nil {
-		t.Fatalf("the controller's KEL: %v", err)
-	}
-	if got := states[len(states)-1].Status; got != StatusDeactivated {
-		t.Fatalf("head %s", got)
-	}
-	if !states[2].RetiredUrgently || states[1].RetiredUrgently {
-		t.Fatalf("urgency %v %v", states[1].RetiredUrgently, states[2].RetiredUrgently)
-	}
-	if err := c.Rotate(5000); err == nil {
-		t.Fatal("rotated after the dip")
-	}
-	s := SuiteController()
-	if s.KEL()[0].Event.Timestamp != SuiteInceptionTS || *s.KEL()[0].Event.Toad != ToadHub {
-		t.Fatalf("suite icp %+v", s.KEL()[0].Event)
-	}
-	if _, err := Replay(s.KEL()); err != nil {
-		t.Fatal(err)
 	}
 }
 

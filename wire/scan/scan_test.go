@@ -254,6 +254,31 @@ func useWrap(w wrap) []byte {
 }
 `})
 	expect(t, ps, all, "signer", "thing.useWrap")
+	// With only the interface registered, a signing method promoted through an embedded field is
+	// still signing, even when the outer type does not implement the interface: here a field
+	// shadows the interface's AID method, as identity.Signer has one.
+	ps, all = fixture(t,
+		edit{"registry.json", `"methods": ["(*example.com/fx/identity.Controller).Sign", "(example.com/fx/identity.Signer).Sign"]`, `"methods": ["(example.com/fx/identity.Signer).Sign"]`},
+		edit{"identity/identity.go", "type Signer interface {\n", "type Signer interface {\n\tAID() string\n"},
+		edit{"identity/identity.go", "// Signer is the signing interface", "// AID names the identity.\nfunc (c *Controller) AID() string { return \"\" }\n\n// Signer is the signing interface"},
+		edit{"thing/outer.go", "", `package thing
+
+import "example.com/fx/identity"
+
+type outer struct {
+	*identity.Controller
+	AID string
+}
+
+func useOuter(o outer) []byte {
+	sig, _ := o.Sign(nil)
+	return sig
+}
+
+// name calls the interface's other method, which does not sign.
+func name(c *identity.Controller) string { return c.AID() }
+`})
+	expect(t, ps, all, "signer", "thing.useOuter")
 	// the method set may not name a method that does not exist
 	ps, all = fixture(t, edit{"registry.json", "(example.com/fx/identity.Signer).Sign", "(example.com/fx/identity.Signer).Sing"})
 	expect(t, ps, all, "signer", "Sing does not exist")

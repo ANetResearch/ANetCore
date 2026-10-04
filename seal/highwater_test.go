@@ -1,6 +1,10 @@
 package seal
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
+)
 
 func TestDecideHighWater(t *testing.T) {
 	stored := &Seen{Seq: 100, Set: []byte("set-100")}
@@ -67,7 +71,7 @@ func TestDecideHighWaterSigned(t *testing.T) {
 func TestDecideHighWaterSignedUsesSetSeq(t *testing.T) {
 	a := newParty(t)
 	// Move the signer to key_state_seq 1 so ksn is not 0.
-	if err := a.c.Rotate(t0); err != nil {
+	if err := identitytest.Rotate(a.c, t0); err != nil {
 		t.Fatal(err)
 	}
 	sign := func(seq, issued uint64) *SignedEncKeySet {

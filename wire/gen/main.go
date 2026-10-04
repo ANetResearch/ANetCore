@@ -129,6 +129,8 @@ func keyspace(o *wire.Object) string {
 		return "closed: every unregistered key is refused"
 	case wire.KeyspaceDerived:
 		return "built and hashed or signed, never decoded"
+	case wire.KeyspaceExternal:
+		return "not a CBOR map: a signing input defined outside anet"
 	}
 	return o.Keyspace
 }
@@ -238,6 +240,11 @@ func Render(r *wire.Registry) []byte {
 			}
 			d.p("*%s.*", strings.Join(facts, "; "))
 			d.p("")
+			if o.Keyspace == wire.KeyspaceExternal {
+				d.p("No keys: not a CBOR map.")
+				d.p("")
+				continue
+			}
 			if len(o.Keys) == 0 {
 				d.p("No keys: the empty map.")
 				d.p("")

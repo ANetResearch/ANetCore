@@ -7,6 +7,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 	"github.com/ANetResearch/ANetCore/tsir"
 )
 
@@ -34,7 +35,7 @@ func signedReq(t *testing.T, c *identity.Controller, goal string) *DelegateReq {
 }
 
 func TestAGenuineDelegationVerifies(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +63,11 @@ func TestAGenuineDelegationVerifies(t *testing.T) {
 // KEL is the one the receiver resolved for the sender of the envelope:
 // Alice's.
 func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mallory, err := identity.Incept()
+	mallory, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +160,7 @@ func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
 }
 
 func TestVerifyRefusesNil(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ func TestVerifyRefusesNil(t *testing.T) {
 // a field lost in encoding is a message that fails verification at the far
 // end for a reason nobody can find from the far end.
 func TestWireTypesRoundTrip(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

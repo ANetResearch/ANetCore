@@ -103,12 +103,18 @@ func (r *EventRecord) ComputeID() (string, error) {
 	return anetcid.Sum(pre)
 }
 
-// Sign computes the id and a detached owner signature over the preimage (sign-binds-id).
-// signer_aid/key_state_seq are CID-significant, so they are stamped BEFORE the preimage is
-// built — one preimage feeds both the id and the signature.
-func (r *EventRecord) Sign(c *identity.Controller) error {
-	r.SignerAID = c.AID()
-	r.KeyStateSeq = c.CurrentSeq()
+// Sign computes the id and a detached owner signature over the preimage (sign-binds-id), made
+// by s. signer_aid/key_state_seq are CID-significant, so they are stamped BEFORE the preimage is
+// built — one preimage feeds both the id and the signature — from one snapshot of s, so that a
+// rotation in between cannot stamp one key state and sign under another (KEL C-22).
+func (r *EventRecord) Sign(s identity.Signer) error {
+	s = identity.SnapshotOf(s)
+	seq, err := identity.SeqOf(s)
+	if err != nil {
+		return err
+	}
+	r.SignerAID = s.AID()
+	r.KeyStateSeq = seq
 	pre, err := r.Preimage()
 	if err != nil {
 		return err
@@ -117,7 +123,10 @@ func (r *EventRecord) Sign(c *identity.Controller) error {
 	if err != nil {
 		return err
 	}
-	sig, _ := c.Sign(pre)
+	sig, signedAt := s.Sign(pre)
+	if signedAt != seq {
+		return identity.ErrSignerSeq
+	}
 	r.ID = id
 	r.Sig = sig
 	return nil

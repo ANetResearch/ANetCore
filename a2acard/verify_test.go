@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 func TestVerifyAcceptsSignedCard(t *testing.T) {
@@ -51,7 +52,7 @@ func TestVerifyAcceptsSignedCard(t *testing.T) {
 // A card signed under the current key after a rotation is accepted with the new key-state seq.
 func TestVerifyAfterRotation(t *testing.T) {
 	c := incept(t)
-	if err := c.Rotate(t0 - 1000); err != nil {
+	if err := identitytest.Rotate(c, t0-1000); err != nil {
 		t.Fatal(err)
 	}
 	v, err := Verify(signCard(t, baseCard(c.AID()), c), newResolver(c).resolve, t0)
@@ -69,8 +70,8 @@ func TestVerifyRejections(t *testing.T) {
 	a := incept(t)
 	b := incept(t)
 	rotated := incept(t)
-	oldKey := rotated.CurrentPrivateKey()
-	if err := rotated.Rotate(t0 - 1000); err != nil {
+	oldKey := privateKeyOf(rotated)
+	if err := identitytest.Rotate(rotated, t0-1000); err != nil {
 		t.Fatal(err)
 	}
 	good := signCard(t, baseCard(a.AID()), a)
@@ -103,7 +104,7 @@ func TestVerifyRejections(t *testing.T) {
 			s := m["signatures"].([]any)[0].(map[string]any)
 			s["signature"] = b64.EncodeToString(make([]byte, 64))
 		}), nil, CodeInvalidSignature},
-		{"signed by another key under a's kid", signAs(t, baseCard(a.AID()), b.CurrentPrivateKey(), KID(a.AID(), 0)), nil, CodeInvalidSignature},
+		{"signed by another key under a's kid", signAs(t, baseCard(a.AID()), privateKeyOf(b), KID(a.AID(), 0)), nil, CodeInvalidSignature},
 
 		// Unsigned.
 		{"signatures removed", after(func(m map[string]any) { delete(m, "signatures") }), nil, CodeUnsigned},
@@ -115,7 +116,7 @@ func TestVerifyRejections(t *testing.T) {
 		{"signature entry not an object", after(func(m map[string]any) { m["signatures"] = []any{"x"} }), nil, CodeInvalidCard},
 
 		// Binding of the kid, params.aid and relay tenant to one AID.
-		{"kid with another AID", signAs(t, baseCard(a.AID()), b.CurrentPrivateKey(), KID(b.AID(), 0)), nil, CodeBindingMismatch},
+		{"kid with another AID", signAs(t, baseCard(a.AID()), privateKeyOf(b), KID(b.AID(), 0)), nil, CodeBindingMismatch},
 		{"relay tenant is another AID", withCard(func(m map[string]any) { iface(m, 0)["tenant"] = b.AID() }), nil, CodeBindingMismatch},
 		{"relay tenant missing", withCard(func(m map[string]any) { delete(iface(m, 0), "tenant") }), nil, CodeBindingMismatch},
 		{"relay tenant changed after signing", after(func(m map[string]any) { iface(m, 0)["tenant"] = b.AID() }), nil, CodeBindingMismatch},
@@ -129,7 +130,7 @@ func TestVerifyRejections(t *testing.T) {
 
 		// KEL and key state.
 		{"kid seq points to a rotated key state", signAs(t, baseCard(rotated.AID()), oldKey, KID(rotated.AID(), 0)), newResolver(rotated), CodeKeyNotCurrent},
-		{"kid seq beyond the KEL", signAs(t, baseCard(a.AID()), a.CurrentPrivateKey(), KID(a.AID(), 1)), nil, CodeKeyNotCurrent},
+		{"kid seq beyond the KEL", signAs(t, baseCard(a.AID()), privateKeyOf(a), KID(a.AID(), 1)), nil, CodeKeyNotCurrent},
 		{"resolver returns another AID's KEL", good, &resolver{kels: map[string][]identity.SignedEvent{a.AID(): b.KEL()}}, CodeUnknownAID},
 		{"resolver returns a KEL with a bad signature", good, &resolver{kels: map[string][]identity.SignedEvent{a.AID(): corruptKEL(a.KEL())}}, CodeUnknownAID},
 		{"resolver returns an empty KEL", good, &resolver{kels: map[string][]identity.SignedEvent{a.AID(): {}}}, CodeUnknownAID},
@@ -209,9 +210,9 @@ func TestVerifyRejections(t *testing.T) {
 		{"more than 8 signatures", tooManySignatures(t, good), nil, CodeTooLarge},
 
 		// Protected header.
-		{"kid not did:anet", signAs(t, baseCard(a.AID()), a.CurrentPrivateKey(), "key-1"), nil, CodeBadHeader},
-		{"kid seq with leading zero", signAs(t, baseCard(a.AID()), a.CurrentPrivateKey(), "did:anet:"+a.AID()+"#00"), nil, CodeBadHeader},
-		{"alg not EdDSA", withHeader(t, baseCard(a.AID()), a.CurrentPrivateKey(), `{"alg":"ES256","kid":"`+KID(a.AID(), 0)+`"}`), nil, CodeBadHeader},
+		{"kid not did:anet", signAs(t, baseCard(a.AID()), privateKeyOf(a), "key-1"), nil, CodeBadHeader},
+		{"kid seq with leading zero", signAs(t, baseCard(a.AID()), privateKeyOf(a), "did:anet:"+a.AID()+"#00"), nil, CodeBadHeader},
+		{"alg not EdDSA", withHeader(t, baseCard(a.AID()), privateKeyOf(a), `{"alg":"ES256","kid":"`+KID(a.AID(), 0)+`"}`), nil, CodeBadHeader},
 
 		// Parsing.
 		{"not an object", []byte(`[1]`), nil, CodeInvalidCard},
@@ -345,7 +346,7 @@ func TestVerifyResolvesOnlyWhenNeeded(t *testing.T) {
 		"missing skills":  signLoose(t, with(func(m map[string]any) { delete(m, "skills") }), a),
 		"future card":     signCard(t, with(func(m map[string]any) { params(m)["notBefore"] = dec(t0 + 10*NotBeforeSkewMillis) }), a),
 		"tenant mismatch": signCard(t, with(func(m map[string]any) { iface(m, 0)["tenant"] = b.AID() }), a),
-		"kid of b":        signAs(t, baseCard(a.AID()), b.CurrentPrivateKey(), KID(b.AID(), 0)),
+		"kid of b":        signAs(t, baseCard(a.AID()), privateKeyOf(b), KID(b.AID(), 0)),
 	}
 	for name, card := range cases {
 		r := newResolver(a, b)
@@ -362,12 +363,12 @@ func TestVerifyResolvesOnlyWhenNeeded(t *testing.T) {
 func TestVerifyMultipleSignatures(t *testing.T) {
 	a := incept(t)
 	b := incept(t)
-	oldKey := a.CurrentPrivateKey()
-	if err := a.Rotate(t0 - 1000); err != nil {
+	oldKey := privateKeyOf(a)
+	if err := identitytest.Rotate(a, t0-1000); err != nil {
 		t.Fatal(err)
 	}
 	card := marshal(t, baseCard(a.AID()))
-	s1, err := Sign(card, b.CurrentPrivateKey(), KID(b.AID(), 0), "")
+	s1, err := Sign(card, privateKeyOf(b), KID(b.AID(), 0), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +376,7 @@ func TestVerifyMultipleSignatures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s3, err := SignWithController(s2, a, "")
+	s3, err := SignWithSnapshot(s2, a, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,16 +418,16 @@ func TestVerifyResolverErrorIsWrapped(t *testing.T) {
 // is rejected, and a deactivated AID has no accepted state.
 func TestVerifyKeyStateRule(t *testing.T) {
 	c := incept(t)
-	k0 := c.CurrentPrivateKey()
+	k0 := privateKeyOf(c)
 	if _, err := Verify(signAs(t, baseCard(c.AID()), k0, KID(c.AID(), 0)), newResolver(c).resolve, t0); err != nil {
 		t.Errorf("icp, kid seq 0: %v", err)
 	}
 
 	// -> rot(1): state 0 is retired; 1 is current.
-	if err := c.Rotate(t0 - 2000); err != nil {
+	if err := identitytest.Rotate(c, t0-2000); err != nil {
 		t.Fatal(err)
 	}
-	k1 := c.CurrentPrivateKey()
+	k1 := privateKeyOf(c)
 	if _, err := Verify(signAs(t, baseCard(c.AID()), k0, KID(c.AID(), 0)), newResolver(c).resolve, t0); !IsCode(err, CodeKeyNotCurrent) {
 		t.Errorf("icp->rot, kid seq 0: err %v, want %s", err, CodeKeyNotCurrent)
 	}
@@ -435,7 +436,7 @@ func TestVerifyKeyStateRule(t *testing.T) {
 	}
 
 	// -> dip(2): nothing is current.
-	if err := c.Deactivate(t0 - 1000); err != nil {
+	if err := identitytest.Deactivate(c, t0-1000); err != nil {
 		t.Fatal(err)
 	}
 	for _, seq := range []uint64{1, 2} {
@@ -448,14 +449,14 @@ func TestVerifyKeyStateRule(t *testing.T) {
 
 func TestCurrentKey(t *testing.T) {
 	c := incept(t)
-	if err := c.Rotate(t0); err != nil {
+	if err := identitytest.Rotate(c, t0); err != nil {
 		t.Fatal(err)
 	}
 	pub, err := CurrentKey(KID(c.AID(), 1), c.KEL())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pub.Equal(c.CurrentPrivateKey().Public()) {
+	if !pub.Equal(privateKeyOf(c).Public()) {
 		t.Fatal("CurrentKey returned a key other than the controller's current key")
 	}
 	if _, err := CurrentKey(KID(c.AID(), 0), c.KEL()); !IsCode(err, CodeKeyNotCurrent) {

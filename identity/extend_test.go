@@ -15,10 +15,10 @@ func cloneKEL(k []SignedEvent) []SignedEvent { return append([]SignedEvent(nil),
 func TestExtendsKELAcceptsEqualAndLonger(t *testing.T) {
 	c := SuiteController()
 	short := cloneKEL(c.KEL())
-	if err := c.Rotate(SuiteInceptionTS + 1000); err != nil {
+	if err := testRotate(c, SuiteInceptionTS+1000); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rotate(SuiteInceptionTS + 2000); err != nil {
+	if err := testRotate(c, SuiteInceptionTS+2000); err != nil {
 		t.Fatal(err)
 	}
 	long := cloneKEL(c.KEL())
@@ -36,7 +36,7 @@ func TestExtendsKELAcceptsEqualAndLonger(t *testing.T) {
 
 func TestExtendsKELRejectsRollback(t *testing.T) {
 	c := SuiteController()
-	if err := c.Rotate(SuiteInceptionTS + 1000); err != nil {
+	if err := testRotate(c, SuiteInceptionTS+1000); err != nil {
 		t.Fatal(err)
 	}
 	stored := cloneKEL(c.KEL())
@@ -55,13 +55,13 @@ func TestExtendsKELRejectsFork(t *testing.T) {
 	// Two controllers built from the same seeds share the inception event and then diverge.
 	a := SuiteController()
 	b := SuiteController()
-	if err := a.Rotate(SuiteInceptionTS + 1000); err != nil {
+	if err := testRotate(a, SuiteInceptionTS+1000); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Rotate(SuiteInceptionTS + 1500); err != nil {
+	if err := testRotate(a, SuiteInceptionTS+1500); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.Rotate(SuiteInceptionTS + 2000); err != nil {
+	if err := testRotate(b, SuiteInceptionTS+2000); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,7 +89,7 @@ func TestExtendsKELRejectsFork(t *testing.T) {
 	}
 
 	// A different identity differs at seq 0.
-	other, err := Incept()
+	other, err := testIncept()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestExtendsKELRejectsFork(t *testing.T) {
 
 func TestExtendsKELRequiresCandidateToReplay(t *testing.T) {
 	c := SuiteController()
-	if err := c.Rotate(SuiteInceptionTS + 1000); err != nil {
+	if err := testRotate(c, SuiteInceptionTS+1000); err != nil {
 		t.Fatal(err)
 	}
 	stored := cloneKEL(c.KEL()[:1])
@@ -125,7 +125,7 @@ func TestExtendsKELRequiresCandidateToReplay(t *testing.T) {
 // checks the candidate's signatures itself, so neither field is part of the history.
 func TestExtendsKELComparesPreimagesNotWrapperBytes(t *testing.T) {
 	c := SuiteController()
-	if err := c.Rotate(SuiteInceptionTS + 1000); err != nil {
+	if err := testRotate(c, SuiteInceptionTS+1000); err != nil {
 		t.Fatal(err)
 	}
 	next := cloneKEL(c.KEL())

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // t0 is 2026-01-01T00:00:00Z in unix ms. Tests use fixed times so a failure
@@ -23,7 +24,7 @@ type party struct {
 
 func newParty(t *testing.T) *party {
 	t.Helper()
-	c, err := identity.Incept()
+	c, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

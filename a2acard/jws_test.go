@@ -114,12 +114,12 @@ func TestProtectedHeaderBytes(t *testing.T) {
 func TestSignAppendsAndExcludesSignatures(t *testing.T) {
 	c := incept(t)
 	card := marshal(t, baseCard(c.AID()))
-	once, err := Sign(card, c.CurrentPrivateKey(), KID(c.AID(), 0), "")
+	once, err := Sign(card, privateKeyOf(c), KID(c.AID(), 0), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	other := incept(t)
-	twice, err := Sign(once, other.CurrentPrivateKey(), "second", "")
+	twice, err := Sign(once, privateKeyOf(other), "second", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,10 +127,10 @@ func TestSignAppendsAndExcludesSignatures(t *testing.T) {
 	if len(sigs) != 2 || sigs[0] != signaturesOf(t, once)[0] {
 		t.Fatalf("signatures = %+v, want the first kept and a second appended", sigs)
 	}
-	if _, err := VerifySignature(twice, sigs[0], c.CurrentPrivateKey().Public().(ed25519.PublicKey)); err != nil {
+	if _, err := VerifySignature(twice, sigs[0], privateKeyOf(c).Public().(ed25519.PublicKey)); err != nil {
 		t.Fatalf("first signature after append: %v", err)
 	}
-	if _, err := VerifySignature(twice, sigs[1], other.CurrentPrivateKey().Public().(ed25519.PublicKey)); err != nil {
+	if _, err := VerifySignature(twice, sigs[1], privateKeyOf(other).Public().(ed25519.PublicKey)); err != nil {
 		t.Fatalf("second signature: %v", err)
 	}
 	p1, _ := SigningPayload(card)
@@ -157,19 +157,19 @@ func TestNestedSignaturesMemberIsSigned(t *testing.T) {
 func TestSignRejects(t *testing.T) {
 	c := incept(t)
 	card := marshal(t, baseCard(c.AID()))
-	if _, err := Sign(card, c.CurrentPrivateKey()[:10], "k", ""); !IsCode(err, CodeBadHeader) {
+	if _, err := Sign(card, privateKeyOf(c)[:10], "k", ""); !IsCode(err, CodeBadHeader) {
 		t.Errorf("short key: %v", err)
 	}
-	if _, err := Sign(card, c.CurrentPrivateKey(), "", ""); !IsCode(err, CodeBadHeader) {
+	if _, err := Sign(card, privateKeyOf(c), "", ""); !IsCode(err, CodeBadHeader) {
 		t.Errorf("empty kid: %v", err)
 	}
-	if _, err := Sign([]byte(`[1]`), c.CurrentPrivateKey(), "k", ""); !IsCode(err, CodeInvalidCard) {
+	if _, err := Sign([]byte(`[1]`), privateKeyOf(c), "k", ""); !IsCode(err, CodeInvalidCard) {
 		t.Errorf("array card: %v", err)
 	}
-	if _, err := Sign([]byte(`{"signatures":{}}`), c.CurrentPrivateKey(), "k", ""); !IsCode(err, CodeInvalidCard) {
+	if _, err := Sign([]byte(`{"signatures":{}}`), privateKeyOf(c), "k", ""); !IsCode(err, CodeInvalidCard) {
 		t.Errorf("signatures object: %v", err)
 	}
-	if _, err := Sign([]byte(`{"a":1,"a":2}`), c.CurrentPrivateKey(), "k", ""); !IsCode(err, CodeMalformedJSON) {
+	if _, err := Sign([]byte(`{"a":1,"a":2}`), privateKeyOf(c), "k", ""); !IsCode(err, CodeMalformedJSON) {
 		t.Errorf("duplicate member: %v", err)
 	}
 }

@@ -9,11 +9,12 @@ import (
 	"github.com/ANetResearch/ANetCore/delegation"
 	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 func incept(t testing.TB) *identity.Controller {
 	t.Helper()
-	c, err := identity.Incept()
+	c, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,7 @@ func TestMsgTimeDrivesRevocation(t *testing.T) {
 	requester, provider := incept(t), incept(t)
 	tk := newTask(t, requester, "ix-1")
 	rr := tk.completion(t, provider, []byte("x"), nil)
-	if err := provider.Rotate(msgTime + 5000); err != nil {
+	if err := identitytest.Rotate(provider, msgTime+5000); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := delegation.VerifyResultForRequest(rr, provider.KEL(), tk.check(provider.AID()), msgTime+4999); err != nil {
