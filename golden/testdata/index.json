@@ -134,7 +134,7 @@
       "covers": "the KEL-2A hub as witness signs a notice for the tip of KEL-2B: NoticeBody, NoticeWire; a counterexample for each step of notice verification",
       "labels": ["L18"],
       "objects": ["NoticeBody", "NoticeWire", "aobj.Envelope"],
-      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-ksn-1.json", "todo": "v030-todo(KEL-4)"}]
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-ksn-1.json"}]
     },
     {
       "id": "RELAYAUTH-3",

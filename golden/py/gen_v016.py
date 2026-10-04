@@ -2764,6 +2764,335 @@ def gen_recovery_1():
     }
 
 
+
+# --- KEL: witness notices (KEL-4): KSN-1 ------------------------------------------------------------
+#
+# NoticeBody (core §2.6): 0 t "anet.ksn/1", 1 aid, 2 seq, 3 head, 4 observed_at, 5 witness. NoticeWire:
+# 1 body = coredet(NoticeBody) (a byte string), 2 env = the aobj envelope {1 signer_aid, 2 key_state_seq,
+# 3 alg -8, 4 sig}; sig is Ed25519 over the body bytes by the witness hub's key at key_state_seq (L18).
+# A notice confirms the tip of the KEL a message carries when (KEL C-51, in this order) 1 it decodes
+# strictly, both maps in CoreDet form, with no preimage reference; 2 the tip has toad 1 and names a
+# witness; 3 aid, seq and head are the tip's; 4 its witness is the tip's and signs it; 5 the receiver
+# holds the witness hub's KEL as far as key_state_seq (else witness-unknown), that KEL is a hub's (toad 0)
+# and replays to the witness, the signature verifies at that key state, which was not retired before
+# observed_at, and a retired one is still usable at the arrival (grace 0 after an emergency rot or a dip,
+# 1 h after a planned rot); 6 observed_at is at most 6 h before the arrival and at most 5 min after it.
+# notice_verify below is that check written from the definitions; the generator asks it to judge every
+# case it writes.
+
+KSN_VID = "KSN-1"
+KSN_TYPE = "anet.ksn/1"
+KSN_OBSERVED_AT = KEL_HUB_T0 + 400000  # after the KEL-2B agent's rot 2, before the KEL-2A hub's dip
+KSN_ARRIVAL = KSN_OBSERVED_AT + KEL_MINUTE
+# a time the KEL-2A hub still signed with k0: before its planned rot 1, which retires key state 0 with the 1 h grace
+KSN_EARLY_OBSERVED_AT = KEL_HUB_T0 + KEL_MINUTE // 2
+KSN_PLANNED_RETIRED = KEL_HUB_T0 + KEL_MINUTE
+KSN_HOUR = 60 * KEL_MINUTE
+KSN_MAX_AGE = 6 * KSN_HOUR
+KSN_SKEW = 5 * KEL_MINUTE
+KSN_GRACE = KSN_HOUR
+KSN_ABOUT = (
+    "Witness notices (L18): NoticeBody {0 t, 1 aid, 2 seq, 3 head, 4 observed_at, 5 witness}, "
+    "NoticeWire {1 body = coredet(NoticeBody), 2 env = aobj envelope {1 signer_aid, 2 key_state_seq, 3 alg = -8, 4 sig}}, "
+    "the signature Ed25519 over the body bytes. The valid notice is the KEL-2A hub's (W2) for the tip of the KEL-2B agent's "
+    "KEL up to its rot 2 (seq 2, which names W2), signed with KEL-2A k2 at key state 2. Each case gives the notice, the KEL "
+    "it is checked against (subject), the hub KELs the receiver holds (hub_kels: the hub AID asked for and the KEL "
+    "answered) and the arrival time; reason is what VerifyNotice must refuse it with (\"\" = accepted): the steps in order "
+    "are 1 decoding (witness-invalid), 2 a witness to confirm (witness-missing), 3 the tip (witness-mismatch), 4 the "
+    "signer (witness-invalid), 5 the witness hub's KEL and signature (witness-unknown, witness-invalid), 6 freshness "
+    "(witness-stale: observed at most 6 h before the arrival and at most 5 min after it). Keys are SHA-256 of their "
+    "labels: anet-golden/v016/KEL-2A/k<i>, anet-golden/v016/KEL-2B/k<i>, anet-golden/v016/KEL-2B/w1-k0 and "
+    "anet-golden/v016/KSN-1/<x|y>-k<i>.")
+
+
+def kel_wire_of(events) -> bytes:
+    """MarshalKEL of a list of KelLog events."""
+    return cbor([{1: e, 2: sig, 3: eid} for e, _, eid, sig in events])
+
+
+def kel_replay_states(wire: bytes) -> list:
+    """The key states of a KEL v2 (KEL §2.1, §2.2) for what a notice check needs: each event's AID, seq,
+    head, status, key, toad, witness, superseded_at and retired_urgently. It checks the type tag, the
+    event ids, the signatures (icp by its key, rot and dip by the key they reveal), the linkage, the
+    pre-committed digests and the rising ts; anything else wrong raises GoldenError."""
+    kel = uncbor(wire)
+    if not isinstance(kel, list) or not kel:
+        raise GoldenError("KEL: not a non-empty array")
+    states, committed, last_ts = [], None, 0
+    for i, se in enumerate(kel):
+        if not isinstance(se, dict) or set(se) != {1, 2, 3}:
+            raise GoldenError("KEL: event %d is not a signed event" % i)
+        e, sig, eid = se[1], se[2], se[3]
+        pre = cbor(e)
+        if e.get(0) != KEL_TYPE or cid(pre) != eid or len(e[5]) != 1 or not ed25519_verify(e[5][0], pre, sig):
+            raise GoldenError("KEL: event %d does not verify" % i)
+        if e[8] <= last_ts:
+            raise GoldenError("KEL: event %d is not after the one before" % i)
+        if i == 0:
+            if e[4] != "icp" or e[2] != 0 or 1 in e or 3 in e:
+                raise GoldenError("KEL: the first event is not an icp")
+            aid, toad, witness = eid, e[11], ""
+        else:
+            prior = states[-1]
+            if (e.get(1) != aid or e.get(2) != i or e.get(3) != prior["head"] or e[4] not in ("rot", "dip")
+                    or sha256(e[5][0]) != committed or prior["status"] == "deactivated"):
+                raise GoldenError("KEL: event %d does not follow the one before" % i)
+            if e[4] == "rot":
+                if e.get(11) != toad:
+                    raise GoldenError("KEL: event %d changes toad" % i)
+                witness = e[9][0] if 9 in e else ("" if toad == 0 else None)
+                if witness is None:
+                    raise GoldenError("KEL: event %d names no witness" % i)
+        states.append({"aid": aid, "seq": i, "head": eid, "toad": toad, "witness": witness,
+                       "status": "deactivated" if e[4] == "dip" else "active",
+                       "key": None if e[4] == "dip" else e[5][0], "superseded_at": 0, "urgent": False})
+        committed, last_ts = e.get(6), e[8]
+    for i in range(len(states) - 1):
+        nxt = kel[i + 1][1]
+        if states[i]["status"] == "active":
+            states[i]["status"] = "rotated"
+        states[i]["superseded_at"] = nxt[8]
+        states[i]["urgent"] = nxt[4] == "dip" or nxt.get(12, False) is True
+    return states
+
+
+def notice_decode(b: bytes):
+    """Step 1: the body (a dict) and the envelope of a notice, or None when it is not a valid NoticeWire."""
+    try:
+        w = uncbor(b)
+        if not isinstance(w, dict) or set(w) != {1, 2} or not isinstance(w[1], bytes) or not isinstance(w[2], dict):
+            return None
+        env, body = w[2], uncbor(w[1])
+    except GoldenError:
+        return None
+    if (set(env) != {1, 2, 3, 4} or type(env[1]) is not str or type(env[2]) is not int or env[2] < 0
+            or env[3] != -8 or type(env[3]) is not int or not isinstance(env[4], bytes) or len(env[4]) != 64):
+        return None
+    types = {0: str, 1: str, 2: int, 3: str, 4: int, 5: str}
+    if not isinstance(body, dict) or set(body) != set(types):
+        return None
+    for k, ty in types.items():
+        if type(body[k]) is not ty or (ty is int and body[k] < 0):
+            return None
+    if body[0] != KSN_TYPE:
+        return None
+    return body, env, w[1]
+
+
+def notice_verify(b: bytes, subject: bytes, hubs: dict, arrival: int) -> str:
+    """The reason a notice is refused with (KEL C-51, C-56), or "" when it confirms the tip of subject
+    (KEL bytes) for a message arriving at arrival; hubs maps a hub AID to the KEL bytes held for it."""
+    dec = notice_decode(b)
+    if dec is None:
+        return "witness-invalid"
+    body, env, body_bytes = dec
+    tip = kel_replay_states(subject)[-1]
+    if tip["toad"] != 1 or not tip["witness"]:
+        return "witness-missing"
+    if body[1] != tip["aid"] or body[2] != tip["seq"] or body[3] != tip["head"]:
+        return "witness-mismatch"
+    if body[5] != tip["witness"] or env[1] != body[5]:
+        return "witness-invalid"
+    wkel = hubs.get(body[5])
+    if wkel is None:
+        return "witness-unknown"
+    try:
+        ws = kel_replay_states(wkel)
+    except GoldenError:
+        n = len(uncbor(wkel))
+        return "witness-unknown" if env[2] >= n else "witness-invalid"
+    if env[2] >= len(ws):
+        return "witness-unknown"
+    st, observed = ws[env[2]], body[4]
+    if ws[-1]["toad"] != 0 or ws[-1]["aid"] != body[5] or st["status"] == "deactivated":
+        return "witness-invalid"
+    if not ed25519_verify(st["key"], body_bytes, env[4]):
+        return "witness-invalid"
+    if st["status"] == "rotated":
+        if observed == 0 or observed >= st["superseded_at"]:
+            return "witness-invalid"
+        if arrival > st["superseded_at"] + (0 if st["urgent"] else KSN_GRACE):
+            return "witness-invalid"
+    if observed > arrival + KSN_SKEW or arrival - observed > KSN_MAX_AGE:
+        return "witness-stale"
+    return ""
+
+
+def ksn_kels() -> list:
+    """The KELs of KSN-1, by name, in the order the file lists them."""
+    a, b = kel_2a().events, kel_2b().events
+    x = KelLog().add(kel_icp(seed(KSN_VID, "x-k0"), seed(KSN_VID, "x-k1"), KEL_AGENT_T0, 1), seed(KSN_VID, "x-k0"))
+    x.add(kel_rot(seed(KSN_VID, "x-k1"), seed(KSN_VID, "x-k2"), KEL_AGENT_T0 + KEL_MINUTE, 1, witness=b[0][2]),
+          seed(KSN_VID, "x-k1"))
+    y = KelLog().add(kel_icp(seed(KSN_VID, "y-k0"), seed(KSN_VID, "y-k1"), KEL_HUB_T0, 0), seed(KSN_VID, "y-k0"))
+    y.add(kel_rot(seed(KSN_VID, "y-k1"), seed(KSN_VID, "y-k2"), KEL_HUB_T0 + KEL_MINUTE, 0), seed(KSN_VID, "y-k1"))
+    y.add(kel_rot(seed(KSN_VID, "y-k2"), seed(KSN_VID, "y-k3"), KEL_HUB_T0 + 2 * KEL_MINUTE, 0), seed(KSN_VID, "y-k2"))
+    bad = list(a[:3])
+    e, pre, eid, sig = bad[2]
+    bad[2] = (e, pre, eid, flip(sig, 0))
+    return [
+        ("A2", "the KEL-2A hub (W2) up to its rot 1: it ends before key state 2", a[:2]),
+        ("A3", "the KEL-2A hub (W2) up to its emergency rot 2: key state 2 (k2) is its tip", a[:3]),
+        ("A4", "the whole KEL-2A: its dip retires key state 2 urgently at %d" % KEL_HUB_DIP_TS, a),
+        ("B1", "the KEL-2B agent's icp alone: its witness is pending", b[:1]),
+        ("B2", "the KEL-2B agent up to its rot 1, which names W1", b[:2]),
+        ("B3", "the KEL-2B agent up to its rot 2, which names W2 (the KEL-2A hub)", b[:3]),
+        ("W1", "the W1 hub of KEL-2B (an icp)", kel_w1().events),
+        ("X1", "an agent X whose rot 1 names the KEL-2B agent, an agent, as its witness", x.events),
+        ("Y3", "another hub Y up to its rot 2", y.events),
+        ("A3-bad", "A3 with one bit of the signature of rot 2 changed: it does not replay", bad),
+    ]
+
+
+@vector("KSN-1", "ANetCore/identity/testdata/vec-ksn-1.json")
+def gen_ksn_1():
+    kels = ksn_kels()
+    wire = {name: kel_wire_of(events) for name, _, events in kels}
+    first = {name: events[0][2] for name, _, events in kels}
+    ka, kb = kel_keys("KEL-2A"), kel_keys("KEL-2B")
+    w1_key = seed("KEL-2B", "w1-k0")
+    a_aid, b_aid, w1_aid, x_aid = first["A3"], first["B3"], first["W1"], first["X1"]
+    events = {name: events for name, _, events in kels}
+    tip, tip1 = events["B3"][2][2], events["B2"][1][2]
+
+    def body_map(aid, seq, head, observed, witness):
+        return {0: KSN_TYPE, 1: aid, 2: seq, 3: head, 4: observed, 5: witness}
+
+    def env_map(signer, seq, sig):
+        return {1: signer, 2: seq, 3: -8, 4: sig}
+
+    def signed(body: bytes, signer: str, seq: int, key: bytes) -> bytes:
+        return cbor({1: body, 2: env_map(signer, seq, ed25519_sign(key, body))})
+
+    base = body_map(b_aid, 2, tip, KSN_OBSERVED_AT, a_aid)
+    body = cbor(base)
+    sig = ed25519_sign(ka[2], body)
+    notice = signed(body, a_aid, 2, ka[2])
+
+    def signed_body(over: dict | None = None, drop=()) -> bytes:
+        m = {k: v for k, v in base.items() if k not in drop}
+        m.update(over or {})
+        return signed(cbor(m), a_aid, 2, ka[2])
+
+    def env_with(over: dict) -> dict:
+        m = env_map(a_aid, 2, sig)
+        m.update(over)
+        return m
+
+    def hubs(*pairs):
+        return [{"aid": pairs[i], "kel": pairs[i + 1]} for i in range(0, len(pairs), 2)]
+
+    held = hubs(a_aid, "A3")
+    cases = []
+
+    def add(name, subject, hub_kels, arrival, n: bytes, reason):
+        got = notice_verify(n, wire[subject], {h["aid"]: wire[h["kel"]] for h in hub_kels}, arrival)
+        if got != reason:
+            raise GoldenError("KSN-1 %r: the reference finds %r, the case says %r" % (name, got, reason))
+        cases.append({"name": name, "subject": subject, "hub_kels": hub_kels, "arrival": arrival, "notice": b16(n),
+                      "reason": reason})
+
+    # Accepted.
+    add("ok: the notice for the tip, signed by its witness at the witness's current key", "B3", held, KSN_ARRIVAL, notice, "")
+    add("ok: observed exactly 6 h before the arrival", "B3", held, KSN_OBSERVED_AT + 6 * KSN_HOUR, notice, "")
+    add("ok: observed exactly 5 min after the arrival", "B3", held, KSN_OBSERVED_AT - 5 * KEL_MINUTE, notice, "")
+    add("ok: the witness's key state is retired later, by its dip, exactly at the arrival", "B3",
+        hubs(a_aid, "A4"), KEL_HUB_DIP_TS, notice, "")
+    add("ok: an older prefix of the KEL, with a notice from the witness that prefix names", "B2",
+        hubs(a_aid, "A3", w1_aid, "W1"), KSN_ARRIVAL,
+        signed(cbor(body_map(b_aid, 1, tip1, KSN_OBSERVED_AT, w1_aid)), w1_aid, 0, w1_key), "")
+    # A notice the witness signed with k0 before its planned rot 1 retired key state 0.
+    early = signed(cbor(body_map(b_aid, 2, tip, KSN_EARLY_OBSERVED_AT, a_aid)), a_aid, 0, ka[0])
+    add("ok: the witness's key state was retired by its planned rot 1, and the arrival is exactly 1 h after it", "B3",
+        held, KSN_PLANNED_RETIRED + KSN_HOUR, early, "")
+
+    # Step 1: decoding.
+    add("a text string, not a NoticeWire", "B3", held, KSN_ARRIVAL, cbor("a notice"), "witness-invalid")
+    add("NoticeWire with an unregistered key 3", "B3", held, KSN_ARRIVAL,
+        cbor({1: body, 2: env_with({}), 3: "x"}), "witness-invalid")
+    add("NoticeWire without its signature envelope (key 2)", "B3", held, KSN_ARRIVAL, cbor({1: body}), "witness-invalid")
+    add("NoticeWire with its keys out of CoreDet order", "B3", held, KSN_ARRIVAL,
+        _cbor_map_in_order([(2, env_with({})), (1, body)]), "witness-invalid")
+    add("body with an unregistered key 6", "B3", held, KSN_ARRIVAL, signed_body({6: "x"}), "witness-invalid")
+    add("body without key 0", "B3", held, KSN_ARRIVAL, signed_body(drop=(0,)), "witness-invalid")
+    add("body of type anet.ksn/2", "B3", held, KSN_ARRIVAL, signed_body({0: "anet.ksn/2"}), "witness-invalid")
+    add("body with observed_at as a text string", "B3", held, KSN_ARRIVAL, signed_body({4: str(KSN_OBSERVED_AT)}),
+        "witness-invalid")
+    odd = _cbor_map_in_order([(k, base[k]) for k in (1, 0, 2, 3, 4, 5)])
+    add("body with its keys out of CoreDet order, signed as written", "B3", held, KSN_ARRIVAL,
+        signed(odd, a_aid, 2, ka[2]), "witness-invalid")
+    arr = cbor([KSN_TYPE, b_aid, 2, tip, KSN_OBSERVED_AT, a_aid])
+    add("body an array, not a map, signed as written", "B3", held, KSN_ARRIVAL, signed(arr, a_aid, 2, ka[2]),
+        "witness-invalid")
+    add("signature envelope with alg -7", "B3", held, KSN_ARRIVAL, cbor({1: body, 2: env_with({3: -7})}), "witness-invalid")
+    add("signature of 63 bytes", "B3", held, KSN_ARRIVAL, cbor({1: body, 2: env_with({4: sig[:63]})}), "witness-invalid")
+    add("signature envelope with a preimage reference (key 5)", "B3", held, KSN_ARRIVAL,
+        cbor({1: body, 2: env_with({5: "ref"})}), "witness-invalid")
+
+    # Step 2: a witness to confirm.
+    add("the KEL is an agent's whose witness is pending (its icp alone)", "B1", held, KSN_ARRIVAL,
+        signed(cbor(body_map(b_aid, 0, events["B1"][0][2], KSN_OBSERVED_AT, a_aid)), a_aid, 2, ka[2]), "witness-missing")
+    add("the KEL is a hub's (toad 0)", "A3", held, KSN_ARRIVAL,
+        signed(cbor(body_map(a_aid, 2, events["A3"][2][2], KSN_OBSERVED_AT, a_aid)), a_aid, 2, ka[2]), "witness-missing")
+
+    # Step 3: the tip.
+    add("the notice is about another AID", "B3", held, KSN_ARRIVAL, signed_body({1: w1_aid}), "witness-mismatch")
+    add("the notice states an older seq and head of the KEL", "B3", held, KSN_ARRIVAL, signed_body({2: 1, 3: tip1}),
+        "witness-mismatch")
+    add("the notice states the tip's seq with another event's id", "B3", held, KSN_ARRIVAL, signed_body({3: tip1}),
+        "witness-mismatch")
+
+    # Step 4: the signer.
+    add("the notice is from a hub the tip does not name, signed by that hub", "B3", hubs(a_aid, "A3", w1_aid, "W1"),
+        KSN_ARRIVAL, signed(cbor(body_map(b_aid, 2, tip, KSN_OBSERVED_AT, w1_aid)), w1_aid, 0, w1_key), "witness-invalid")
+    add("signed by the tip's witness, with an envelope that names another signer", "B3", hubs(a_aid, "A3", w1_aid, "W1"),
+        KSN_ARRIVAL, cbor({1: body, 2: env_map(w1_aid, 2, sig)}), "witness-invalid")
+
+    # Step 5: the witness hub's KEL and signature.
+    add("no KEL is held for the witness", "B3", hubs(), KSN_ARRIVAL, notice, "witness-unknown")
+    add("the KEL held for the witness ends before the notice's key state", "B3", hubs(a_aid, "A2"), KSN_ARRIVAL, notice,
+        "witness-unknown")
+    add("the KEL held for the witness is another hub's", "B3", hubs(a_aid, "Y3"), KSN_ARRIVAL, notice, "witness-invalid")
+    add("the KEL held for the witness does not replay", "B3", hubs(a_aid, "A3-bad"), KSN_ARRIVAL, notice, "witness-invalid")
+    add("the witness is an agent (toad 1), not a hub", "X1", hubs(b_aid, "B3"), KSN_ARRIVAL,
+        signed(cbor(body_map(x_aid, 1, events["X1"][1][2], KSN_OBSERVED_AT, b_aid)), b_aid, 2, kb[2]), "witness-invalid")
+    add("one bit of the signature changed", "B3", held, KSN_ARRIVAL, cbor({1: body, 2: env_with({4: flip(sig, 0)})}),
+        "witness-invalid")
+    add("signed at a key state of the witness retired before observed_at", "B3", held, KSN_ARRIVAL,
+        signed(body, a_aid, 1, ka[1]), "witness-invalid")
+    add("the witness's key state was retired by its dip 1 ms before the arrival", "B3", hubs(a_aid, "A4"),
+        KEL_HUB_DIP_TS + 1, notice, "witness-invalid")
+    add("the witness's key state was retired by its planned rot 1, 1 h and 1 ms before the arrival", "B3", held,
+        KSN_PLANNED_RETIRED + KSN_HOUR + 1, early, "witness-invalid")
+
+    # Step 6: freshness.
+    add("observed 6 h and 1 ms before the arrival", "B3", held, KSN_OBSERVED_AT + 6 * KSN_HOUR + 1, notice, "witness-stale")
+    add("observed 5 min and 1 ms after the arrival", "B3", held, KSN_OBSERVED_AT - 5 * KEL_MINUTE - 1, notice,
+        "witness-stale")
+
+    # The first failing step decides.
+    add("about an older seq and stale: the tip is checked first", "B3", held, KSN_OBSERVED_AT + 7 * KSN_HOUR,
+        signed_body({2: 1, 3: tip1}), "witness-mismatch")
+    add("no KEL held for the witness and stale: the witness's KEL is looked up first", "B3", hubs(),
+        KSN_OBSERVED_AT + 7 * KSN_HOUR, notice, "witness-unknown")
+    add("from a hub the tip does not name, and no KEL held for that hub: the signer is checked first", "B3", held,
+        KSN_ARRIVAL, signed(cbor(body_map(b_aid, 2, tip, KSN_OBSERVED_AT, w1_aid)), w1_aid, 0, w1_key), "witness-invalid")
+    add("a KEL whose witness is pending, with the notice for another tip: the witness to confirm is checked first", "B1",
+        held, KSN_ARRIVAL, notice, "witness-missing")
+    add("a body with an unregistered key, about an older seq: decoding is checked first", "B3", held, KSN_ARRIVAL,
+        signed_body({2: 1, 3: tip1, 6: "x"}), "witness-invalid")
+
+    return {
+        "id": KSN_VID,
+        "about": KSN_ABOUT,
+        "kels": [{"name": name, "about": about, "aid": first[name], "kel": b16(wire[name])} for name, about, _ in kels],
+        "body": {"t": KSN_TYPE, "aid": b_aid, "seq": 2, "head": tip, "observed_at": KSN_OBSERVED_AT, "witness": a_aid},
+        "body_cbor": b16(body),
+        "env": {"signer_aid": a_aid, "key_state_seq": 2, "alg": -8, "signer": "anet-golden/v016/KEL-2A/k2", "sig": b16(sig)},
+        "notice": b16(notice),
+        "cases": cases,
+    }
+
 # --- SS: relayauth (RELAYAUTH-3 pins), the first-contact session (SESSION-1), the directory box (DIR-1)
 
 SS_AGENT_AID = "bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay"

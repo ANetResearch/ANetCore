@@ -56,6 +56,15 @@ const (
 	ReasonBadRK                     = "bad-rk"                       // inner rk is not a suite-1, 32-byte public key
 	ReasonSealedToClosedInteraction = "sealed-to-closed-interaction" // the second layer names an interaction key the recipient no longer holds
 	ReasonIKeyMismatch              = "ikey-mismatch"                // the interaction key that opened the second layer belongs to another interaction or peer
+
+	// The sender's witness notice (receive step 6½, CheckNotice; KEL C-51, C-56), checked
+	// against the KEL the message carries. Every one but witness-unknown is permanent.
+	ReasonWitnessMissing  = "witness-missing"  // no notice, or a sender whose KEL names no witness: a hub (toad 0), or an agent whose witness is still pending
+	ReasonWitnessStale    = "witness-stale"    // the notice was observed more than 6 h before the arrival, or more than 5 min after it
+	ReasonWitnessMismatch = "witness-mismatch" // the notice is about another AID, seq or head than the tip of the carried KEL
+	ReasonWitnessInvalid  = "witness-invalid"  // the notice does not decode or has another type, its signer is not the witness the tip names, or its signature fails under that hub's KEL
+	ReasonWitnessUnknown  = "witness-unknown"  // this node does not hold the witness hub's KEL as far as the notice's key state; not permanent: refresh the hub KEL set and check again
+	ReasonKELFromFuture   = "kel-from-future"  // a new event of the sender's KEL is dated more than 5 min after this node's clock (R-9; counted when step 6 merges)
 )
 
 // Error carries every failure this package detects. Reason is one of the
@@ -87,12 +96,16 @@ func (e *Error) Error() string {
 func (e *Error) Unwrap() error { return e.Err }
 
 // Permanent reports whether retrying with the same input can give a
-// different result. Every reason except ReasonInternalError describes the
-// bytes that were presented (or the caller's input), so the same bytes fail
-// the same way on every attempt: §3.6 class P, ack and drop. An internal
-// error comes from the local entropy source or encoder and says nothing about
-// the input.
-func (e *Error) Permanent() bool { return e.Reason != ReasonInternalError }
+// different result. Every reason except two describes the bytes that were
+// presented (or the caller's input), so the same bytes fail the same way on
+// every attempt: §3.6 class P, ack and drop. The two: an internal error comes
+// from the local entropy source or encoder and says nothing about the input;
+// and witness-unknown says only that this node does not hold the witness
+// hub's KEL yet, which a refresh of the hub KEL set can change (KEL C-56,
+// D-24).
+func (e *Error) Permanent() bool {
+	return e.Reason != ReasonInternalError && e.Reason != ReasonWitnessUnknown
+}
 
 // ReasonOf returns the reason carried by err, or "" when err is nil or does
 // not wrap a *Error.

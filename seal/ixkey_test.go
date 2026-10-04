@@ -212,7 +212,7 @@ func TestSecondLayerRoundTrip(t *testing.T) {
 				g.RK == nil || !bytes.Equal(g.RK.Pub, ak.Pub) || got.RK != g.RK || !bytes.Equal(g.Ext[64], in.Ext[64]) {
 				t.Fatalf("opened inner %+v", g)
 			}
-			if err := VerifyInnerSig(&g, got.Preimage, got.KEL, t0+minuteMS, DefaultRotationGrace); err != nil {
+			if err := VerifyInnerSig(&g, got.Preimage, got.KEL, t0+minuteMS); err != nil {
 				t.Fatal(err)
 			}
 			if tc.exp && (got.Outer.Exp == nil || *got.Outer.Exp != in.Exp) {
@@ -505,7 +505,7 @@ func TestIKeyMismatchAcrossInteractions(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0, DefaultRotationGrace); err != nil {
+				if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0); err != nil {
 					t.Fatal(err)
 				}
 				return
@@ -523,7 +523,7 @@ func TestLayeringIsSigned(t *testing.T) {
 	bk := mustIXKey(t, "ix-1", a.aid())
 	other := mustIXKey(t, "ix-1", a.aid())
 	verify := func(o *Opened, pre []byte) error {
-		return VerifyInnerSig(&o.Inner, pre, o.KEL, t0+minuteMS, DefaultRotationGrace)
+		return VerifyInnerSig(&o.Inner, pre, o.KEL, t0+minuteMS)
 	}
 	two, _ := sealTwo(t, innerFrom(t, a, b, t0), &b.kp.Public, a.c.Sign, bk, SealOpts{})
 	o2, err := Open(two, b.aid(), b.ring(), ixKeys{bk})
@@ -665,7 +665,7 @@ func TestBothSidesSealToEachOther(t *testing.T) {
 	if o2.Layers != 2 || !bytes.Equal(o2.IKID, ak.KID()) || o2.RK == nil || !bytes.Equal(o2.RK.Pub, bk.Pub) {
 		t.Fatalf("reply: layers %d, ikid %x", o2.Layers, o2.IKID)
 	}
-	if err := VerifyInnerSig(&o2.Inner, o2.Preimage, o2.KEL, t0+minuteMS, DefaultRotationGrace); err != nil {
+	if err := VerifyInnerSig(&o2.Inner, o2.Preimage, o2.KEL, t0+minuteMS); err != nil {
 		t.Fatal(err)
 	}
 	// Neither side can open the other's: b does not hold ak, a does not hold bk.

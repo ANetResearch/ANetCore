@@ -552,6 +552,55 @@ class AccessAndGrant(unittest.TestCase):
             g.check_grant = orig
 
 
+
+class Notices(unittest.TestCase):
+    """The reference behind KSN-1: its own KEL replay agrees with KEL-2A and KEL-2B, the notice check
+    refuses at the step each case names, and the generator asks it about every case."""
+
+    def test_replay_matches_the_kel_vectors(self):
+        root = Path(__file__).resolve().parents[2]
+        for name in ("vec-kel-2a.json", "vec-kel-2b.json"):
+            v = json.loads((root / "identity" / "testdata" / name).read_text(encoding="utf-8"))
+            states = g.kel_replay_states(bytes.fromhex(v["kel"]))
+            keys = {k["pub"]: k["name"] for k in v["keys"]}
+            self.assertEqual(len(states), len(v["states"]), name)
+            for got, want in zip(states, v["states"]):
+                self.assertEqual((got["seq"], got["status"], got["toad"], got["witness"], got["superseded_at"],
+                                  got["urgent"], keys.get(got["key"].hex(), "") if got["key"] else ""),
+                                 (want["seq"], want["status"], want["toad"], want["witness"], want["superseded_at"],
+                                  want["retired_urgently"], want["key"]), name)
+
+    def test_replay_refuses(self):
+        a = g.kel_2a().events
+        g.kel_replay_states(g.kel_wire_of(a))
+        e, pre, eid, sig = a[1]
+        for bad in ([a[0], (e, pre, eid, g.flip(sig, 0))] + a[2:], [a[0]] + a[2:], a[1:], [a[0], a[0]]):
+            with self.assertRaises(g.GoldenError):
+                g.kel_replay_states(g.kel_wire_of(bad))
+
+    def test_decode_is_strict(self):
+        body = g.cbor({0: g.KSN_TYPE, 1: "a", 2: 1, 3: "h", 4: 5, 5: "w"})
+        env = {1: "w", 2: 0, 3: -8, 4: bytes(64)}
+        self.assertIsNotNone(g.notice_decode(g.cbor({1: body, 2: env})))
+        for bad in (g.cbor({1: body, 2: {**env, 5: "r"}}), g.cbor({1: body, 2: {**env, 3: -7}}),
+                    g.cbor({1: body, 2: {**env, 2: True}}), g.cbor({1: body, 2: {**env, 4: bytes(63)}}),
+                    g.cbor({1: body, 2: env, 3: 0}), g.cbor({1: body}), g.cbor({1: g.cbor([1]), 2: env}),
+                    g.cbor({1: g.cbor({0: g.KSN_TYPE, 1: "a", 2: -1, 3: "h", 4: 5, 5: "w"}), 2: env}),
+                    g.cbor({1: g.cbor({0: "anet.ksn/2", 1: "a", 2: 1, 3: "h", 4: 5, 5: "w"}), 2: env}),
+                    g._cbor_map_in_order([(2, env), (1, body)]), b"\xff"):
+            self.assertIsNone(g.notice_decode(bad), bad.hex())
+
+    def test_vector_judges_its_cases(self):
+        """A case whose declared reason the reference does not give makes the generator fail."""
+        orig = g.notice_verify
+        try:
+            g.notice_verify = lambda *a: "never"
+            with self.assertRaises(g.GoldenError):
+                g.gen_ksn_1()
+        finally:
+            g.notice_verify = orig
+
+
 class Repository(unittest.TestCase):
     def test_every_registered_vector_reproduces(self):
         """What the CI job golden-xcheck runs, on this checkout."""

@@ -154,7 +154,7 @@ func TestSEALED_PREVIEW_1(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, v.Inner.TS+minuteMS/2, DefaultRotationGrace); err != nil {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, v.Inner.TS+minuteMS/2); err != nil {
 			t.Fatal(err)
 		}
 	})

@@ -90,6 +90,9 @@ var (
 var (
 	errUnregisteredEventKey  = errors.New("identity: event carries an unregistered key")
 	errUnregisteredSignedKey = errors.New("identity: signed event carries an unregistered key")
+	// errRotWitnessNotAID is a rot whose witness is not an AID (R-3; ValidAID): the empty string,
+	// a short form, a string with U+0000 or anything else a hub could not be.
+	errRotWitnessNotAID = errors.New("identity: rot witness is not a valid AID")
 )
 
 // KeyEvent is one KEL entry. coredet(KeyEvent) is the signature preimage (L17), and of the icp
@@ -396,8 +399,8 @@ func checkRotation(e KeyEvent, prior KeyState) error {
 		return errors.New("identity: rot of a toad-1 identity must name its witness")
 	case len(e.Witnesses) > 1:
 		return errors.New("identity: rot must name exactly one witness")
-	case e.Witnesses[0] == "":
-		return errors.New("identity: rot witness is empty")
+	case !ValidAID(e.Witnesses[0]):
+		return errRotWitnessNotAID
 	case e.Witnesses[0] == prior.AID:
 		return errors.New("identity: rot names its own AID as witness")
 	}
@@ -515,6 +518,22 @@ func RetiredUsableAt(ks KeyState, arrival uint64) bool {
 		grace = 0
 	}
 	return arrival <= ks.SupersededAt || arrival-ks.SupersededAt <= grace
+}
+
+// SenderKeyUsable reports whether a message or task its sender signed under key state ks may be
+// accepted when it arrived at arrival (C-13). It is RetiredUsableAt, except that a state an
+// emergency rot or a dip retired (RetiredUrgently) is never usable, whatever arrival says.
+//
+// arrival comes from the recipient's own hub (accepted_at), which the recipient cannot check: a
+// hub working with whoever stole the sender's old key could date a message after the rotation
+// before it. Once the recipient has merged the emergency rot or the dip, it takes no such date on
+// trust. The signature of an inner message (seal.VerifyInnerSig) and a held task approved later
+// are judged by it.
+func SenderKeyUsable(ks KeyState, arrival uint64) bool {
+	if ks.RetiredUrgently {
+		return false
+	}
+	return RetiredUsableAt(ks, arrival)
 }
 
 // VErr is a typed verification error.

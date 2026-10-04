@@ -19,6 +19,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/ANetResearch/ANetCore/identity"
 )
 
 const (
@@ -261,12 +263,13 @@ func TestSEALED_2A(t *testing.T) {
 		}
 	})
 	t.Run("signature under the KEL", func(t *testing.T) {
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, v.Inner.TS+minuteMS, DefaultRotationGrace); err != nil {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, v.Inner.TS+minuteMS); err != nil {
 			t.Fatal(err)
 		}
 	})
 	// The objects inside the inner pass their own checks, so a change of their layout turns this
-	// vector red here (core §5.2): key 12 under VerifyEncKeySet, key 14 under CheckGrant.
+	// vector red here (core §5.2): key 12 under VerifyEncKeySet, key 14 under CheckGrant, key 11 under
+	// CheckNotice.
 	mbox := ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "mbox"))
 	var set *EncKeySet
 	t.Run("key set under the KEL", func(t *testing.T) {
@@ -309,6 +312,37 @@ func TestSEALED_2A(t *testing.T) {
 		b, err := (&Grant{Cap: *c, HolderSeed: holder.Seed(), Home: v.Witness.AID}).Marshal()
 		if err != nil || !bytes.Equal(b, v.Inner.Grant) {
 			t.Fatalf("Go encodes the grant differently (%v)", err)
+		}
+	})
+	// Key 11 under CheckNotice: the witness W's notice for the tip of the sender's KEL, fresh a
+	// minute after the message's ts, under W's KEL (core §5.2, KEL C-55).
+	t.Run("notice under the witness KEL", func(t *testing.T) {
+		wkel, err := identity.UnmarshalKEL(v.Witness.KEL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hubs := func(aid string) ([]identity.SignedEvent, bool) { return wkel, aid == v.Witness.AID }
+		if err := CheckNotice(&o.Inner, o.KEL, hubs, v.Inner.TS+minuteMS); err != nil {
+			t.Fatal(err)
+		}
+		body, env, err := identity.DecodeNotice(o.Notices[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		tip := o.KEL[len(o.KEL)-1]
+		if body.AID != v.Sender.AID || body.Seq != v.Sender.KeyStateSeq || body.Head != tip.EventID ||
+			body.Witness != v.Witness.AID || body.ObservedAt != v.Inner.TS-3*minuteMS || env.SignerAID != v.Witness.AID ||
+			env.KeyStateSeq != 0 {
+			t.Fatalf("notice %+v signed %+v", body, env)
+		}
+		// Go signs the same notice as W, whose key is seed "witness-k0".
+		w := &fixedSigner{aid: v.Witness.AID, kel: wkel, key: ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "witness-k0"))}
+		if !bytes.Equal(pubOfKey(w.key), v.Witness.Pub) {
+			t.Fatal("the witness key from the seed is not the file's")
+		}
+		n, err := identity.SignNotice(w, identity.NoticeBody{AID: body.AID, Seq: body.Seq, Head: body.Head, ObservedAt: body.ObservedAt})
+		if err != nil || !bytes.Equal(n, o.Notices[0]) {
+			t.Fatalf("SignNotice gives %x (%v)", n, err)
 		}
 	})
 	t.Run("negatives", func(t *testing.T) {
@@ -443,7 +477,7 @@ func TestSEALED_2C(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, o.Inner.TS+minuteMS, DefaultRotationGrace)
+			err = VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, o.Inner.TS+minuteMS)
 			if ReasonOf(err) != c.Reason {
 				t.Errorf("%s: %v, want %q", c.Name, err, c.Reason)
 			}

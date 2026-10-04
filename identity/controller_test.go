@@ -614,7 +614,7 @@ func TestExportRestoreRoundTrip(t *testing.T) {
 	}
 	check("adopted")
 	k, _ := testNextKey(c)
-	if _, err := c.BuildRotation(k, testNewNext(), "bafyreiotherhub", true, 3000); err != nil {
+	if _, err := c.BuildRotation(k, testNewNext(), testOtherHub, true, 3000); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.SetPendingHubURL("https://w2.example"); err != nil {

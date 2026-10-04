@@ -264,8 +264,8 @@ func (c *Controller) BuildWitnessDesignation(witness string, next []byte, ts uin
 		return SignedEvent{}, errors.New("identity: the witness is already designated; a later rot names the next one")
 	case c.hot == nil:
 		return SignedEvent{}, errors.New("identity: the hot key the icp committed is not held")
-	case witness == "":
-		return SignedEvent{}, errors.New("identity: a witness designation needs the witness hub's AID")
+	case !ValidAID(witness):
+		return SignedEvent{}, fmt.Errorf("identity: a witness designation needs the witness hub's AID; %q is not an AID", witness)
 	}
 	return c.buildLocked(&pending{kind: PendingWitness, revealed: c.hot, next: copyBytes(next), since: ts}, witness, ts)
 }
