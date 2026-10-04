@@ -1,0 +1,696 @@
+{
+  "about": "Delivery tokens (core §2.7, §3.2 L11-L14; DLV §2.1, §2.2, DLV-C-3 to C-6): under the ack_keys of SEALED-2A (key 0) and SEALED-2B (key 1), the handle, both tokens and the note key; dacks made with fixed nonces (a processed token with its empty note, refused tokens with an empty reason, busy 30 s, caller_busy 5 s and quota_caller_per_day rounded to the next UTC midnight at now_ms), each with its note plaintext; what a verifier holding the listed keys concludes for each, and for the negatives (a changed byte, a note from another dack, a format byte other than 0x01, L = 31, a non-zero byte after the reason, reasons that break CORE-K19, a retry_after over 86 400, a wrong key, a wrong length); the inputs MakeDAck refuses; and RetryBucket on its tiers and on the day window. Written by gen_v016.py; the Go test opens both envelopes for the keys and reproduces every value.",
+  "keys": [
+    {
+      "from": "SEALED-2A",
+      "ack_key": "d18abaee949dcd29a316b6efaa11e97040f9cfe0b5e52dafd0bc1a80e9120c63",
+      "handle": "58833477d4147e765522f54d5b3e1110",
+      "tok1": "82cdaba4cff4a82cce22115c821a9eb9",
+      "tok2": "27c6af0bc629ebb3eabe0ffc72870742",
+      "note_key": "ee04a992a0342b64164b614571023e211fbd11aac9c1b01fbd635066f6baf56b"
+    },
+    {
+      "from": "SEALED-2B",
+      "ack_key": "10d659210326f23a31b6da636f51c84a36454ead0f1d52dd1c65a0e91b5ffd1e",
+      "handle": "9ddcd2db39ef4369faaf1debd20f507c",
+      "tok1": "6903798d1593f26f00b4fc95c330da26",
+      "tok2": "3079d7ee17e6ec9cf3ababab108c4939",
+      "note_key": "410b6ed49015909dc72321bc1f99e21007d02b686c6ad17093f2d7ef175d7b0e"
+    }
+  ],
+  "dacks": [
+    {
+      "name": "processed",
+      "key": 0,
+      "outcome": 1,
+      "reason": "",
+      "retry_after": 0,
+      "nonce": "e585868525c55a779c7c7183",
+      "pt": "010000000000000000000000000000000000000000000000000000000000000000000000",
+      "note": "e585868525c55a779c7c71839b0018cf9390b75916bc792f0f8fcd14cf9d6d2dc77749a23b37fc4a81a8fedf48e7058914815413efa75537123386b484c9be61",
+      "dack": "82cdaba4cff4a82cce22115c821a9eb9e585868525c55a779c7c71839b0018cf9390b75916bc792f0f8fcd14cf9d6d2dc77749a23b37fc4a81a8fedf48e7058914815413efa75537123386b484c9be61"
+    },
+    {
+      "name": "refused, no reason",
+      "key": 0,
+      "outcome": 2,
+      "reason": "",
+      "retry_after": 0,
+      "nonce": "50db3279d9265a02588ca74d",
+      "pt": "010000000000000000000000000000000000000000000000000000000000000000000000",
+      "note": "50db3279d9265a02588ca74d615f882d93f3621aa6ea7e68c27bed5717618abde0c6dfbc4c91bc2325c8b1b9d52d5a7c943c99301db331277aa202a7c3f1f7fe",
+      "dack": "27c6af0bc629ebb3eabe0ffc7287074250db3279d9265a02588ca74d615f882d93f3621aa6ea7e68c27bed5717618abde0c6dfbc4c91bc2325c8b1b9d52d5a7c943c99301db331277aa202a7c3f1f7fe"
+    },
+    {
+      "name": "busy, 30 s",
+      "key": 0,
+      "outcome": 2,
+      "reason": "busy",
+      "retry_after": 30,
+      "nonce": "a4b666f4f747e5c412d9a9f8",
+      "pt": "010000001e04627573790000000000000000000000000000000000000000000000000000",
+      "note": "a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b"
+    },
+    {
+      "name": "caller_busy",
+      "key": 1,
+      "outcome": 2,
+      "reason": "caller_busy",
+      "retry_after": 5,
+      "nonce": "cd36417d3e68687e60f9819b",
+      "pt": "01000000050b63616c6c65725f6275737900000000000000000000000000000000000000",
+      "note": "cd36417d3e68687e60f9819b3eef424eec1ffb85302a119d6cd700aa6235059dc28faebaf10cbec75f46de77c1f0082952d1fa995865f5412eff00548fcde004",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939cd36417d3e68687e60f9819b3eef424eec1ffb85302a119d6cd700aa6235059dc28faebaf10cbec75f46de77c1f0082952d1fa995865f5412eff00548fcde004"
+    },
+    {
+      "name": "quota_caller_per_day",
+      "key": 1,
+      "outcome": 2,
+      "reason": "quota_caller_per_day",
+      "retry_after": 54000,
+      "nonce": "652f120097f719355b18a54a",
+      "pt": "010000d2f01471756f74615f63616c6c65725f7065725f64617900000000000000000000",
+      "note": "652f120097f719355b18a54a74e84003d4ba49b4d58175d5791467f52174d1ac446322946987934b9b45d98deb9f72c765018f06ce4c23dfd7a15bc6052dca0a",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939652f120097f719355b18a54a74e84003d4ba49b4d58175d5791467f52174d1ac446322946987934b9b45d98deb9f72c765018f06ce4c23dfd7a15bc6052dca0a",
+      "now_ms": 1760000600000
+    },
+    {
+      "name": "processed, second key",
+      "key": 1,
+      "outcome": 1,
+      "reason": "",
+      "retry_after": 0,
+      "nonce": "1107d332c2d197dee79225d8",
+      "pt": "010000000000000000000000000000000000000000000000000000000000000000000000",
+      "note": "1107d332c2d197dee79225d89a9636224b734b3214d1b653c6332e38140ee5e2df46a1643c86ee898700d7311cf604705c48f24899050f7ac75f5e232c457eb3",
+      "dack": "6903798d1593f26f00b4fc95c330da261107d332c2d197dee79225d89a9636224b734b3214d1b653c6332e38140ee5e2df46a1643c86ee898700d7311cf604705c48f24899050f7ac75f5e232c457eb3"
+    }
+  ],
+  "verify": [
+    {
+      "name": "processed, keys [0]",
+      "dack": "82cdaba4cff4a82cce22115c821a9eb9e585868525c55a779c7c71839b0018cf9390b75916bc792f0f8fcd14cf9d6d2dc77749a23b37fc4a81a8fedf48e7058914815413efa75537123386b484c9be61",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 1,
+      "note_ok": true,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "processed, keys [1, 0]",
+      "dack": "82cdaba4cff4a82cce22115c821a9eb9e585868525c55a779c7c71839b0018cf9390b75916bc792f0f8fcd14cf9d6d2dc77749a23b37fc4a81a8fedf48e7058914815413efa75537123386b484c9be61",
+      "keys": [
+        1,
+        0
+      ],
+      "ok": true,
+      "index": 1,
+      "outcome": 1,
+      "note_ok": true,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "refused, no reason, keys [0]",
+      "dack": "27c6af0bc629ebb3eabe0ffc7287074250db3279d9265a02588ca74d615f882d93f3621aa6ea7e68c27bed5717618abde0c6dfbc4c91bc2325c8b1b9d52d5a7c943c99301db331277aa202a7c3f1f7fe",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "refused, no reason, keys [1, 0]",
+      "dack": "27c6af0bc629ebb3eabe0ffc7287074250db3279d9265a02588ca74d615f882d93f3621aa6ea7e68c27bed5717618abde0c6dfbc4c91bc2325c8b1b9d52d5a7c943c99301db331277aa202a7c3f1f7fe",
+      "keys": [
+        1,
+        0
+      ],
+      "ok": true,
+      "index": 1,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "busy, 30 s, keys [0]",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "busy",
+      "retry_after": 30
+    },
+    {
+      "name": "busy, 30 s, keys [1, 0]",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "keys": [
+        1,
+        0
+      ],
+      "ok": true,
+      "index": 1,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "busy",
+      "retry_after": 30
+    },
+    {
+      "name": "caller_busy, keys [1]",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939cd36417d3e68687e60f9819b3eef424eec1ffb85302a119d6cd700aa6235059dc28faebaf10cbec75f46de77c1f0082952d1fa995865f5412eff00548fcde004",
+      "keys": [
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "caller_busy",
+      "retry_after": 5
+    },
+    {
+      "name": "caller_busy, keys [0, 1]",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939cd36417d3e68687e60f9819b3eef424eec1ffb85302a119d6cd700aa6235059dc28faebaf10cbec75f46de77c1f0082952d1fa995865f5412eff00548fcde004",
+      "keys": [
+        0,
+        1
+      ],
+      "ok": true,
+      "index": 1,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "caller_busy",
+      "retry_after": 5
+    },
+    {
+      "name": "quota_caller_per_day, keys [1]",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939652f120097f719355b18a54a74e84003d4ba49b4d58175d5791467f52174d1ac446322946987934b9b45d98deb9f72c765018f06ce4c23dfd7a15bc6052dca0a",
+      "keys": [
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "quota_caller_per_day",
+      "retry_after": 54000
+    },
+    {
+      "name": "quota_caller_per_day, keys [0, 1]",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939652f120097f719355b18a54a74e84003d4ba49b4d58175d5791467f52174d1ac446322946987934b9b45d98deb9f72c765018f06ce4c23dfd7a15bc6052dca0a",
+      "keys": [
+        0,
+        1
+      ],
+      "ok": true,
+      "index": 1,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "quota_caller_per_day",
+      "retry_after": 54000
+    },
+    {
+      "name": "processed, second key, keys [1]",
+      "dack": "6903798d1593f26f00b4fc95c330da261107d332c2d197dee79225d89a9636224b734b3214d1b653c6332e38140ee5e2df46a1643c86ee898700d7311cf604705c48f24899050f7ac75f5e232c457eb3",
+      "keys": [
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 1,
+      "note_ok": true,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "processed, second key, keys [0, 1]",
+      "dack": "6903798d1593f26f00b4fc95c330da261107d332c2d197dee79225d89a9636224b734b3214d1b653c6332e38140ee5e2df46a1643c86ee898700d7311cf604705c48f24899050f7ac75f5e232c457eb3",
+      "keys": [
+        0,
+        1
+      ],
+      "ok": true,
+      "index": 1,
+      "outcome": 1,
+      "note_ok": true,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "one byte of the token changed",
+      "dack": "26c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "keys": [
+        0,
+        1
+      ],
+      "ok": false
+    },
+    {
+      "name": "one byte of the note changed",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90d453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "keys": [
+        0,
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "the note of another dack",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742cd36417d3e68687e60f9819b3eef424eec1ffb85302a119d6cd700aa6235059dc28faebaf10cbec75f46de77c1f0082952d1fa995865f5412eff00548fcde004",
+      "keys": [
+        0,
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "format byte 0x02",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a08aed607adfff1adc2d8c97d717329429bc55801ea59feb88b8331504f2d59ac35c3796e09627c9fc9819a49e78bca04af7bb1c20e6db341682e96554bddf88",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "L = 31",
+      "dack": "27c6af0bc629ebb3eabe0ffc728707426ac84c5f7cbf7ae09871eac77f82ca1e3f50accc1c4cd7a321cf8455377da2f53675a35c819536750ac79ccfc8cb52047fe53083d019b95f8b1dcc6d4a1cc6ca",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "a non-zero byte after the reason",
+      "dack": "27c6af0bc629ebb3eabe0ffc728707424dd5f6d323dfcace2dee0d9b81fce2140b45ad1ab288dfc6bfd130785b5196377cf9a9de40a5ca16fe7dc02803e984a2e019cfddb6b7a702bff56951f83f53ee",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "a reason with an upper-case letter",
+      "dack": "27c6af0bc629ebb3eabe0ffc7287074224e79cad20ff886a6d5a751a28f287ca60397b50af41ce3c944e637a78bc79e2f545eeacb756dc653b7baa7583880771a6cb51002bb26c014ddfc60ebca5a497",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "a reason that starts with a digit",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742f3891799580c1fe9208daa15aa2121aee448750c0f4b17c9bdec76126149c30ea43aa6c95d2416af1203d8cac03ffbfbb1a36d25e079f041589a7ffd2ebdab14",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "L = 0 with a reason byte",
+      "dack": "27c6af0bc629ebb3eabe0ffc728707421c42d2ae535301a7e06e11aa6a651cc46ca306501189050b45d363625033251da484f3e6292c00a5e1b240840ea2b811f7f57a13e6a86ce53dae489dc7a52348",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": false,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "name": "retry_after 86 401 reads as 86 400",
+      "dack": "27c6af0bc629ebb3eabe0ffc7287074207ea884d225d81336d820c2900821fed08ccb2367148bda1aa480faa089426b55f01d247e9bb75febc14f2964d14c64a591750cae47ab281251ffdce5360d178",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "busy",
+      "retry_after": 86400
+    },
+    {
+      "name": "a 30-byte reason",
+      "dack": "3079d7ee17e6ec9cf3ababab108c49392f82feb274b9b178a2a5c12e511674c2e900a90c0b1ed753fc0abcee3634511aca509eabfdb6706f73b1efb1e13f79196e719868f0e59478def06020eb99547a",
+      "keys": [
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "retry_after": 0
+    },
+    {
+      "name": "a reason outside the note codes, well formed",
+      "dack": "3079d7ee17e6ec9cf3ababab108c4939e88deb2e9fe3397e0890860dcfa3d1e2ddd78a805cc8e43b65a45074c8ef720f9b855fe9c7203360d2a1f577a65b68c7cb5b6ca827951aff11f61881eb64fc6c",
+      "keys": [
+        1
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 2,
+      "note_ok": true,
+      "reason": "over_capacity",
+      "retry_after": 0
+    },
+    {
+      "name": "a processed token with a reason in its note",
+      "dack": "82cdaba4cff4a82cce22115c821a9eb9ddd4882607259ec988fda52d1f72c1ed9cdd5989f54a2dd155be699c43d99ae7d84abf57110c728d5dc5d7fce0664996d59424b7147ecad69018cf0d73e81af1",
+      "keys": [
+        0
+      ],
+      "ok": true,
+      "index": 0,
+      "outcome": 1,
+      "note_ok": true,
+      "reason": "busy",
+      "retry_after": 0
+    },
+    {
+      "name": "a key that is not the envelope's",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "keys": [
+        1
+      ],
+      "ok": false
+    },
+    {
+      "name": "no key",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b",
+      "keys": [],
+      "ok": false
+    },
+    {
+      "name": "79 bytes",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa24",
+      "keys": [
+        0
+      ],
+      "ok": false
+    },
+    {
+      "name": "81 bytes",
+      "dack": "27c6af0bc629ebb3eabe0ffc72870742a4b666f4f747e5c412d9a9f880584f2754bb5cbeffd036e90c453304c6d1327b76ebd6af68e121187ab05b035cba54d3ec63600c4b964a71e7953a3b8bfa247b00",
+      "keys": [
+        0
+      ],
+      "ok": false
+    }
+  ],
+  "make_refuses": [
+    {
+      "outcome": 1,
+      "reason": "busy",
+      "retry_after": 0
+    },
+    {
+      "outcome": 1,
+      "reason": "",
+      "retry_after": 1
+    },
+    {
+      "outcome": 0,
+      "reason": "",
+      "retry_after": 0
+    },
+    {
+      "outcome": 3,
+      "reason": "busy",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "Busy",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "1busy",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "busy-x",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "busy ",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "_busy",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "retry_after": 0
+    },
+    {
+      "outcome": 2,
+      "reason": "busÿ",
+      "retry_after": 0
+    }
+  ],
+  "retry_bucket": [
+    {
+      "seconds": 0,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 0
+    },
+    {
+      "seconds": 1,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 1
+    },
+    {
+      "seconds": 2,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 5
+    },
+    {
+      "seconds": 5,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 5
+    },
+    {
+      "seconds": 6,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 15
+    },
+    {
+      "seconds": 15,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 15
+    },
+    {
+      "seconds": 16,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 60
+    },
+    {
+      "seconds": 30,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 60
+    },
+    {
+      "seconds": 59,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 60
+    },
+    {
+      "seconds": 60,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 60
+    },
+    {
+      "seconds": 61,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 300
+    },
+    {
+      "seconds": 300,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 300
+    },
+    {
+      "seconds": 301,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 900
+    },
+    {
+      "seconds": 899,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 900
+    },
+    {
+      "seconds": 900,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 900
+    },
+    {
+      "seconds": 901,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 3600
+    },
+    {
+      "seconds": 3599,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 3600
+    },
+    {
+      "seconds": 3600,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 3600
+    },
+    {
+      "seconds": 3601,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 3600
+    },
+    {
+      "seconds": 86400,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 3600
+    },
+    {
+      "seconds": 4294967295,
+      "day_window": false,
+      "now_ms": 0,
+      "want": 3600
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1760000600000,
+      "want": 54000
+    },
+    {
+      "seconds": 30,
+      "day_window": true,
+      "now_ms": 1760000600000,
+      "want": 54000
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1759968000000,
+      "want": 86400
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1759968000001,
+      "want": 86400
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1760054399999,
+      "want": 900
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1760053500000,
+      "want": 900
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1760053499999,
+      "want": 1800
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 1760053500001,
+      "want": 900
+    },
+    {
+      "seconds": 4294967295,
+      "day_window": true,
+      "now_ms": 1759968000001,
+      "want": 86400
+    },
+    {
+      "seconds": 0,
+      "day_window": true,
+      "now_ms": 18446744073709551615,
+      "want": 35100
+    }
+  ]
+}

@@ -15,7 +15,8 @@ package seal
 //   - FuzzEncKeySet feeds SignedEncKeySet bytes, optionally re-signing the set;
 //   - FuzzPadme checks Padmé and the Wrap padding arithmetic.
 //
-// The second layer's targets, FuzzRKDecode and FuzzOpenLayer2, are in fuzz_layer2_test.go.
+// The second layer's targets, FuzzRKDecode and FuzzOpenLayer2, are in fuzz_layer2_test.go; the
+// delivery tokens', FuzzVerifyDAck and FuzzNoteOpen, in fuzz_dack_test.go.
 
 import (
 	"bytes"

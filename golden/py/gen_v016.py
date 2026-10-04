@@ -2044,6 +2044,226 @@ def gen_enckeys_2():
     }
 
 
+# --- delivery tokens (RC-1): DACK-1 -------------------------------------------------------------
+#
+# dack (core §2.7, CORE-K11) is 80 bytes: tok(o) (16) then the note (64), o = 1 processed, 2 refused.
+# Under the envelope's ack_key (the layer-1 export "anet-dack/v1", L11):
+#   handle   = HMAC-SHA256(ack_key, "anet-dack-handle/v1")[0:16]            (L12)
+#   tok(o)   = HMAC-SHA256(ack_key, "anet-dack-tok/v1" ‖ u8(o))[0:16]       (L13)
+#   note_key = HMAC-SHA256(ack_key, "anet-dack-note/v1")                    (L14)
+#   note     = nonce (12) ‖ ChaCha20-Poly1305(note_key, nonce, pt, aad = tok(o)) (52)
+#   pt (36)  = 0x01 ‖ retry_after (u32 big-endian, seconds, at most 86 400) ‖ L (0-30) ‖ the reason's
+#              L bytes (CORE-K19: [a-z][a-z0-9_]*) ‖ zeros up to 30 bytes.
+# A processed token carries the empty note (DLV-W-5). A verifier (DLV-W-7, DLV-C-4) takes a token
+# that is tok(1) or tok(2) of one of its keys whatever the note says; the note is invalid when it
+# does not open, its format is not 0x01, L > 30, a non-empty reason breaks CORE-K19 or a byte after
+# the reason is not zero, and then the reason is empty; a retry_after above 86 400 reads as 86 400.
+# RetryBucket (CORE-K22, DLV-C-6) rounds a wait up to {1, 5, 15, 60, 300, 900, 3600} seconds, or,
+# for quota_caller_per_day, to the next UTC midnight rounded up to a multiple of 900 seconds.
+# The ack_keys are those of SEALED-2A and SEALED-2B; each nonce is seed("DACK-1", "nonce/<n>")[0:12].
+
+DACK_HANDLE_LABEL = b"anet-dack-handle/v1"
+DACK_TOK_LABEL = b"anet-dack-tok/v1"
+DACK_NOTE_LABEL = b"anet-dack-note/v1"
+DACK_LEN = 80
+DACK_PT_LEN = 36
+DACK_REASON_MAX = 30
+DACK_RETRY_MAX = 86400
+DACK_PROCESSED, DACK_REFUSED = 1, 2
+RETRY_TIERS = (1, 5, 15, 60, 300, 900, 3600)
+DACK_DAY_MS = 86400000
+
+
+def dack_handle(ack_key: bytes) -> bytes:
+    return hmac_sha256(ack_key, DACK_HANDLE_LABEL)[:16]
+
+
+def dack_tok(ack_key: bytes, o: int) -> bytes:
+    return hmac_sha256(ack_key, DACK_TOK_LABEL + bytes([o]))[:16]
+
+
+def dack_note_key(ack_key: bytes) -> bytes:
+    return hmac_sha256(ack_key, DACK_NOTE_LABEL)
+
+
+def dack_reason_ok(r: str) -> bool:
+    """CORE-K19: ^[a-z][a-z0-9_]{0,29}$, written out without a regular expression."""
+    lower = "abcdefghijklmnopqrstuvwxyz"
+    return 1 <= len(r) <= DACK_REASON_MAX and r[0] in lower and all(c in lower + "0123456789_" for c in r)
+
+
+def dack_pt(reason: bytes, retry: int, fmt: int = 1, length: int | None = None, tail: bytes = b"") -> bytes:
+    """A note plaintext as given, valid or not: format, retry_after, L (default len(reason)), the
+    reason bytes, then tail, then zeros up to 36 bytes."""
+    body = bytes([fmt]) + struct.pack(">I", retry) + bytes([len(reason) if length is None else length]) + reason + tail
+    if len(body) > DACK_PT_LEN:
+        raise GoldenError("dack: a note plaintext of %d bytes" % len(body))
+    return body + bytes(DACK_PT_LEN - len(body))
+
+
+def dack_seal(ack_key: bytes, o: int, pt: bytes, nonce: bytes) -> bytes:
+    """tok(o) ‖ nonce ‖ the AEAD of pt under note_key with aad tok(o)."""
+    tok = dack_tok(ack_key, o)
+    return tok + nonce + chacha20poly1305_seal(dack_note_key(ack_key), nonce, pt, tok)
+
+
+def dack_make(ack_key: bytes, o: int, reason: str, retry: int, nonce: bytes) -> bytes:
+    """MakeDAck (DLV-C-3): refuses an outcome other than 1 or 2, a reason that breaks CORE-K19, and a
+    processed token with a non-empty note; caps retry_after at 86 400."""
+    if o not in (DACK_PROCESSED, DACK_REFUSED):
+        raise GoldenError("dack: outcome %d" % o)
+    if reason and not dack_reason_ok(reason):
+        raise GoldenError("dack: reason %r" % reason)
+    if o == DACK_PROCESSED and (reason or retry):
+        raise GoldenError("dack: a processed token with a note")
+    if bytes(ack_key) == bytes(32):
+        raise GoldenError("dack: the zero ack_key")
+    return dack_seal(ack_key, o, dack_pt(reason.encode("ascii"), min(retry, DACK_RETRY_MAX)), nonce)
+
+
+def dack_verify(keys: list, dack: bytes) -> dict:
+    """VerifyDAck (DLV-C-4, DLV-W-7): the first key whose tok(1) or tok(2) is the token decides;
+    then the note."""
+    out = {"ok": False}
+    if len(dack) != DACK_LEN:
+        return out
+    hit = next(((i, o) for i, k in enumerate(keys) if bytes(k) != bytes(32)
+                for o in (DACK_PROCESSED, DACK_REFUSED) if dack_tok(k, o) == dack[:16]), None)
+    if hit is None:
+        return out
+    i, o = hit
+    out.update({"ok": True, "index": i, "outcome": o, "note_ok": False, "reason": "", "retry_after": 0})
+    try:
+        pt = chacha20poly1305_open(dack_note_key(keys[i]), dack[16:28], dack[28:], dack[:16])
+    except GoldenError:
+        return out
+    n = pt[5]
+    reason = pt[6:6 + n].decode("ascii", "replace") if n <= DACK_REASON_MAX else ""
+    if pt[0] != 1 or n > DACK_REASON_MAX or (n and not dack_reason_ok(reason)) or any(pt[6 + n:]):
+        return out
+    out.update({"note_ok": True, "reason": reason, "retry_after": min(struct.unpack(">I", pt[1:5])[0], DACK_RETRY_MAX)})
+    return out
+
+
+def retry_bucket(seconds: int, day_window: bool, now_ms: int) -> int:
+    """RetryBucket (CORE-K22, DLV-C-6)."""
+    if day_window:
+        left_ms = DACK_DAY_MS - now_ms % DACK_DAY_MS
+        s = -(-left_ms // 1000)
+        return min(-(-s // 900) * 900, DACK_RETRY_MAX)
+    if seconds == 0:
+        return 0
+    return next((t for t in RETRY_TIERS if seconds <= t), RETRY_TIERS[-1])
+
+
+@vector("DACK-1", "ANetCore/seal/testdata/vec-dack-1.json")
+def gen_dack_1():
+    vid = "DACK-1"
+    keys = [_h(gen_sealed_2a()["ack_key"]), _h(gen_sealed_2b()["ack_key"])]
+    day_now = SEAL_T0  # the time the quota_caller_per_day note is written at
+    nonce = lambda name: seed(vid, "nonce/" + name)[:12]  # noqa: E731
+
+    dacks, made = [], {}
+    for name, k, o, reason, retry in [
+        ("processed", 0, DACK_PROCESSED, "", 0),
+        ("refused, no reason", 0, DACK_REFUSED, "", 0),
+        ("busy, 30 s", 0, DACK_REFUSED, "busy", 30),
+        ("caller_busy", 1, DACK_REFUSED, "caller_busy", 5),
+        ("quota_caller_per_day", 1, DACK_REFUSED, "quota_caller_per_day", retry_bucket(0, True, day_now)),
+        ("processed, second key", 1, DACK_PROCESSED, "", 0),
+    ]:
+        d = dack_make(keys[k], o, reason, retry, nonce(name))
+        pt = chacha20poly1305_open(dack_note_key(keys[k]), d[16:28], d[28:], d[:16])
+        if dack_pt(reason.encode("ascii"), retry) != pt or len(d) != DACK_LEN:
+            raise GoldenError("DACK-1: %s does not hold its note" % name)
+        made[name] = d
+        dacks.append({"name": name, "key": k, "outcome": o, "reason": reason, "retry_after": retry,
+                      "nonce": b16(nonce(name)), "pt": b16(pt), "note": b16(d[16:]), "dack": b16(d)})
+    dacks[4]["now_ms"] = day_now
+
+    def case(name, dack, key_idx, want=None):
+        got = dack_verify([keys[i] for i in key_idx], dack)
+        if want is not None and {k: got.get(k) for k in want} != want:
+            raise GoldenError("DACK-1: %s verifies as %s, not %s" % (name, got, want))
+        return {"name": name, "dack": b16(dack), "keys": key_idx, **got}
+
+    def renote(name, k, o, pt):
+        """A dack whose note is authentic (it opens) but whose plaintext is pt."""
+        return dack_seal(keys[k], o, pt, nonce(name))
+
+    busy = made["busy, 30 s"]
+    verify = [case("%s, keys [%s]" % (d["name"], ", ".join(str(i) for i in order)), made[d["name"]], order,
+                   {"ok": True, "index": order.index(d["key"]), "outcome": d["outcome"], "note_ok": True})
+              for d in dacks for order in ([d["key"]], [1 - d["key"], d["key"]])]
+    verify += [
+        case("one byte of the token changed", flip(busy, 0), [0, 1], {"ok": False}),
+        case("one byte of the note changed", flip(busy, 40), [0, 1], {"ok": True, "note_ok": False, "reason": ""}),
+        case("the note of another dack", busy[:16] + made["caller_busy"][16:], [0, 1],
+             {"ok": True, "outcome": DACK_REFUSED, "note_ok": False}),
+        case("format byte 0x02", renote("format", 0, DACK_REFUSED, dack_pt(b"busy", 30, fmt=2)), [0],
+             {"ok": True, "note_ok": False}),
+        case("L = 31", renote("l31", 0, DACK_REFUSED, dack_pt(b"busy", 30, length=31)), [0],
+             {"ok": True, "note_ok": False}),
+        case("a non-zero byte after the reason", renote("tail", 0, DACK_REFUSED, dack_pt(b"busy", 30, tail=b"x")), [0],
+             {"ok": True, "note_ok": False}),
+        case("a reason with an upper-case letter", renote("upper", 0, DACK_REFUSED, dack_pt(b"Busy", 30)), [0],
+             {"ok": True, "note_ok": False}),
+        case("a reason that starts with a digit", renote("digit", 0, DACK_REFUSED, dack_pt(b"1busy", 30)), [0],
+             {"ok": True, "note_ok": False}),
+        case("L = 0 with a reason byte", renote("l0", 0, DACK_REFUSED, dack_pt(b"", 0, tail=b"busy")), [0],
+             {"ok": True, "note_ok": False}),
+        case("retry_after 86 401 reads as 86 400", renote("cap", 0, DACK_REFUSED, dack_pt(b"busy", DACK_RETRY_MAX + 1)), [0],
+             {"ok": True, "note_ok": True, "reason": "busy", "retry_after": DACK_RETRY_MAX}),
+        case("a 30-byte reason", renote("l30", 1, DACK_REFUSED, dack_pt(b"a" * 30, 0)), [1],
+             {"ok": True, "note_ok": True, "reason": "a" * 30}),
+        case("a reason outside the note codes, well formed", renote("unknown", 1, DACK_REFUSED, dack_pt(b"over_capacity", 0)), [1],
+             {"ok": True, "note_ok": True, "reason": "over_capacity"}),
+        case("a processed token with a reason in its note", renote("processed-reason", 0, DACK_PROCESSED, dack_pt(b"busy", 0)), [0],
+             {"ok": True, "outcome": DACK_PROCESSED, "note_ok": True, "reason": "busy"}),
+        case("a key that is not the envelope's", busy, [1], {"ok": False}),
+        case("no key", busy, [], {"ok": False}),
+        case("79 bytes", busy[:79], [0], {"ok": False}),
+        case("81 bytes", busy + b"\x00", [0], {"ok": False}),
+    ]
+    refuse = []
+    for o, reason, retry in [(DACK_PROCESSED, "busy", 0), (DACK_PROCESSED, "", 1), (0, "", 0), (3, "busy", 0),
+                             (DACK_REFUSED, "Busy", 0), (DACK_REFUSED, "1busy", 0), (DACK_REFUSED, "busy-x", 0),
+                             (DACK_REFUSED, "busy ", 0), (DACK_REFUSED, "_busy", 0), (DACK_REFUSED, "a" * 31, 0),
+                             (DACK_REFUSED, "busÿ", 0)]:
+        try:
+            dack_make(keys[0], o, reason, retry, nonce("refused"))
+        except GoldenError:
+            refuse.append({"outcome": o, "reason": reason, "retry_after": retry})
+            continue
+        raise GoldenError("DACK-1: MakeDAck accepts outcome %d, reason %r, retry_after %d" % (o, reason, retry))
+    midnight = SEAL_T0 // DACK_DAY_MS * DACK_DAY_MS
+    buckets = [{"seconds": s, "day_window": False, "now_ms": 0, "want": retry_bucket(s, False, 0)}
+               for s in (0, 1, 2, 5, 6, 15, 16, 30, 59, 60, 61, 300, 301, 899, 900, 901, 3599, 3600, 3601, 86400, 4294967295)]
+    buckets += [{"seconds": s, "day_window": True, "now_ms": now, "want": retry_bucket(s, True, now)}
+                for s, now in ((0, day_now), (30, day_now), (0, midnight), (0, midnight + 1), (0, midnight + DACK_DAY_MS - 1),
+                               (0, midnight + DACK_DAY_MS - 900000), (0, midnight + DACK_DAY_MS - 900001),
+                               (0, midnight + DACK_DAY_MS - 899999), (4294967295, midnight + 1),
+                               (0, 18446744073709551615))]
+    return {
+        "about": "Delivery tokens (core §2.7, §3.2 L11-L14; DLV §2.1, §2.2, DLV-C-3 to C-6): under the ack_keys of "
+                 "SEALED-2A (key 0) and SEALED-2B (key 1), the handle, both tokens and the note key; dacks made with "
+                 "fixed nonces (a processed token with its empty note, refused tokens with an empty reason, busy 30 s, "
+                 "caller_busy 5 s and quota_caller_per_day rounded to the next UTC midnight at now_ms), each with its "
+                 "note plaintext; what a verifier holding the listed keys concludes for each, and for the negatives "
+                 "(a changed byte, a note from another dack, a format byte other than 0x01, L = 31, a non-zero byte "
+                 "after the reason, reasons that break CORE-K19, a retry_after over 86 400, a wrong key, a wrong "
+                 "length); the inputs MakeDAck refuses; and RetryBucket on its tiers and on the day window. Written by "
+                 "gen_v016.py; the Go test opens both envelopes for the keys and reproduces every value.",
+        "keys": [{"from": src, "ack_key": b16(k), "handle": b16(dack_handle(k)), "tok1": b16(dack_tok(k, 1)),
+                  "tok2": b16(dack_tok(k, 2)), "note_key": b16(dack_note_key(k))}
+                 for src, k in zip(("SEALED-2A", "SEALED-2B"), keys)],
+        "dacks": dacks,
+        "verify": verify,
+        "make_refuses": refuse,
+        "retry_bucket": buckets,
+    }
+
+
 # --- RFC 9180 (the HPKE instantiation of seal suite 1) -----------------------------------------
 
 _RFC9180_A21 = dict(
@@ -2051,16 +2271,30 @@ _RFC9180_A21 = dict(
     ikmR="1ac01f181fdf9f352797655161c58b75c656a6cc2716dcb66372da835542e1df",
     info="4f6465206f6e2061204772656369616e2055726e",
     encryptions=[(0, "436f756e742d30", "4265617574792069732074727574682c20747275746820626561757479")],
+    # A.2.1.2 Exported Values, transcribed: (exporter_context, L, exported_value). The generator
+    # computes each export and refuses to write a value that is not the RFC's.
+    exports=[("", 32, "4bbd6243b8bb54cec311fac9df81841b6fd61f56538a775e7c80a9f40160606e"),
+             ("00", 32, "8c1df14732580e5501b00f82b10a1647b40713191b7c1240ac80e2b68808ba69"),
+             ("54657374436f6e74657874", 32, "5acb09211139c43b3090489a9da433e8a30ee7188ba8b0a9a1ccf0c229283e53")],
 )
 
 
 @vector("rfc9180", "ANetCore/seal/testdata/rfc9180-a2-1.json")
 def gen_rfc9180():
-    """RFC 9180 Appendix A.2.1, regenerated from the RFC's inputs (ikmE, ikmR, info, aad, pt):
-    the public key, enc and every ciphertext are computed here and must equal the RFC's."""
+    """RFC 9180 Appendix A.2.1, regenerated from the RFC's inputs (ikmE, ikmR, info, aad, pt,
+    exporter_context, L): the public key, enc, every ciphertext and every export are computed here and
+    must equal the RFC's. The exports are the secret export of RFC 9180 §5.3, the operation the
+    ack_key is (L11)."""
     v = _RFC9180_A21
     sk, pk = SUITE1.derive_key_pair(_h(v["ikmR"]))
     enc, ctx = SUITE1.setup_base_s(pk, _h(v["info"]), _h(v["ikmE"]))
+    exports = []
+    for context, length, want in v["exports"]:
+        got = ctx.export(_h(context), length)
+        _expect("RFC 9180 A.2.1.2 export %r" % context, got, _h(want))
+        if SUITE1.setup_base_r(enc, sk, _h(v["info"])).export(_h(context), length) != got:
+            raise GoldenError("rfc9180: the recipient's export differs from the sender's")
+        exports.append({"exporter_context": context, "L": length, "exported_value": b16(got)})
     encryptions = []
     for seq, aad, pt in v["encryptions"]:
         while ctx.seq < seq:
@@ -2068,7 +2302,8 @@ def gen_rfc9180():
         encryptions.append({"seq": seq, "aad": aad, "ct": b16(ctx.seal(_h(aad), _h(pt))), "pt": pt})
     return {
         "source": "RFC 9180 Appendix A.2.1, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20Poly1305, Base setup "
-                  "(mode 0). pkRm and enc also match crypto/hpke/testdata/rfc9180.json of Go 1.26.",
+                  "(mode 0), with the exported values of A.2.1.2. pkRm and enc also match "
+                  "crypto/hpke/testdata/rfc9180.json of Go 1.26.",
         "mode": 0,
         "kem_id": SUITE1.kem,
         "kdf_id": SUITE1.kdf,
@@ -2078,6 +2313,7 @@ def gen_rfc9180():
         "pkRm": b16(pk),
         "enc": b16(enc),
         "encryptions": encryptions,
+        "exports": exports,
     }
 
 
@@ -2719,6 +2955,8 @@ def relayauth3_pins() -> list[tuple[str, str]]:
         ("fed_settle", "peer-hub", "POST", "/fed/v3/settle", b'{"x402Version":2}'),
         ("fed_reviews", "peer-hub", "GET", "/fed/v3/reviews?cursor=0", b""),
         ("fed_clear", "peer-hub", "POST", "/fed/v3/clear", b'{"receipts":[]}'),
+        ("fed_status", "peer-hub", "POST", "/fed/v3/relay-status",
+         b'{"items":[{"rid":"' + b"A" * 22 + b'","handle":"' + b"A" * 22 + b'"}]}'),
     ]
     signer_aid = {"agent": SS_AGENT_AID, "peer-hub": SS_OTHER_HUB_AID}
     out = []

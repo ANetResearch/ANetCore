@@ -70,6 +70,10 @@ const (
 	ActionFedForward = "fed_forward"
 	// ActionFedBucket authenticates POST /fed/v3/directory:bucket (a peer hub asks for one bucket).
 	ActionFedBucket = "fed_bucket"
+	// ActionFedStatus authenticates POST /fed/v3/relay-status: a hub passes on anonymous
+	// delivery status checks to the peer hub that queued the envelopes (is the rid still in a
+	// mailbox, is a delivery token filed under the handle); nothing in it names the sender.
+	ActionFedStatus = "fed_status"
 	// ActionFedCards authenticates GET /fed/v3/cards (a peer hub syncs the directory's cards).
 	ActionFedCards = "fed_cards"
 	// ActionFedSettle authenticates POST /fed/v3/settle: the payee's hub forwards a settlement to
@@ -89,7 +93,7 @@ var validActions = map[string]bool{
 	ActionVisibility: true, ActionDeregister: true, ActionBalance: true, ActionLedger: true,
 	ActionRedemptions: true, ActionKeys: true,
 	ActionSession: true, ActionRevoke: true, ActionReview: true, ActionLiabProof: true,
-	ActionFedForward: true, ActionFedBucket: true, ActionFedCards: true,
+	ActionFedForward: true, ActionFedBucket: true, ActionFedStatus: true, ActionFedCards: true,
 	ActionFedSettle: true, ActionFedReviews: true, ActionFedClear: true,
 }
 
