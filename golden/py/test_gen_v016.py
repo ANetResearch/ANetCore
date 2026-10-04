@@ -498,6 +498,8 @@ class AccessAndGrant(unittest.TestCase):
 
         self.assertEqual(check(base), "")
         self.assertEqual(check({**base, 6: 1}), "decode")
+        for k in (3, 4, 5, 6):  # a null is not an absent key, "" or false
+            self.assertEqual(check({**base, k: None}), "decode", k)
         self.assertEqual(check({**base, 3: "a\x00b"}), "decode")
         self.assertEqual(check(base, frm="bafyother", keys="bafyother"), "owner")
         self.assertEqual(check(base, keys="bafyother"), "keys")

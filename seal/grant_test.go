@@ -280,6 +280,50 @@ func TestCheckGrantInputs(t *testing.T) {
 	}
 }
 
+// A key that is present must hold a value of its own type: a CBOR null is neither an absent key
+// nor "" nor false. Read as absent, a null ix would turn a one-shot grant into a peer grant, and a
+// null pay or p2p would slip past the placement rules; so each is refused at decode.
+func TestGrantNullIsNotAbsent(t *testing.T) {
+	s := newGrantScene()
+	s.p2p, s.pay = strp("192.0.2.1:1"), boolp(false)
+	peer := s.grantBytes(t)
+	one := newGrantScene()
+	one.ix = strp(one.inIX)
+	oneShot := one.grantBytes(t)
+	check := func(g []byte) error {
+		_, _, err := CheckGrant(&SealedInner{From: s.from, IX: s.inIX, Grant: g}, &s.keys, s.now)
+		return err
+	}
+	for _, g := range [][]byte{peer, oneShot} {
+		if err := check(g); err != nil {
+			t.Fatalf("the base grant is refused: %v", err)
+		}
+	}
+	for name, c := range map[string]struct {
+		base []byte
+		key  uint64
+	}{
+		"cap": {peer, 1}, "holder_seed": {peer, 2}, "home": {peer, 3},
+		"ix": {oneShot, 4}, "p2p": {peer, 5}, "pay": {peer, 6},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m, err := decodeFields(c.base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := m[c.key]; !ok {
+				t.Fatalf("the base grant has no key %d", c.key)
+			}
+			m[c.key] = []byte{0xf6}
+			b := mustMarshalFields(t, m)
+			wantStep(t, check(b), "decode")
+			if _, err := UnmarshalGrant(b); ReasonOf(err) != ReasonAccessInvalid {
+				t.Fatalf("UnmarshalGrant: %v", err)
+			}
+		})
+	}
+}
+
 // Grant.Marshal refuses what its recipient would ignore whatever the message, and the decoder
 // keeps "absent" apart from "empty" and "false".
 func TestGrantMarshal(t *testing.T) {
