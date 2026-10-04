@@ -2008,6 +2008,102 @@ def gen_regpow_1():
     }
 
 
+# --- FS: the local data key of a task and the fields stored under it (LOCAL-1, L35 and L36) -------
+# The client key and client digest of the same vector (L37, L38) are CUX's part, added beside these
+# sections by the package that implements them; the sections below do not change when it does.
+
+LOCAL_FIELD_LABEL = "anet-local/v1"
+LOCAL_AEAD_INFO = b"anet-local-aead/v1"
+LOCAL_MAC_INFO = b"anet-local-mac/v1"
+
+# The encrypted columns of interactions.db (FS-L2), in its order, each with a plaintext of the kind it
+# holds. Text is UTF-8; the bytes columns get bytes from the vector's stream.
+LOCAL_COLUMNS = [
+    ("interaction.goal", "text", "Summarise the attached quarterly report in three bullet points."),
+    ("interaction.request_doc", "bytes", 96),
+    ("interaction.result", "text", "Revenue up 4 %; costs flat; hiring paused until the second half."),
+    ("interaction.result_meta", "text", '{"anet.reason":"completed"}'),
+    ("interaction.review", "bytes", 80),
+    ("message.body", "text", "Could you add a one-line summary as well? Merci, déjà très utile ✓"),
+    ("message.metadata", "text", '{"a2a.messageId":"m-0001"}'),
+    ("attachment.name", "text", "report-q3.pdf"),
+    ("attachment.mime", "text", "application/pdf"),
+    ("attachment.data", "bytes", 64),
+    ("pending.delegate", "bytes", 120),
+    ("pending.attachments", "text", '[{"name":"report-q3.pdf","mime":"application/pdf","size":64,"cid":"bafkqaaa"}]'),
+    ("pending.followups", "text", '[{"kind":"text","body":"Any update?","at":1767225600000}]'),
+    ("outbox.body", "bytes", 72),
+]
+
+
+def local_aad(ix: str, column: str) -> bytes:
+    return cbor({1: LOCAL_FIELD_LABEL, 2: ix, 3: column})
+
+
+def local_seal(aead_key: bytes, nonce: bytes, ix: str, column: str, pt: bytes) -> bytes:
+    return b"\x01" + nonce + aes_gcm_seal(aead_key, nonce, pt, local_aad(ix, column))
+
+
+@vector("LOCAL-1", "ANet/internal/runtime/interactions/testdata/vec-local-1.json")
+def gen_local_1():
+    V = "LOCAL-1"
+    ix = "ix_" + seed(V, "ix")[:16].hex()
+    other_ix = "ix_" + seed(V, "other-ix")[:16].hex()
+    dek = seed(V, "ix_dek")
+    aead_key = hkdf(dek, b"", LOCAL_AEAD_INFO, 32)
+    mac_key = hkdf(dek, b"", LOCAL_MAC_INFO, 32)
+    stream = Stream("anet-golden/v016/%s/plaintext" % V)
+
+    fields = []
+    for column, kind, v in LOCAL_COLUMNS:
+        pt = v.encode("utf-8") if kind == "text" else stream.read(v)
+        nonce = seed(V, "nonce/" + column)[:12]
+        aad = local_aad(ix, column)
+        stored = local_seal(aead_key, nonce, ix, column, pt)
+        assert aes_gcm_open(aead_key, nonce, stored[13:], aad) == pt
+        fields.append({"column": column, "kind": kind, "plaintext": b16(pt), "nonce": b16(nonce), "aad": b16(aad), "stored": b16(stored)})
+
+    empty_nonce = seed(V, "nonce/empty")[:12]
+    empty = {"column": "message.metadata", "kind": "text", "plaintext": "", "nonce": b16(empty_nonce),
+             "aad": b16(local_aad(ix, "message.metadata")),
+             "stored": b16(local_seal(aead_key, empty_nonce, ix, "message.metadata", b""))}
+
+    goal = fields[0]
+    goal_pt = bytes.fromhex(goal["plaintext"])
+    goal_nonce = bytes.fromhex(goal["nonce"])
+    goal_stored = bytes.fromhex(goal["stored"])
+    raw_dek = b"\x01" + goal_nonce + aes_gcm_seal(dek, goal_nonce, goal_pt, local_aad(ix, goal["column"]))
+    mac_as_aead = b"\x01" + goal_nonce + aes_gcm_seal(mac_key, goal_nonce, goal_pt, local_aad(ix, goal["column"]))
+    no_label = b"\x01" + goal_nonce + aes_gcm_seal(aead_key, goal_nonce, goal_pt, cbor({2: ix, 3: goal["column"]}))
+    negatives = [
+        {"name": "byte_flipped", "note": "the last byte of the goal's stored field changed", "ix": ix, "column": goal["column"], "stored": b16(flip(goal_stored))},
+        {"name": "nonce_flipped", "note": "the first nonce byte of the goal's stored field changed", "ix": ix, "column": goal["column"], "stored": b16(flip(goal_stored, 1))},
+        {"name": "other_column", "note": "the goal's stored field read as message.body: the aad names the column", "ix": ix, "column": "message.body", "stored": goal["stored"]},
+        {"name": "other_task", "note": "the goal's stored field read as another task's goal: the aad names the task", "ix": other_ix, "column": goal["column"], "stored": goal["stored"]},
+        {"name": "version_2", "note": "the goal's stored field with first byte 0x02", "ix": ix, "column": goal["column"], "stored": "02" + goal["stored"][2:]},
+        {"name": "truncated", "note": "a stored field shorter than 0x01, the nonce and the tag", "ix": ix, "column": goal["column"], "stored": goal["stored"][:2 * 28]},
+        {"name": "empty_after_version", "note": "the version byte alone", "ix": ix, "column": goal["column"], "stored": "01"},
+        {"name": "raw_ix_dek", "note": "the goal sealed with ix_dek itself as the AES key, not aead_key (CORE-L2; FS mutation 31)", "ix": ix, "column": goal["column"], "stored": b16(raw_dek)},
+        {"name": "mac_key_as_aead_key", "note": "the goal sealed under mac_key: the two derivations are not interchangeable", "ix": ix, "column": goal["column"], "stored": b16(mac_as_aead)},
+        {"name": "aad_without_label", "note": "the goal sealed with an aad that leaves out key 1 (\"anet-local/v1\")", "ix": ix, "column": goal["column"], "stored": b16(no_label)},
+    ]
+    return {
+        "id": V,
+        "description": "The local data key of a task (core L35, L36; FS §4.6.1): aead_key and mac_key derived from ix_dek, and one stored field per encrypted column (FS-L2) under fixed nonces. A stored field is 0x01 || nonce(12) || AES-256-GCM(aead_key, nonce, plaintext, aad), aad = coredet({1: \"anet-local/v1\", 2: ix, 3: \"<table>.<column>\"}). Every negative must fail to open under this ix_dek.",
+        "labels": {"field": LOCAL_FIELD_LABEL, "aead_key": LOCAL_AEAD_INFO.decode(), "mac_key": LOCAL_MAC_INFO.decode()},
+        "seeds": "ix_dek = seed(LOCAL-1, \"ix_dek\"); ix = \"ix_\" + hex(seed(LOCAL-1, \"ix\")[0:16]); the nonce of a column = seed(LOCAL-1, \"nonce/<table>.<column>\")[0:12]; bytes plaintexts are read in column order from the stream SHA-256(\"anet-golden/v016/LOCAL-1/plaintext\" || u64be(i))",
+        "ix": ix,
+        "ix_dek": b16(dek),
+        "keys": {
+            "aead_key": {"info": LOCAL_AEAD_INFO.decode(), "salt": "", "key": b16(aead_key)},
+            "mac_key": {"info": LOCAL_MAC_INFO.decode(), "salt": "", "key": b16(mac_key)},
+        },
+        "fields": fields,
+        "empty": empty,
+        "negatives": negatives,
+    }
+
+
 # ---------------------------------------------------------------------------------------------
 
 def _list(ws: Workspace) -> int:
