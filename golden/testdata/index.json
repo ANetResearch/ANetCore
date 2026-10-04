@@ -414,6 +414,7 @@
       {"repo": "ANetCore", "path": "seal/testdata/vec-sealed-1.json"}
     ]},
     {"id": "VEC_RELAYAUTH_1", "why": "the v1 relayauth preimage is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RELAYAUTH_1"}]},
+    {"id": "VEC_RELAYAUTH_2", "why": "replaced by the poll row of RELAYAUTH-3, which pins the same preimage form and its signature", "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_test.go", "test": "TestVEC_RELAYAUTH_2"}]},
     {"id": "VEC_KEL_SUPERSEDE_1", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_1"}]},
     {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2"}]}
   ],

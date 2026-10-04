@@ -2719,6 +2719,8 @@ def relayauth3_pins() -> list[tuple[str, str]]:
         ("fed_settle", "peer-hub", "POST", "/fed/v3/settle", b'{"x402Version":2}'),
         ("fed_reviews", "peer-hub", "GET", "/fed/v3/reviews?cursor=0", b""),
         ("fed_clear", "peer-hub", "POST", "/fed/v3/clear", b'{"receipts":[]}'),
+        ("fed_status", "peer-hub", "POST", "/fed/v3/relay-status",
+         b'{"items":[{"rid":"' + b"A" * 22 + b'","handle":"' + b"A" * 22 + b'"}]}'),
     ]
     signer_aid = {"agent": SS_AGENT_AID, "peer-hub": SS_OTHER_HUB_AID}
     out = []
