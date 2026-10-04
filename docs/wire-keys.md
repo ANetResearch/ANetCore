@@ -2424,6 +2424,7 @@ Retired or never introduced (never to be reused):
 | `anet-official` | name | active | program name |
 | `anet-hub` | name | active | program name |
 | `anet-hub-admin` | name | active | program name |
+| `anet/` | name | active | User-Agent prefix of every daemon request to its hub: anet/<version>, the same on the signed and the anonymous side (sealed-sender SSR-D25) |
 | `anet.reply` | artifact-id | active | A2A artifact id of a text task's reply |
 | `anet.result` | artifact-id | active | A2A artifact id of a capability call's deliverable |
 | `anet-wire-registry/1` | json-format | active | format of this register |
