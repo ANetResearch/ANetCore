@@ -53,7 +53,7 @@
       "covers": "CapBody and Cap bytes and signature; the holder proof; each failing step of VerifyAccess (owner is not to, wrong epoch, expired, wrong holder, access moved to another envelope)",
       "labels": ["L4", "L5", "L6"],
       "objects": ["Access", "Cap", "CapBody"],
-      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-access-1.json", "todo": "v030-todo(SS-1)"}]
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-access-1.json"}]
     },
     {
       "id": "GRANT-1",
@@ -62,7 +62,7 @@
       "covers": "a Grant with every field and with the fewest; each failing check of CheckGrant",
       "labels": [],
       "objects": ["Grant", "Cap"],
-      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-grant-1.json", "todo": "v030-todo(SS-1)"}]
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-grant-1.json"}]
     },
     {
       "id": "ENCKEYS-2",

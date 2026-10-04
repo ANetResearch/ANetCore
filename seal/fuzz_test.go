@@ -20,6 +20,7 @@ import (
 	"crypto/ed25519"
 	"crypto/hpke"
 	"crypto/sha256"
+	"errors"
 	"math"
 	"reflect"
 	"strings"
@@ -635,4 +636,316 @@ func mustMarshal(tb testing.TB, m fieldMap) []byte {
 		tb.Fatal(err)
 	}
 	return b
+}
+
+// The decoders of the delivery credential and the grant (Access, Cap, CapBody, Grant), each
+// with the check that consumes it. The fixtures are those of ACCESS-1 and GRANT-1, so the seeds
+// reach every step; with resign set, a target signs what it decoded again with the fixture's
+// mailbox and holder keys, so the steps after sig run on arbitrary field values.
+
+// accessFuzzFixture is the verifier of ACCESS-1: its owner, the owner's mailbox key, the
+// holder key of its capability and the env_digest of its envelope.
+type accessFuzzFixture struct {
+	owner  string
+	mbox   ed25519.PrivateKey
+	pub    Mbox
+	holder ed25519.PrivateKey
+	digest [32]byte
+	seeds  [][]byte // encoded accesses: the vector's and each case's
+}
+
+func newAccessFuzzFixture(tb testing.TB) *accessFuzzFixture {
+	tb.Helper()
+	var v vecAccess1
+	readVector(tb, fileAccess1, &v)
+	fx := &accessFuzzFixture{owner: v.Owner, mbox: ed25519.NewKeyFromSeed(goldenSeed(v.ID, "mbox")),
+		holder: ed25519.NewKeyFromSeed(goldenSeed(v.ID, "holder"))}
+	fx.pub = Mbox{Epoch: v.Mbox.Epoch, Pub: fx.mbox.Public().(ed25519.PublicKey)}
+	copy(fx.digest[:], v.EnvDigest)
+	for _, env := range append([]hexBytes{v.Envelope}, func() (out []hexBytes) {
+		for _, c := range v.Cases {
+			out = append(out, c.Envelope)
+		}
+		return
+	}()...) {
+		m, err := decodeFields(env)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		fx.seeds = append(fx.seeds, m[outerKeyAccess])
+	}
+	return fx
+}
+
+// accessSteps are the Detail values of a VerifyAccess failure.
+var accessSteps = map[string]bool{"parse": true, "decode": true, "type": true, "owner": true, "epoch": true, "sig": true, "exp": true, "proof": true}
+
+func FuzzAccess(f *testing.F) {
+	fx := newAccessFuzzFixture(f)
+	for i, s := range fx.seeds {
+		f.Add(s, i%2 == 1, uint64(capFuzzNow))
+	}
+	f.Add([]byte{0xa1, 0x01, 0x00}, false, uint64(0))
+	f.Fuzz(func(t *testing.T, raw []byte, resign bool, now uint64) {
+		a, err := decodeAccess(raw)
+		if err != nil {
+			return
+		}
+		if resign && a.Kind == AccessKindCap {
+			a.Cap.Sig = ed25519.Sign(fx.mbox, a.Cap.Body)
+			if body, err := decodeCapBody(a.Cap.Body); err == nil {
+				a.Proof = ed25519.Sign(fx.holder, accessInput(body.CapID, fx.digest))
+			}
+		}
+		err = VerifyAccess(a, fx.digest, fx.pub, fx.owner, now)
+		if err != nil {
+			var se *Error
+			if !errors.As(err, &se) || se.Reason != ReasonAccessInvalid || !accessSteps[se.Detail] || !se.Permanent() {
+				t.Fatalf("VerifyAccess returned %v", err)
+			}
+			if a.Kind == AccessKindSession && se.Detail != "parse" {
+				t.Fatalf("kind 0 failed at %q, not parse", se.Detail)
+			}
+			return
+		}
+		// Accepted: every property VerifyAccess promises holds.
+		body, err := UnmarshalCapBody(a.Cap.Body)
+		if err != nil {
+			t.Fatalf("accepted a cap body that does not decode: %v", err)
+		}
+		re, _ := body.Marshal()
+		switch {
+		case a.Kind != AccessKindCap:
+			t.Fatalf("accepted kind %d", a.Kind)
+		case !bytes.Equal(re, a.Cap.Body):
+			t.Fatal("accepted a cap body that is not its CoreDet encoding")
+		case body.Type != CapType || body.Owner != fx.owner || body.Epoch != fx.pub.Epoch:
+			t.Fatalf("accepted %+v", body)
+		case body.Class != CapClassContact && body.Class != CapClassStranger:
+			t.Fatalf("accepted class %d", body.Class)
+		case !ed25519.Verify(fx.pub.Pub, a.Cap.Body, a.Cap.Sig):
+			t.Fatal("accepted a cap the mailbox key did not sign")
+		case !capExpInWindow(body.CapExp, now):
+			t.Fatalf("accepted cap_exp %d at %d", body.CapExp, now)
+		case !ed25519.Verify(body.Holder, accessInput(body.CapID, fx.digest), a.Proof):
+			t.Fatal("accepted a proof the holder did not make over this envelope")
+		}
+		// Moved to another envelope, it is refused at proof.
+		other := fx.digest
+		other[0] ^= 1
+		wantStep(t, VerifyAccess(a, other, fx.pub, fx.owner, now), "proof")
+		// The accepted access encodes and decodes to itself.
+		b, err := encodeAccess(a)
+		if err != nil {
+			t.Fatalf("an accepted access does not encode: %v", err)
+		}
+		if again, err := decodeAccess(b); err != nil || !reflect.DeepEqual(again, a) {
+			t.Fatalf("access round trip: %v", err)
+		}
+	})
+}
+
+// capFuzzNow is a time inside the window of the ACCESS-1 and GRANT-1 capabilities.
+const capFuzzNow = t0
+
+func FuzzCap(f *testing.F) {
+	fx := newAccessFuzzFixture(f)
+	for _, s := range fx.seeds {
+		if m, err := decodeFields(s); err == nil && m[2] != nil {
+			f.Add([]byte(m[2]))
+		}
+	}
+	f.Add([]byte{0xa0})
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		c, err := UnmarshalCap(raw)
+		if err != nil {
+			var se *Error
+			if !errors.As(err, &se) || se.Reason != ReasonAccessInvalid || se.Detail != "parse" {
+				t.Fatalf("UnmarshalCap returned %v", err)
+			}
+			return
+		}
+		if len(c.Sig) != SigLen || c.Body == nil {
+			t.Fatalf("accepted %+v", c)
+		}
+		b, err := c.Marshal()
+		if err != nil {
+			t.Fatalf("an accepted cap does not encode: %v", err)
+		}
+		if again, err := UnmarshalCap(b); err != nil || !reflect.DeepEqual(again, c) {
+			t.Fatalf("cap round trip: %v", err)
+		}
+		// It goes into an access and a grant as it is.
+		if _, err := encodeAccess(&Access{Kind: AccessKindCap, Cap: c, Proof: make([]byte, SigLen)}); err != nil {
+			t.Fatalf("an accepted cap does not make an access: %v", err)
+		}
+		g := Grant{Cap: *c, HolderSeed: make([]byte, ed25519.SeedSize), Home: "h"}
+		if d, err := decodeGrant(mustEncode(t, g)); err != nil || !reflect.DeepEqual(d.Cap, *c) {
+			t.Fatalf("an accepted cap does not make a grant: %v", err)
+		}
+	})
+}
+
+func FuzzCapBody(f *testing.F) {
+	fx := newAccessFuzzFixture(f)
+	for _, s := range fx.seeds {
+		if a, err := decodeAccess(s); err == nil && a.Cap != nil {
+			f.Add(a.Cap.Body, uint64(capFuzzNow))
+		}
+	}
+	f.Fuzz(func(t *testing.T, raw []byte, now uint64) {
+		body, err := UnmarshalCapBody(raw)
+		// An independent statement of the strict decode: the struct decoder refusing unknown
+		// keys, then CORE-E2 (the bytes are the encoding of what they decode to, which also
+		// rules out a missing key and a null) and the two sizes.
+		var c CapBody
+		ok := coredet.UnmarshalStrict(raw, &c) == nil
+		if ok {
+			re, err := c.Marshal()
+			ok = err == nil && bytes.Equal(re, raw) && len(c.CapID) == CapIDLen && len(c.Holder) == ed25519.PublicKeySize
+		}
+		if (err == nil) != ok {
+			t.Fatalf("UnmarshalCapBody: %v; the struct decode with CORE-E2 says %v", err, ok)
+		}
+		if err != nil {
+			if ReasonOf(err) != ReasonAccessInvalid {
+				t.Fatalf("UnmarshalCapBody returned %v", err)
+			}
+			return
+		}
+		if !reflect.DeepEqual(*body, c) {
+			t.Fatalf("decoded %+v, the struct decoder %+v", body, c)
+		}
+		// Signed by the fixture's mailbox key for its owner, with the holder's proof, it is
+		// refused only at the steps the body's own values fail, in order.
+		a := &Access{Kind: AccessKindCap, Cap: &Cap{Body: raw, Sig: ed25519.Sign(fx.mbox, raw)},
+			Proof: ed25519.Sign(fx.holder, accessInput(body.CapID, fx.digest))}
+		want := ""
+		switch {
+		case body.Class != CapClassContact && body.Class != CapClassStranger:
+			want = "decode"
+		case body.Type != CapType:
+			want = "type"
+		case body.Owner != fx.owner:
+			want = "owner"
+		case body.Epoch != fx.pub.Epoch:
+			want = "epoch"
+		case !capExpInWindow(body.CapExp, now):
+			want = "exp"
+		case !bytes.Equal(body.Holder, fx.holder.Public().(ed25519.PublicKey)):
+			want = "proof"
+		}
+		wantStep(t, VerifyAccess(a, fx.digest, fx.pub, fx.owner, now), want)
+		// SignCap signs exactly the bodies that pass checkIssue, and gives back the same bytes.
+		if cp, err := SignCap(fx.mbox, body); (err == nil) != (body.checkIssue() == nil) {
+			t.Fatalf("SignCap: %v, checkIssue: %v", err, body.checkIssue())
+		} else if err == nil && !bytes.Equal(cp.Body, raw) {
+			t.Fatal("SignCap re-encoded an accepted body differently")
+		}
+	})
+}
+
+// grantFuzzFixture is the receiver of GRANT-1: the issuer, the interaction and the issuer's key
+// set (its AID and mailbox key; CheckGrant reads nothing else).
+type grantFuzzFixture struct {
+	issuer, ix string
+	mbox       ed25519.PrivateKey
+	keys       EncKeySet
+	seeds      [][]byte
+}
+
+func newGrantFuzzFixture(tb testing.TB) *grantFuzzFixture {
+	tb.Helper()
+	var v vecGrant1
+	readVector(tb, fileGrant1, &v)
+	fx := &grantFuzzFixture{issuer: v.Issuer, ix: v.IX, mbox: ed25519.NewKeyFromSeed(goldenSeed(v.ID, "mbox"))}
+	fx.keys = EncKeySet{AID: v.Issuer, Mbox: Mbox{Epoch: v.Mbox.Epoch, Pub: fx.mbox.Public().(ed25519.PublicKey)}}
+	for _, g := range v.Grants {
+		fx.seeds = append(fx.seeds, g.Grant)
+	}
+	for _, c := range v.Cases {
+		fx.seeds = append(fx.seeds, c.Grant)
+	}
+	var s vecSealed2A
+	readVector(tb, fileSealed2A, &s)
+	fx.seeds = append(fx.seeds, s.Inner.Grant)
+	return fx
+}
+
+// grantSteps are the Detail values of a CheckGrant failure.
+var grantSteps = map[string]bool{"decode": true, "body": true, "type": true, "owner": true, "keys": true, "epoch": true,
+	"sig": true, "holder": true, "class": true, "exp": true, "ix": true, "p2p": true, "pay": true}
+
+func FuzzGrant(f *testing.F) {
+	fx := newGrantFuzzFixture(f)
+	for i, s := range fx.seeds {
+		f.Add(s, i%2 == 0, uint64(capFuzzNow))
+	}
+	f.Fuzz(func(t *testing.T, raw []byte, resign bool, now uint64) {
+		if resign {
+			if g, err := decodeGrant(raw); err == nil {
+				g.Cap.Sig = ed25519.Sign(fx.mbox, g.Cap.Body)
+				raw = mustEncode(t, g)
+			}
+		}
+		in := &SealedInner{From: fx.issuer, IX: fx.ix, Grant: raw}
+		g, body, err := CheckGrant(in, &fx.keys, now)
+		if err != nil {
+			var se *Error
+			if !errors.As(err, &se) || se.Reason != ReasonAccessInvalid || !grantSteps[se.Detail] || !se.Permanent() || g != nil || body != nil {
+				t.Fatalf("CheckGrant returned %v (%v, %v)", err, g, body)
+			}
+			return
+		}
+		// Kept: every property CheckGrant promises holds.
+		re, _ := body.Marshal()
+		switch {
+		case !bytes.Equal(re, g.Cap.Body):
+			t.Fatal("kept a cap body that is not its CoreDet encoding")
+		case body.Type != CapType || body.Owner != fx.issuer || body.Epoch != fx.keys.Mbox.Epoch:
+			t.Fatalf("kept %+v", body)
+		case !ed25519.Verify(fx.keys.Mbox.Pub, g.Cap.Body, g.Cap.Sig):
+			t.Fatal("kept a cap the sender's mailbox key did not sign")
+		case !bytes.Equal(g.HolderKey().Public().(ed25519.PublicKey), body.Holder):
+			t.Fatal("kept a holder seed that is not the capability's holder")
+		case body.Class != CapClassContact && body.Class != CapClassStranger:
+			t.Fatalf("kept class %d", body.Class)
+		case !capExpInWindow(body.CapExp, now):
+			t.Fatalf("kept cap_exp %d at %d", body.CapExp, now)
+		case g.IX != nil && *g.IX != fx.ix:
+			t.Fatalf("kept a one-shot grant for %q", *g.IX)
+		case g.P2P != nil && (body.Class != CapClassContact || g.IX != nil):
+			t.Fatal("kept p2p outside a contact peer grant")
+		case g.Pay != nil && g.IX != nil:
+			t.Fatal("kept pay in a one-shot grant")
+		case g.Home == "" || strings.IndexByte(g.Home, 0) >= 0:
+			t.Fatalf("kept home %q", g.Home)
+		}
+		if u, err := UnmarshalGrant(raw); err != nil || !reflect.DeepEqual(u, g) {
+			t.Fatalf("UnmarshalGrant disagrees with CheckGrant: %v", err)
+		}
+		// The issuer could have sent it: Marshal takes every kept grant whose expiry is set.
+		if body.CapExp != 0 {
+			if _, err := g.Marshal(); err != nil {
+				t.Fatalf("a kept grant does not marshal: %v", err)
+			}
+		}
+		// The kept grant delivers: its holder key's proof passes VerifyAccess for the issuer.
+		d := sha256.Sum256(raw)
+		a := &Access{Kind: AccessKindCap, Cap: &g.Cap, Proof: SignAccess(g.HolderKey(), body.CapID, d)}
+		if err := VerifyAccess(a, d, fx.keys.Mbox, fx.issuer, now); err != nil {
+			t.Fatalf("a kept grant does not deliver: %v", err)
+		}
+		// In another interaction a one-shot grant is refused; from another sender any grant is.
+		if g.IX != nil {
+			wantGrantStep(t, &SealedInner{From: fx.issuer, IX: fx.ix + "-other", Grant: raw}, &fx.keys, now, "ix")
+		}
+		wantGrantStep(t, &SealedInner{From: fx.issuer + "x", IX: fx.ix, Grant: raw}, &fx.keys, now, "owner")
+	})
+}
+
+func wantGrantStep(t *testing.T, in *SealedInner, keys *EncKeySet, now uint64, step string) {
+	t.Helper()
+	_, _, err := CheckGrant(in, keys, now)
+	wantStep(t, err, step)
 }

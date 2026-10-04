@@ -1265,6 +1265,390 @@ def gen_sealed_2c():
     return out
 
 
+# --- SS: access credentials and grants (ACCESS-1, GRANT-1) -------------------------------------
+#
+# A capability (core §2.1) is Cap {1: body, 2: sig}: body = coredet(CapBody {0: "anet.cap/1",
+# 1: owner, 2: epoch, 3: cap_id (16 bytes), 4: class (1 contact, 2 stranger), 5: cap_exp, 6: holder
+# (an Ed25519 public key)}), and sig is the owner's mailbox key's Ed25519 signature over body (L6).
+# Outer key 7 of kind 1 is Access {1: 1, 2: Cap, 3: proof}: the holder key's Ed25519 signature over
+# "anet-access/v2" 0x00 cap_id env_digest (L5), with env_digest that of the envelope the access is
+# on (L4). A Grant (inner key 14) is {1: Cap, 2: holder_seed (32 bytes), 3: home (an AID), 4: ix,
+# 5: p2p, 6: pay}, the last three optional. verify_access and check_grant below are the reference
+# of the two checks, step by step in their fixed order; each case of the two vectors names the step
+# that must fail ("" for none), and a generator refuses to write a case the reference judges
+# otherwise. A verifier accepts cap_exp in [now - 5 min, now + 31 days].
+
+CAP_TYPE = "anet.cap/1"
+ACCESS_LABEL = b"anet-access/v2"
+CAP_GRACE = 5 * SEAL_MINUTE
+CAP_AHEAD = 31 * SEAL_DAY
+
+
+def cap_body_map(owner: str, epoch: int, cap_id: bytes, cls: int, cap_exp: int, holder: bytes) -> dict:
+    return {0: CAP_TYPE, 1: owner, 2: epoch, 3: bytes(cap_id), 4: cls, 5: cap_exp, 6: bytes(holder)}
+
+
+def access_input(cap_id: bytes, env_digest: bytes) -> bytes:
+    """L5: "anet-access/v2" || 0x00 || cap_id (16 bytes) || env_digest (32 bytes)."""
+    if len(cap_id) != 16 or len(env_digest) != 32:
+        raise GoldenError("access input: cap_id is 16 bytes and env_digest 32")
+    return ACCESS_LABEL + b"\x00" + bytes(cap_id) + bytes(env_digest)
+
+
+def _uint(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and v >= 0
+
+
+def _cap_exp_ok(cap_exp: int, now: int) -> bool:
+    return max(0, now - CAP_GRACE) <= cap_exp <= now + CAP_AHEAD
+
+
+def decode_cap_body(b: bytes):
+    """The strict decode of Cap.body: CoreDet bytes (canonical, CORE-E2), a map with exactly the
+    keys 0-6, each of its type, cap_id 16 and holder 32 bytes. None when it fails. The tag, epoch
+    and class values are checked by the steps that own them."""
+    try:
+        m = uncbor(b)
+    except GoldenError:
+        return None
+    if not isinstance(m, dict) or set(m) != set(range(7)):
+        return None
+    if not all(isinstance(m[k], str) for k in (0, 1)) or not all(_uint(m[k]) for k in (2, 4, 5)):
+        return None
+    if not all(isinstance(m[k], bytes) and len(m[k]) == n for k, n in ((3, 16), (6, 32))):
+        return None
+    return m
+
+
+def decode_cap(c):
+    """The structure of a Cap inside an Access or a Grant (already decoded): {1: bytes, 2: 64
+    bytes}, no other key. None when it fails."""
+    if not isinstance(c, dict) or set(c) != {1, 2} or not isinstance(c[1], bytes):
+        return None
+    if not isinstance(c[2], bytes) or len(c[2]) != 64:
+        return None
+    return c
+
+
+def verify_access(env: bytes, mbox_epoch: int, mbox_pub: bytes, now: int) -> str:
+    """The reference of VerifyAccess on the access in outer key 7 of env, with owner = outer to:
+    the step that fails, or "" (core §2.1, L4-L6; steps decode, type, owner, epoch, sig, exp,
+    proof; "parse" for an access that is not a well-formed kind 1). A class other than 1 and 2 is
+    a decode failure."""
+    outer = uncbor(env, canonical=False)
+    a = outer.get(7)
+    if not isinstance(a, dict) or set(a) != {1, 2, 3} or a[1] != 1 or isinstance(a[1], bool):
+        return "parse"
+    cap = decode_cap(a[2])
+    if cap is None or not isinstance(a[3], bytes) or len(a[3]) != 64:
+        return "parse"
+    body = decode_cap_body(cap[1])
+    if body is None or body[4] not in (1, 2):
+        return "decode"
+    if body[0] != CAP_TYPE:
+        return "type"
+    if body[1] != outer[2]:
+        return "owner"
+    if mbox_epoch == 0 or body[2] != mbox_epoch:
+        return "epoch"
+    if not ed25519_verify(mbox_pub, cap[1], cap[2]):
+        return "sig"
+    if not _cap_exp_ok(body[5], now):
+        return "exp"
+    if not ed25519_verify(body[6], access_input(body[3], seal_env_digest(outer)), a[3]):
+        return "proof"
+    return ""
+
+
+def decode_grant(b: bytes):
+    """The strict decode of a Grant: a map with no key but 1-6 and with 1, 2 and 3; key 1 a Cap;
+    key 2 32 bytes; key 3 an AID (text, not empty, no U+0000); keys 4 and 5 text and key 6 a
+    boolean when present. Like the Go decoder it takes any key order. None when it fails."""
+    try:
+        m = uncbor(b, canonical=False)
+    except GoldenError:
+        return None
+    if not isinstance(m, dict) or not set(m) <= set(range(1, 7)) or not {1, 2, 3} <= set(m):
+        return None
+    if decode_cap(m[1]) is None or not isinstance(m[2], bytes) or len(m[2]) != 32:
+        return None
+    if not isinstance(m[3], str) or not m[3] or "\x00" in m[3]:
+        return None
+    if any(k in m and not isinstance(m[k], str) for k in (4, 5)) or (6 in m and not isinstance(m[6], bool)):
+        return None
+    return m
+
+
+def check_grant(b: bytes, frm: str, ix: str, keys_aid: str, mbox_epoch: int, mbox_pub: bytes, now: int) -> str:
+    """The reference of CheckGrant for a grant in a message from frm in interaction ix, against the
+    sender's key set (its AID and mailbox key): the step that fails, or "" (steps decode, body,
+    type, owner, keys, epoch, sig, holder, class, exp, ix, p2p, pay)."""
+    g = decode_grant(b)
+    if g is None:
+        return "decode"
+    body = decode_cap_body(g[1][1])
+    if body is None:
+        return "body"
+    if body[0] != CAP_TYPE:
+        return "type"
+    if body[1] != frm:
+        return "owner"
+    if keys_aid != frm:
+        return "keys"
+    if mbox_epoch == 0 or body[2] != mbox_epoch:
+        return "epoch"
+    if not ed25519_verify(mbox_pub, g[1][1], g[1][2]):
+        return "sig"
+    if ed25519_public(g[2]) != body[6]:
+        return "holder"
+    if body[4] not in (1, 2):
+        return "class"
+    if not _cap_exp_ok(body[5], now):
+        return "exp"
+    if 4 in g and g[4] != ix:
+        return "ix"
+    if 5 in g and (body[4] != 1 or 4 in g):
+        return "p2p"
+    if 6 in g and 4 in g:
+        return "pay"
+    return ""
+
+
+def _cap_body_json(m: dict) -> dict:
+    return {"t": m[0], "owner": m[1], "epoch": m[2], "cap_id": b16(m[3]), "class": m[4], "cap_exp": m[5],
+            "holder": b16(m[6])}
+
+
+@vector("ACCESS-1", "ANetCore/seal/testdata/vec-access-1.json")
+def gen_access_1():
+    """A capability and the access that delivers one envelope under it, with every value Go must
+    reproduce, then envelopes whose access VerifyAccess must accept or refuse at a named step."""
+    vid = "ACCESS-1"
+    now = SS_TS
+    owner, other = aid_for(vid, "owner"), aid_for(vid, "other-owner")
+    mbox, mbox2 = seed(vid, "mbox"), seed(vid, "mbox-2")
+    holder, holder2 = seed(vid, "holder"), seed(vid, "holder-2")
+    cap_id = seed(vid, "cap-id")[:16]
+    cap_exp = now + 30 * SEAL_DAY
+    body_m = cap_body_map(owner, 1, cap_id, 1, cap_exp, ed25519_public(holder))
+    body = cbor(body_m)
+    sig = ed25519_sign(mbox, body)
+    cap = {1: body, 2: sig}
+    # The access is checked against env_digest only, so the envelope's enc and ct need not open;
+    # they are bytes from seeds of the right lengths.
+    outer = {1: 2, 2: owner, 3: 1, 4: seed(vid, "kid")[:16], 5: seed(vid, "enc"), 6: seed(vid, "ct")}
+    digest = seal_env_digest(outer)
+    proof_in = access_input(cap_id, digest)
+    proof = ed25519_sign(holder, proof_in)
+    access = {1: 1, 2: cap, 3: proof}
+
+    def body_with(over: dict, drop=()) -> bytes:
+        m = {k: v for k, v in body_m.items() if k not in drop}
+        m.update(over)
+        return cbor(m)
+
+    def acc(body_bytes: bytes, *, key=mbox, sig_=None, holder_key=holder, cid=cap_id, env_outer=outer) -> dict:
+        c = {1: body_bytes, 2: sig_ if sig_ is not None else ed25519_sign(key, body_bytes)}
+        return {1: 1, 2: c, 3: ed25519_sign(holder_key, access_input(cid, seal_env_digest(env_outer)))}
+
+    cases = []
+
+    def case(name, step, env_outer, a, *, mbox_epoch=1, mbox_key=mbox, at=now):
+        env = cbor({**env_outer, 7: a})
+        pub = ed25519_public(mbox_key)
+        got = verify_access(env, mbox_epoch, pub, at)
+        if got != step:
+            raise GoldenError("ACCESS-1 %r: the reference finds %r, the case says %r" % (name, got, step))
+        cases.append({"name": name, "envelope": b16(env), "mbox_epoch": mbox_epoch, "mbox_pub": b16(pub),
+                      "now": at, "step": step})
+
+    case("valid", "", outer, access)
+    case("cap_exp at the lower edge, now - 5 min", "", outer, acc(body_with({5: now - CAP_GRACE})))
+    case("cap_exp at the upper edge, now + 31 days", "", outer, acc(body_with({5: now + CAP_AHEAD})))
+    case("a stranger capability", "", outer, acc(body_with({4: 2})))
+    case("CapBody with an unregistered key 7", "decode", outer, acc(body_with({7: b"x"})))
+    case("CapBody without key 6 (holder)", "decode", outer, acc(body_with({}, drop=(6,))))
+    case("CapBody keys not in CoreDet order", "decode", outer,
+         acc(_cbor_map_in_order([(1, owner), (0, CAP_TYPE)] + [(k, body_m[k]) for k in range(2, 7)])))
+    case("CapBody epoch in a long form", "decode", outer,
+         acc(body[:body.index(b"\x02\x01")] + b"\x02\x18\x01" + body[body.index(b"\x02\x01") + 2:]))
+    case("CapBody with a 15-byte cap_id", "decode", outer, acc(body_with({3: cap_id[:15]})))
+    case("CapBody epoch as text", "decode", outer, acc(body_with({2: "1"})))
+    case("CapBody of class 3", "decode", outer, acc(body_with({4: 3})))
+    case("Cap.body that is not a map", "decode", outer, acc(cbor([owner])))
+    case("type anet.cap/2", "type", outer, acc(body_with({0: "anet.cap/2"})))
+    case("issued by another AID: owner is not the envelope's to", "owner", outer, acc(body_with({1: other})))
+    case("the owner's mailbox key moved on to epoch 2", "epoch", outer, access, mbox_epoch=2, mbox_key=mbox2)
+    case("signed by another mailbox key", "sig", outer, acc(body, key=mbox2))
+    case("one bit of the signature changed", "sig", outer, acc(body, sig_=flip(sig, 0)))
+    case("expired: cap_exp = now - 5 min - 1", "exp", outer, acc(body_with({5: now - CAP_GRACE - 1})))
+    case("too far ahead: cap_exp = now + 31 days + 1", "exp", outer, acc(body_with({5: now + CAP_AHEAD + 1})))
+    case("checked a day after cap_exp", "exp", outer, access, at=cap_exp + SEAL_DAY)
+    case("proof by another holder key", "proof", outer, acc(body, holder_key=holder2))
+    case("proof over another cap_id", "proof", outer, acc(body, cid=seed(vid, "cap-id-2")[:16]))
+    case("access moved to another envelope: another ct", "proof", {**outer, 6: seed(vid, "ct-2")}, access)
+    case("access moved to the same envelope with outer key 8 added", "proof", {**outer, 8: now + SEAL_DAY}, access)
+    case("access moved to the same envelope with extension key 64 added", "proof", {**outer, 64: "ext"}, access)
+    case("owner is not to and the signature is bad: owner first", "owner", outer,
+         acc(body_with({1: other}), key=mbox2))
+    case("expired and the proof is bad: exp first", "exp", outer,
+         acc(body_with({5: now - CAP_GRACE - 1}), holder_key=holder2))
+    case("of another type with a bad signature: type first", "type", outer,
+         acc(body_with({0: "anet.cap/2"}), key=mbox2))
+    return {
+        "id": vid,
+        "about": ("Access credentials of kind 1 (outer key 7). A capability from the owner's mailbox key (seed "
+                  "\"mbox\", epoch 1) for the holder key (seed \"holder\"), cap_id = the first 16 bytes of seed "
+                  "\"cap-id\", class contact, cap_exp = now + 30 days; an outer envelope without key 7 (kid, enc "
+                  "and ct from seeds \"kid\", \"enc\" and \"ct\": it is never opened), its env_digest and the "
+                  "holder's proof over it. Go reproduces the CapBody, Cap and Access bytes, the signature, "
+                  "env_digest and the proof. Each case is an envelope with its access in key 7, the owner's mailbox "
+                  "key as the verifier knows it, and now; VerifyAccess(access, env_digest, mailbox key, outer to, "
+                  "now) must fail at step (\"\" = accept). Seeds: SHA-256(\"anet-golden/v016/ACCESS-1/<role>\"); "
+                  "AIDs from seed \"aid/<role>\". Generated by golden/py/gen_v016.py."),
+        "now": now,
+        "owner": owner,
+        "mbox": {"seed_role": "mbox", "epoch": 1, "pub": b16(ed25519_public(mbox))},
+        "holder": {"seed_role": "holder", "pub": b16(ed25519_public(holder))},
+        "cap_body": _cap_body_json(body_m),
+        "cap_body_cbor": b16(body),
+        "cap_sig": b16(sig),
+        "cap": b16(cbor(cap)),
+        "sealed": b16(cbor(outer)),
+        "env_digest": b16(digest),
+        "proof_input": b16(proof_in),
+        "proof": b16(proof),
+        "access": b16(cbor(access)),
+        "envelope": b16(cbor({**outer, 7: access})),
+        "cases": cases,
+    }
+
+
+@vector("GRANT-1", "ANetCore/seal/testdata/vec-grant-1.json")
+def gen_grant_1():
+    """Grants a sender hands its recipient: valid ones with every field a grant may carry and with
+    the fewest, which Go reproduces byte for byte; then grants CheckGrant must refuse at a named
+    step."""
+    vid = "GRANT-1"
+    now = SS_TS
+    issuer, other, home = aid_for(vid, "issuer"), aid_for(vid, "other"), aid_for(vid, "home")
+    ix = "ix-grant-1"
+    mbox, mbox2 = seed(vid, "mbox"), seed(vid, "mbox-2")
+
+    def parts(role: str, cls: int, life: int):
+        holder_seed = seed(vid, "holder/" + role)
+        m = cap_body_map(issuer, 1, seed(vid, "cap-id/" + role)[:16], cls, now + life, ed25519_public(holder_seed))
+        return m, holder_seed
+
+    def grant(m: dict, holder_seed: bytes, extra: dict, *, key=mbox, sig_=None, body_bytes=None, drop=()) -> dict:
+        b = body_bytes if body_bytes is not None else cbor(m)
+        g = {1: {1: b, 2: sig_ if sig_ is not None else ed25519_sign(key, b)}, 2: holder_seed, 3: home}
+        g.update(extra)
+        return {k: v for k, v in g.items() if k not in drop}
+
+    valid = []
+    for name, role, cls, life, extra in (
+            ("contact peer grant with every field it may carry (p2p, pay)", "peer-contact", 1, 30 * SEAL_DAY,
+             {5: "192.0.2.10:4710", 6: True}),
+            ("stranger peer grant with the fewest fields", "peer-stranger", 2, 7 * SEAL_DAY, {}),
+            ("one-shot grant for this interaction", "one-shot", 1, 7 * SEAL_DAY, {4: ix}),
+            ("stranger peer grant with pay false", "peer-stranger-pay", 2, 7 * SEAL_DAY, {6: False})):
+        m, hs = parts(role, cls, life)
+        g = cbor(grant(m, hs, extra))
+        if check_grant(g, issuer, ix, issuer, 1, ed25519_public(mbox), now) != "":
+            raise GoldenError("GRANT-1 %r: the reference refuses a valid grant" % name)
+        row = {"name": name, "role": role, "cap_body": _cap_body_json(m), "cap_body_cbor": b16(cbor(m)),
+               "cap_sig": b16(ed25519_sign(mbox, cbor(m))), "holder_seed": b16(hs), "home": home}
+        for k, f in ((4, "ix"), (5, "p2p"), (6, "pay")):
+            if k in extra:
+                row[f] = extra[k]
+        row["grant"] = b16(g)
+        valid.append(row)
+
+    cm, chs = parts("peer-contact", 1, 30 * SEAL_DAY)  # the base of the refused cases
+    c_extra = {5: "192.0.2.10:4710", 6: True}
+    om, ohs = parts("one-shot", 1, 7 * SEAL_DAY)
+    sm, shs = parts("peer-stranger", 2, 7 * SEAL_DAY)
+
+    def body_with(m: dict, over: dict, drop=()) -> dict:
+        out = {k: v for k, v in m.items() if k not in drop}
+        out.update(over)
+        return out
+
+    cases = []
+
+    def case(name, step, g, *, frm=issuer, in_ix=ix, keys_aid=issuer, mbox_epoch=1, mbox_key=mbox, at=now):
+        b = g if isinstance(g, bytes) else cbor(g)
+        pub = ed25519_public(mbox_key)
+        got = check_grant(b, frm, in_ix, keys_aid, mbox_epoch, pub, at)
+        if got != step:
+            raise GoldenError("GRANT-1 %r: the reference finds %r, the case says %r" % (name, got, step))
+        cases.append({"name": name, "grant": b16(b), "from": frm, "ix": in_ix, "keys_aid": keys_aid,
+                      "mbox_epoch": mbox_epoch, "mbox_pub": b16(pub), "now": at, "step": step})
+
+    base = grant(cm, chs, c_extra)
+    cap_ok = base[1]
+    case("valid: the contact peer grant", "", base)
+    case("valid: cap_exp at the lower edge, now - 5 min", "", grant(body_with(sm, {5: now - CAP_GRACE}), shs, {}))
+    case("valid: cap_exp at the upper edge, now + 31 days", "", grant(body_with(sm, {5: now + CAP_AHEAD}), shs, {}))
+    case("an array, not a map", "decode", cbor([cap_ok, chs, home]))
+    case("unregistered key 7", "decode", {**base, 7: b"x"})
+    case("key 0", "decode", {**base, 0: "x"})
+    case("cap (key 1) missing", "decode", {k: v for k, v in base.items() if k != 1})
+    case("home (key 3) missing", "decode", {k: v for k, v in base.items() if k != 3})
+    case("holder_seed of 31 bytes", "decode", {**base, 2: chs[:31]})
+    case("home empty", "decode", {**base, 3: ""})
+    case("home holding U+0000", "decode", {**base, 3: home[:6] + "\x00" + home[6:]})
+    case("pay as an integer", "decode", {**base, 6: 1})
+    case("ix as a byte string", "decode", grant(om, ohs, {4: ix.encode("utf-8")}))
+    case("cap with an unregistered key 3", "decode", {**base, 1: {**cap_ok, 3: "x"}})
+    case("cap sig of 63 bytes", "decode", {**base, 1: {1: cap_ok[1], 2: cap_ok[2][:63]}})
+    case("Cap.body with an unregistered key 7", "body", grant(body_with(cm, {7: b"x"}), chs, c_extra))
+    case("Cap.body keys not in CoreDet order", "body",
+         grant(cm, chs, c_extra, body_bytes=_cbor_map_in_order([(1, cm[1]), (0, cm[0])] + [(k, cm[k]) for k in range(2, 7)])))
+    case("Cap.body with a 15-byte cap_id", "body", grant(body_with(cm, {3: cm[3][:15]}), chs, c_extra))
+    case("type anet.cap/2", "type", grant(body_with(cm, {0: "anet.cap/2"}), chs, c_extra))
+    case("issued by another AID than the sender", "owner", grant(body_with(cm, {1: other}), chs, c_extra))
+    case("checked against another AID's key set", "keys", base, keys_aid=other)
+    case("capability of mailbox epoch 2, the key set has epoch 1", "epoch", grant(body_with(cm, {2: 2}), chs, c_extra))
+    case("the sender's mailbox key moved on to epoch 2", "epoch", base, mbox_epoch=2, mbox_key=mbox2)
+    case("signed by another mailbox key", "sig", grant(cm, chs, c_extra, key=mbox2))
+    case("one bit of the signature changed", "sig", grant(cm, chs, c_extra, sig_=flip(cap_ok[2], 0)))
+    case("holder seed of another key", "holder", {**base, 2: seed(vid, "holder/other")})
+    case("class 0", "class", grant(body_with(cm, {4: 0}), chs, {6: True}))
+    case("class 3", "class", grant(body_with(cm, {4: 3}), chs, {6: True}))
+    case("expired: cap_exp = now - 5 min - 1", "exp", grant(body_with(cm, {5: now - CAP_GRACE - 1}), chs, c_extra))
+    case("too far ahead: cap_exp = now + 31 days + 1", "exp", grant(body_with(cm, {5: now + CAP_AHEAD + 1}), chs, c_extra))
+    case("one-shot grant for another interaction", "ix", grant(om, ohs, {4: "ix-other"}))
+    case("p2p in a stranger peer grant", "p2p", grant(sm, shs, {5: "192.0.2.10:4710"}))
+    case("p2p in a one-shot grant", "p2p", grant(om, ohs, {4: ix, 5: "192.0.2.10:4710"}))
+    case("pay in a one-shot grant", "pay", grant(om, ohs, {4: ix, 6: False}))
+    case("issued by another AID with a bad signature: owner first", "owner",
+         grant(body_with(cm, {1: other}), chs, c_extra, key=mbox2))
+    case("class 3 with p2p: class first", "class", grant(body_with(cm, {4: 3}), chs, c_extra))
+    case("expired one-shot grant for another interaction: exp first", "exp",
+         grant(body_with(om, {5: now - CAP_GRACE - 1}), ohs, {4: "ix-other"}))
+    case("another holder seed and class 3: holder first", "holder",
+         {**grant(body_with(cm, {4: 3}), chs, {}), 2: seed(vid, "holder/other")})
+    return {
+        "id": vid,
+        "about": ("Grants (inner key 14) from the issuer to the recipient of a message from the issuer in "
+                  "interaction ix. The issuer's mailbox key is seed \"mbox\" at epoch 1; each valid grant's "
+                  "holder seed is seed \"holder/<role>\" and its cap_id the first 16 bytes of seed "
+                  "\"cap-id/<role>\". Go reproduces each valid grant (CapBody, its signature, the Grant bytes) "
+                  "and CheckGrant(message from \"from\" in \"ix\", key set of \"keys_aid\" with the given "
+                  "mailbox key, now) must accept it; each case must fail at step (\"\" = accept). Seeds: "
+                  "SHA-256(\"anet-golden/v016/GRANT-1/<role>\"); AIDs from seed \"aid/<role>\". Generated by "
+                  "golden/py/gen_v016.py."),
+        "now": now,
+        "issuer": issuer,
+        "ix": ix,
+        "mbox": {"seed_role": "mbox", "epoch": 1, "pub": b16(ed25519_public(mbox))},
+        "grants": valid,
+        "cases": cases,
+    }
+
+
 # --- FS: the epoch key set (ENCKEYS-2) --------------------------------------------------------
 
 DAY_MS = 86_400_000
