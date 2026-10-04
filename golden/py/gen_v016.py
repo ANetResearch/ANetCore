@@ -968,6 +968,303 @@ def write(ws: Workspace, ids: list[str], generators: dict[str, Generator] | None
 # registered under the id of the index row it produces.
 # ---------------------------------------------------------------------------------------------
 
+# --- seal v2 (CORE-2): SEALED-2A, SEALED-2C ----------------------------------------------------
+#
+# Outer SealedEnvelope v2 (core §2.1): 1 v = 2, 2 to, 3 suite, 4 kid, 5 enc, 6 ct, 7 access, 8 exp
+# (one-shot envelopes only). Layer 1 is HPKE base mode, suite 1, info coredet({1: "anet-seal/v2",
+# 2: to, 3: suite, 4: kid}) (L1), empty aad. Its plaintext is Wrap (core §2.2): 3 body, 21 pad, the
+# pad of zero bytes sized so len(coredet(Wrap)) is a Padmé length (the next one when the CBOR header
+# of the pad makes the first unreachable); 1 ikid and 2 enc2 only with a second layer (FS-2). The
+# inner SealedInner v2 (core §2.3) is signed by the sender's current identity key over the preimage
+# of core §3.3 (L3): the inner fields as sent except 20, key 9 replaced by the SHA-256 of the body,
+# plus 0 the label, 30 enc, 31 kid, 32 suite, 33 ikid and 34 enc2 (CBOR null for a single layer).
+# env_digest = SHA-256("anet-env/v2" 0x00 coredet(outer fields without 7)) (L4). ack_key is the
+# layer-1 export "anet-dack/v1" (L11); handle and tok(o) are HMAC-SHA256 under it (L12, L13).
+# The inner objects (KEL v2, witness notice, key set v2, grant, rk) are written from their
+# definitions in core §2 so the vector is a well-formed message, not only a well-formed envelope;
+# the KELs come from the KEL section's KelLog below.
+
+SEAL_INFO_LABEL = "anet-seal/v2"
+SEAL_SIG_LABEL = "anet-relay-sig/v2"
+SEAL_T0 = 1760000600000          # inner ts of the vectors (unix ms)
+SEAL_MINUTE = 60 * 1000
+SEAL_DAY = 24 * 60 * SEAL_MINUTE
+
+
+def padme(n: int) -> int:
+    """Padmé (Nikitin et al., PETS 2019): with E = floor(log2 n) and S = floor(log2 E) + 1, n
+    rounded up to a multiple of 2^(E - S). Lengths below 2 stay as they are."""
+    if n < 2:
+        return n
+    e = n.bit_length() - 1
+    step = 1 << (e - e.bit_length())
+    return -(-n // step) * step
+
+
+def seal_kid(suite: int, pub: bytes) -> bytes:
+    """KID (L15): SHA-256("anet-enc-kid/v1" || u8(suite) || pub)[:16]."""
+    return sha256(b"anet-enc-kid/v1" + bytes([suite]) + bytes(pub))[:16]
+
+
+def seal_info(to: str, kid: bytes) -> bytes:
+    """The layer-1 HPKE info (L1) for suite 1."""
+    return cbor({1: SEAL_INFO_LABEL, 2: to, 3: 1, 4: kid})
+
+
+def seal_wrap(body: bytes, extra: dict | None = None) -> tuple[bytes, int]:
+    """coredet(Wrap) of one layer and the pad length: {3: body, 21: zero pad} (plus extra keys, for
+    a negative) on a Padmé length."""
+    def wrap(n: int) -> dict:
+        w = {3: bytes(body), 21: bytes(n)}
+        w.update(extra or {})
+        return w
+    unpadded = len(cbor(wrap(0)))
+    target = padme(unpadded)
+    while True:
+        for n in range(max(0, target - unpadded - 8), target - unpadded + 1):
+            b = cbor(wrap(n))
+            if len(b) == target:
+                return b, n
+        target = padme(target + 1)
+
+
+def seal_preimage(fields: dict, enc1: bytes, kid: bytes, suite: int, ikid=None, enc2=None) -> bytes:
+    """The signature preimage v2 (core §3.3). fields maps inner keys to Raw CBOR values as sent."""
+    m = {}
+    for k, v in fields.items():
+        if k == 20:
+            continue
+        if k == 0 or 30 <= k <= 34:
+            raise GoldenError("seal preimage: inner key %d is reserved for the preimage" % k)
+        m[k] = v
+    body = uncbor(fields[9])
+    if not isinstance(body, bytes):
+        raise GoldenError("seal preimage: inner key 9 is not a byte string")
+    m[9] = Raw(cbor(sha256(body)))
+    m[0] = Raw(cbor(SEAL_SIG_LABEL))
+    m[30], m[31], m[32] = Raw(cbor(bytes(enc1))), Raw(cbor(bytes(kid))), Raw(cbor(suite))
+    m[33], m[34] = Raw(cbor(ikid)), Raw(cbor(enc2))  # None is CBOR null
+    return cbor(m)
+
+
+def seal_env_digest(outer: dict) -> bytes:
+    """env_digest (L4) of an outer field map (keys to Python values)."""
+    return sha256(b"anet-env/v2\x00" + cbor({k: v for k, v in outer.items() if k != 7}))
+
+
+def seal_dack_values(ack_key: bytes) -> dict:
+    """handle (L12) and tok(1), tok(2) (L13) under ack_key."""
+    return {
+        "handle": b16(hmac_sha256(ack_key, b"anet-dack-handle/v1")[:16]),
+        "tok1": b16(hmac_sha256(ack_key, b"anet-dack-tok/v1" + b"\x01")[:16]),
+        "tok2": b16(hmac_sha256(ack_key, b"anet-dack-tok/v1" + b"\x02")[:16]),
+    }
+
+
+def seal_parties(vid: str) -> dict:
+    """The parties of a sealed vector, all from seed(vid, role): a witness hub W (icp, toad 0), the
+    sender (an agent: icp, then a rot to its key k1 that names W, so key_state_seq 1), W's notice for
+    the sender's tip, the sender's key set v2 with its mailbox key, a contact grant from the sender
+    (home W), the sender's interaction key, and the recipient's encryption epoch key and AID."""
+    p = {}
+    w0, w1 = seed(vid, "witness-k0"), seed(vid, "witness-k1")
+    p["witness_kel"] = KelLog().add(kel_icp(w0, w1, SEAL_T0 - 10 * SEAL_MINUTE, 0), w0)
+    w = p["witness"] = p["witness_kel"].aid
+    k0, k1, k2 = seed(vid, "k0"), seed(vid, "k1"), seed(vid, "k2")
+    p["sender_seed"] = k1
+    p["sender_kel"] = KelLog().add(kel_icp(k0, k1, SEAL_T0 - 5 * SEAL_MINUTE, 1), k0)
+    p["sender_kel"].add(kel_rot(k1, k2, SEAL_T0 - 4 * SEAL_MINUTE, 1, witness=w), k1)
+    aid = p["sender"] = p["sender_kel"].aid
+    tip = p["sender_kel"].events[-1]
+    notice_body = cbor({0: "anet.ksn/1", 1: aid, 2: tip[0][2], 3: tip[2], 4: SEAL_T0 - 3 * SEAL_MINUTE, 5: w})
+    p["notice"] = cbor({1: notice_body, 2: {1: w, 2: 0, 3: -8, 4: ed25519_sign(w0, notice_body)}})
+    _, enc_pub = SUITE1.derive_key_pair(seed(vid, "sender-enc"))
+    mbox = seed(vid, "mbox")
+    day = SEAL_T0 // SEAL_DAY * SEAL_DAY
+    key_set = cbor({0: "anet.enckeys/2", 1: aid, 2: SEAL_T0 - 4 * SEAL_MINUTE,
+                    3: [{1: seal_kid(1, enc_pub), 2: 1, 3: enc_pub, 4: day, 5: day + SEAL_DAY}],
+                    4: SEAL_T0 - 4 * SEAL_MINUTE, 5: {1: 1, 2: ed25519_public(mbox)}})
+    p["keys"] = cbor({1: key_set, 2: tip[0][2], 3: ed25519_sign(k1, key_set)})
+    holder = seed(vid, "holder")
+    cap_body = cbor({0: "anet.cap/1", 1: aid, 2: 1, 3: seed(vid, "cap-id")[:16], 4: 1,
+                     5: SEAL_T0 + 30 * SEAL_DAY, 6: ed25519_public(holder)})
+    p["grant"] = cbor({1: {1: cap_body, 2: ed25519_sign(mbox, cap_body)}, 2: holder, 3: w})
+    p["rk_pub"] = SUITE1.derive_key_pair(seed(vid, "interaction-key"))[1]
+    p["recipient_sk"], p["recipient_pub"] = SUITE1.derive_key_pair(seed(vid, "recipient-enc"))
+    p["recipient_kid"] = seal_kid(1, p["recipient_pub"])
+    p["recipient"] = aid_for(vid, "recipient")
+    return p
+
+
+def seal_inner(p: dict, vid: str, typ: str = "anet.message/1") -> dict:
+    """The inner fields of a message from the sender to the recipient (keys to Python values)."""
+    return {
+        1: p["sender"], 2: p["sender_kel"].events[-1][0][2], 3: p["recipient"], 4: typ, 5: "ix-" + vid.lower(),
+        6: seed(vid, "mid")[:16], 7: SEAL_T0, 8: SEAL_T0 + SEAL_DAY,
+        9: ("anet seal v2 golden vector %s" % vid).encode("utf-8"),
+        10: p["sender_kel"].wire(), 11: [p["notice"]], 12: p["keys"],
+        14: Raw(p["grant"]), 15: {1: 1, 2: p["rk_pub"]},
+    }
+
+
+def seal_build(p: dict, vid: str, inner: dict, *, role: str = "ikmE", sign_fields: dict | None = None,
+               sig: bytes | None = None, wrap_extra: dict | None = None, wrap: bytes | None = None,
+               outer_v: int = 2, outer_extra: dict | None = None, access=None, exp=None) -> dict:
+    """Seals inner (keys to Python values) as a single-layer v2 envelope and returns every
+    intermediate value. The signature is over the preimage of sign_fields (default: inner) unless
+    sig is given; wrap replaces the padded Wrap bytes; the outer takes v, extra keys, access
+    (default kind 0) and exp (key 8) as given."""
+    to, kid = p["recipient"], p["recipient_kid"]
+    info = seal_info(to, kid)
+    enc, ctx = SUITE1.setup_base_s(p["recipient_pub"], info, seed(vid, role))
+    ack_key = ctx.export(b"anet-dack/v1", 32)
+    fields = {k: Raw(cbor(v)) for k, v in inner.items()}
+    signed = {k: Raw(cbor(v)) for k, v in (sign_fields if sign_fields is not None else inner).items()}
+    pre = seal_preimage(signed, enc, kid, 1)
+    fields[20] = Raw(cbor(sig if sig is not None else ed25519_sign(p["sender_seed"], pre)))
+    inner_bytes = cbor(fields)
+    pad_len = None
+    if wrap is None:
+        wrap, pad_len = seal_wrap(inner_bytes, wrap_extra)
+    ct = ctx.seal(b"", wrap)
+    outer = {1: outer_v, 2: to, 3: 1, 4: kid, 5: enc, 6: ct}
+    if exp is not None:
+        outer[8] = exp
+    outer.update(outer_extra or {})
+    sealed = cbor(outer)  # what Seal returns: no access yet
+    outer[7] = {1: 0} if access is None else access
+    return {"info": info, "enc": enc, "ack_key": ack_key, "fields": fields, "preimage": pre,
+            "inner_bytes": inner_bytes, "wrap": wrap, "pad_len": pad_len, "sealed": sealed,
+            "access": cbor(outer[7]), "envelope": cbor(outer), "env_digest": seal_env_digest(outer)}
+
+
+def seal_parties_json(vid: str, p: dict) -> dict:
+    return {
+        "seeds": "seed(role) = SHA-256(\"anet-golden/v016/%s/<role>\"); Ed25519 keys are the seeds, X25519 "
+                 "keys are DeriveKeyPair(seed) of RFC 9180 suite 1" % vid,
+        "recipient": {"aid": p["recipient"], "enc_seed_role": "recipient-enc", "sk": b16(p["recipient_sk"]),
+                      "pub": b16(p["recipient_pub"]), "kid": b16(p["recipient_kid"])},
+        "sender": {"aid": p["sender"], "key_state_seq": p["sender_kel"].events[-1][0][2],
+                   "key_seed_role": "k1", "pub": b16(ed25519_public(p["sender_seed"])),
+                   "kel": b16(p["sender_kel"].wire())},
+        "witness": {"aid": p["witness"], "pub": b16(ed25519_public(seed(vid, "witness-k0"))),
+                    "kel": b16(p["witness_kel"].wire())},
+    }
+
+
+@vector("SEALED-2A", "ANetCore/seal/testdata/vec-sealed-2a.json")
+def gen_sealed_2a():
+    vid = "SEALED-2A"
+    p = seal_parties(vid)
+    inner = seal_inner(p, vid)
+    s = seal_build(p, vid, inner)
+    out = {
+        "about": "A single-layer v2 envelope (core §2.1-§2.3, §3.3): outer v 2 with access kind 0 and no key 8; "
+                 "Wrap {3, 21} on a Padmé length; an inner with keys 10, 11, 12, 14 and 15, signed by the sender's "
+                 "key at key_state_seq 1 over the preimage v2 (33 and 34 null, 9 the SHA-256 of the body). Written "
+                 "by gen_v016.py with the HPKE ephemeral key DeriveKeyPair(seed(\"ikmE\")); the Go test opens it "
+                 "and reproduces the info, Wrap, preimage, signature check, env_digest, ack_key, handle and tok. "
+                 "The body is opaque to the seal layer.",
+    }
+    out.update(seal_parties_json(vid, p))
+    out.update({
+        "hpke_info": b16(s["info"]),
+        "inner": {
+            "from": inner[1], "key_state_seq": inner[2], "to": inner[3], "type": inner[4], "ix": inner[5],
+            "mid": b16(inner[6]), "ts": inner[7], "exp": inner[8], "body": b16(inner[9]), "kel": b16(inner[10]),
+            "notice": [b16(n) for n in inner[11]], "keys": b16(inner[12]), "grant": b16(bytes(inner[14])),
+            "rk": {"suite": 1, "pub": b16(p["rk_pub"])},
+            "sig": b16(uncbor(s["fields"][20])),
+        },
+        "inner_cbor": b16(s["inner_bytes"]),
+        "sig_preimage": b16(s["preimage"]),
+        "wrap": b16(s["wrap"]),
+        "pad_len": s["pad_len"],
+        "enc": b16(s["enc"]),
+        "sealed": b16(s["sealed"]),
+        "access": b16(s["access"]),
+        "envelope": b16(s["envelope"]),
+        "env_digest": b16(s["env_digest"]),
+        "ack_key": b16(s["ack_key"]),
+    })
+    out.update(seal_dack_values(s["ack_key"]))
+    env = s["envelope"]
+    out["negatives"] = [
+        {"name": "one ct byte changed", "envelope": b16(cbor({**uncbor(env), 6: flip(uncbor(env)[6])})),
+         "reason": "decrypt-failed"},
+        {"name": "required key 7 (access) dropped", "envelope": b16(drop_key(env, 7)), "reason": "access-invalid"},
+        {"name": "unregistered outer key 9 added", "envelope": b16(add_key(env, 9)), "reason": "unknown-critical-field"},
+    ]
+    return out
+
+
+@vector("SEALED-2C", "ANetCore/seal/testdata/vec-sealed-2c.json")
+def gen_sealed_2c():
+    """Negatives: each case changes one thing of a valid envelope (the case "ok") and names the seal
+    reason it must fail with and the step: "parse" (ParseOuter, before layer 1: AckKeyOf false),
+    "open" (Open after layer 1: AckKeyOf true) or "sig" (Open succeeds; the signature does not
+    verify). The second-layer cases (stripped layer, replaced enc2) are FS-2's to add."""
+    vid = "SEALED-2C"
+    p = seal_parties(vid)
+    base = seal_inner(p, vid)
+    cases = []
+
+    def case(name, stage, reason, s, **extra):
+        c = {"name": name, "stage": stage, "reason": reason, "envelope": b16(s["envelope"])}
+        c.update(extra)
+        cases.append(c)
+
+    ok = seal_build(p, vid, base, role="ikmE/ok")
+    case("ok", "sig", "", ok, sig_preimage=b16(ok["preimage"]))
+    one_shot = {**base, 4: "anet.card.get/1"}
+    s = seal_build(p, vid, one_shot, role="ikmE/one-shot", exp=one_shot[8])
+    case("one-shot: outer exp equals inner exp", "sig", "", s, sig_preimage=b16(s["preimage"]))
+    case("v = 1", "parse", "bad-version", seal_build(p, vid, base, role="ikmE/v1", outer_v=1))
+    case("outer key 9", "parse", "unknown-critical-field",
+         seal_build(p, vid, base, role="ikmE/outer-9", outer_extra={9: b"x"}))
+    case("access kind 2", "parse", "access-invalid", seal_build(p, vid, base, role="ikmE/kind-2", access={1: 2}))
+    case("Wrap with unknown key 5", "open", "bad-wrap",
+         seal_build(p, vid, base, role="ikmE/wrap-5", wrap_extra={5: b"x"}))
+    signed = seal_build(p, vid, base, role="ikmE/pad")
+    case("pad not zero", "open", "bad-wrap",
+         seal_build(p, vid, base, role="ikmE/pad", wrap=cbor({3: signed["inner_bytes"], 21: b"\x00\x01"})))
+    case("inner key 21 (retired)", "open", "unknown-critical-field",
+         seal_build(p, vid, {**base, 21: bytes(3)}, role="ikmE/inner-21"))
+    for k in (0, 30):
+        case("inner key %d (preimage only)" % k, "open", "unknown-critical-field",
+             seal_build(p, vid, {**base, k: "x"}, role="ikmE/inner-%d" % k, sign_fields=base))
+    case("outer exp is not inner exp", "open", "exp-mismatch",
+         seal_build(p, vid, one_shot, role="ikmE/exp", exp=one_shot[8] + 1))
+    no_kel = {k: v for k, v in base.items() if k != 10}
+    case("key 11 without key 10", "open", "bad-inner", seal_build(p, vid, no_kel, role="ikmE/no-10"))
+    k0, k1 = seed(vid, "v1-k0"), seed(vid, "v1-k1")
+    v1_icp = {2: 0, 4: "icp", 5: [ed25519_public(k0)], 6: sha256(ed25519_public(k1)), 7: 1, 8: SEAL_T0 - SEAL_MINUTE}
+    v1_kel = KelLog().add(v1_icp, k0).wire()
+    case("KEL v1 (events without key 0)", "open", "bad-kel",
+         seal_build(p, vid, {**base, 10: v1_kel}, role="ikmE/kel-v1"))
+    receipt = cbor({0: "anet.receipt/2",
+                    1: sha256(b"anet-receipt-ix/v2\x00" + base[5].encode() + b"\x00" + b"nonce-2c"),
+                    2: sha256(b"anet-receipt-requester/v2\x00" + base[3].encode() + b"\x00" + seed(vid, "rsalt")),
+                    3: ed25519_public(seed(vid, "review-key")), 4: p["sender"],
+                    5: cid(cbor("request")), 6: cid(cbor("result")), 7: SEAL_T0 // SEAL_DAY})
+    rs = seal_build(p, vid, base, role="ikmE/receipt", sig=ed25519_sign(p["sender_seed"], receipt))
+    case("a ReceiptBody signature over the inner preimage (SI-81)", "sig", "bad-sig", rs,
+         receipt_body=b16(receipt), sig_preimage=b16(rs["preimage"]))
+    for key, name in ((5, "ix"), (1, "from")):
+        nul = {**base, key: "a\u0000b" if key == 5 else base[1] + "\u0000"}
+        case("inner %s with U+0000" % name, "open", "bad-inner", seal_build(p, vid, nul, role="ikmE/nul-" + name))
+    out = {
+        "about": "Negatives of the seal v2 layer (core §5.2 SEALED-2C), each a whole envelope built like SEALED-2A "
+                 "with one change, with the seal reason it fails with and the step: parse = ParseOuter refuses "
+                 "it (no ack_key), open = Open refuses it after layer 1 (AckKeyOf true), sig = Open accepts it "
+                 "and the signature does not verify under the sender's key. Inner keys 0 and 30 are added after "
+                 "signing; every other envelope is signed as it is sent. The second-layer negatives are FS-2's.",
+    }
+    out.update(seal_parties_json(vid, p))
+    out["cases"] = cases
+    return out
+
+
 # --- FS: the epoch key set (ENCKEYS-2) --------------------------------------------------------
 
 DAY_MS = 86_400_000

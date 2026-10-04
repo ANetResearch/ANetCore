@@ -6,25 +6,33 @@ import (
 )
 
 // Reason strings carried by *Error. They are stable: callers count them in
-// metrics and logs, and the daemon maps them onto §3.6 failure classes, so a
-// reason is never renamed once released. Detail text is free-form and may
-// change.
+// metrics and logs, and the daemon maps them onto the receive pipeline's
+// failure classes (engine §4.2), so a reason is never renamed once released.
+// Every one is registered in wire/registry.json (reasons.seal). Detail text is
+// free-form and may change.
+//
+//anet:wire reasons.seal
 const (
-	// Outer envelope (§3.6 step 1).
+	// Outer envelope (receive step 1, ParseOuter). No ack_key exists yet.
 	ReasonBadOuter       = "bad-outer"       // outer does not decode, misses a field, or has a wrong-typed/sized field
 	ReasonBadVersion     = "bad-version"     // outer v is not EnvelopeVersion
 	ReasonUnknownSuite   = "unknown-suite"   // suite not implemented by this build
 	ReasonWrongRecipient = "wrong-recipient" // outer to != the opening node's AID
+	ReasonAccessInvalid  = "access-invalid"  // outer key 7 is missing or not a well-formed Access (Detail "parse")
 
-	// Key lookup and decryption (steps 2-3).
+	// Key lookup and layer-1 decryption (steps 2-3). No ack_key exists yet.
 	ReasonUnknownKey = "sealed-to-unknown-key" // kid not in the key ring (never held, or past retention)
-	ReasonDecrypt    = "decrypt-failed"        // HPKE setup or AEAD open failed
+	ReasonDecrypt    = "decrypt-failed"        // HPKE setup or AEAD open failed (either layer)
+
+	// After layer 1 (step 3a on), every failure of Open carries the ack_key
+	// (AckKeyOf): the inner reasons below and the Wrap and second-layer
+	// reasons at the end of this block.
 
 	// Inner structure (step 4).
-	ReasonBadInner      = "bad-inner"              // inner does not decode, misses a field, or has a wrong-typed/sized field
-	ReasonUnknownField  = "unknown-critical-field" // a key in 0-63 this version does not understand
+	ReasonBadInner      = "bad-inner"              // inner does not decode, misses a field, has a wrong-typed/sized field, a from, to or ix with U+0000, or key 11 without key 10 (or the reverse)
+	ReasonUnknownField  = "unknown-critical-field" // a key in 0-63 this version does not understand, including the retired 21 and the preimage-only 0 and 30-34
 	ReasonToMismatch    = "to-mismatch"            // inner to != outer to
-	ReasonBadPad        = "bad-pad"                // pad field is not all zero bytes
+	ReasonExpMismatch   = "exp-mismatch"           // outer key 8 present and != inner exp
 	ReasonKELTooLarge   = "kel-too-large"          // inner kel over MaxKELBytes or MaxKELEvents
 	ReasonBadKEL        = "bad-kel"                // KEL does not decode or does not replay
 	ReasonFromMismatch  = "from-mismatch"          // KEL replays to an AID other than inner from
@@ -50,9 +58,15 @@ const (
 	ReasonIKeyMismatch              = "ikey-mismatch"                // the interaction key that opened the second layer belongs to another interaction or peer
 )
 
-// Error is the only error type this package returns. Reason is one of the
+// Error carries every failure this package detects. Reason is one of the
 // Reason* constants; Detail says which field or rule failed; Err is the
 // underlying cause when there is one (a decoder error, an identity.VErr).
+//
+// Open wraps the errors it returns after layer 1 was opened in a value that
+// also carries the ack_key (AckKeyOf); errors.As still finds the *Error, and
+// ReasonOf and IsPermanent see through the wrapper. The one error Open returns
+// that is not a *Error is a failure of the caller's IXKeyLookup, passed through
+// with the ack_key: its reason is "", and it is not permanent.
 type Error struct {
 	Reason string
 	Detail string
@@ -104,4 +118,34 @@ func fail(reason, format string, args ...any) *Error {
 
 func failWrap(reason string, err error, format string, args ...any) *Error {
 	return &Error{Reason: reason, Detail: fmt.Sprintf(format, args...), Err: err}
+}
+
+// ackError is an error of Open after layer 1 was opened: it carries the
+// ack_key the recipient exports there, so the caller can still answer with a
+// delivery token (DLV-C-API-1). It adds nothing to the message: Error and
+// Unwrap are those of the wrapped error.
+type ackError struct {
+	key AckKey
+	err error
+}
+
+func (e *ackError) Error() string { return e.err.Error() }
+func (e *ackError) Unwrap() error { return e.err }
+
+// withAck wraps err, a failure after layer 1, with the ack_key.
+func withAck(key AckKey, err error) error { return &ackError{key: key, err: err} }
+
+// AckKeyOf returns the ack_key carried by an error of Open, and whether there
+// is one. It is true exactly for the failures after layer 1 was opened (a
+// malformed Wrap, a closed interaction, a failed interaction-key lookup or
+// second layer, a malformed inner, to-mismatch, exp-mismatch, the KEL caps):
+// the envelope was sealed to this node, so its sender is owed a token. It is
+// false for a failure of ParseOuter, an unknown kid and a failed layer-1 open
+// (DLV-C-API-2), for nil, and for an error this package did not produce.
+func AckKeyOf(err error) (AckKey, bool) {
+	var e *ackError
+	if errors.As(err, &e) {
+		return e.key, true
+	}
+	return AckKey{}, false
 }

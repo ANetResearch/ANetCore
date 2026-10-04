@@ -1,26 +1,28 @@
 package seal
 
-// Fuzz targets for the envelope, the inner message and the key set (ANet an internal note).
+// Fuzz targets for the envelope, the Wrap, the inner message and the key set.
 //
 // Open needs the recipient's private key and a signature to get past its first steps, so the
-// targets fix the recipient to the VEC-SEALED-1 key and the sender to the suite identity:
-//   - FuzzOpenEnvelope feeds whole envelopes (the hub's ParseOuter and the daemon's Open);
-//   - FuzzOpenInner feeds the plaintext, encrypts it to the recipient itself and, when asked,
-//     re-signs the fuzzed field map with the suite key over the preimage Open will build, so
-//     VerifyInnerSig and VerifyInnerKeys run on arbitrary field values under a good signature;
+// targets fix the recipient to the SEALED-2A key and the sender to the suite identity:
+//   - FuzzParseOuter feeds outer envelopes to the hub's structural check, EnvDigest and SetAccess;
+//   - FuzzOpenEnvelope feeds whole envelopes to Open and checks that an ack_key comes back
+//     exactly when layer 1 opened, and is the one the recipient context exports;
+//   - FuzzOpenWrap feeds the layer-1 plaintext, encrypted to the recipient: every refusal is
+//     after layer 1, so it carries the ack_key;
+//   - FuzzOpenInner feeds the inner plaintext inside a padded Wrap and, when asked, re-signs the
+//     fuzzed field map with the suite key over the preimage Open will build, so VerifyInnerSig
+//     and VerifyInnerKeys run on arbitrary field values under a good signature;
 //   - FuzzEncKeySet feeds SignedEncKeySet bytes, optionally re-signing the set;
-//   - FuzzPadme checks Padmé and the inner padding arithmetic.
+//   - FuzzPadme checks Padmé and the Wrap padding arithmetic.
 
 import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/hpke"
 	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"math"
-	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/anetcid"
@@ -28,32 +30,37 @@ import (
 	"github.com/ANetResearch/ANetCore/identity"
 )
 
+const fuzzTS = t0
+
 type fuzzFixture struct {
 	sender    *identity.Controller
 	senderKEL []identity.SignedEvent
 	senderKP  *KeyPair
+	self      string // the recipient AID
 	recipient *KeyPair
 	ring      KeyRing
-	inner     *SealedInner // unsigned golden inner
-	golden    []byte       // VEC-SEALED-1 envelope
+	inner     *SealedInner // unsigned inner from the suite identity to the recipient
+	golden    []byte       // the SEALED-2A envelope
 }
 
 // fuzzMbox is the mailbox signing key of the fixture's key sets, derived from a fixed seed so
 // the seeds are the same in every run.
-var fuzzMbox = Mbox{Epoch: 1, Pub: ed25519.NewKeyFromSeed(seed("mbox")).Public().(ed25519.PublicKey)}
+var fuzzMbox = Mbox{Epoch: 1, Pub: ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "fuzz/mbox")).Public().(ed25519.PublicKey)}
 
 func newFuzzFixture(tb testing.TB) *fuzzFixture {
 	tb.Helper()
-	sk, err := DeriveKeyPair(SuiteX25519, seed("sender-enc"), goldenTS-dayMS, goldenTS+dayMS)
+	var v vecSealed2A
+	readVector(tb, fileSealed2A, &v)
+	rk, err := DeriveKeyPair(SuiteX25519, goldenSeed("SEALED-2A", "recipient-enc"), fuzzTS-dayMS, fuzzTS+dayMS)
 	if err != nil {
 		tb.Fatal(err)
 	}
-	rk, err := DeriveKeyPair(SuiteX25519, seed("recipient-enc"), goldenTS-dayMS, goldenTS+dayMS)
+	sk, err := DeriveKeyPair(SuiteX25519, goldenSeed("SEALED-2A", "fuzz/sender-enc"), fuzzTS-dayMS, fuzzTS+dayMS)
 	if err != nil {
 		tb.Fatal(err)
 	}
 	c := identity.SuiteController()
-	set := &EncKeySet{Type: EncKeySetType, AID: c.AID(), Seq: goldenTS, Keys: []EncKey{sk.Public}, IssuedAt: goldenTS, Mbox: fuzzMbox}
+	set := &EncKeySet{Type: EncKeySetType, AID: c.AID(), Seq: fuzzTS, Keys: []EncKey{sk.Public}, IssuedAt: fuzzTS, Mbox: fuzzMbox}
 	signed, err := SignEncKeySet(set, c.Sign)
 	if err != nil {
 		tb.Fatal(err)
@@ -66,58 +73,49 @@ func newFuzzFixture(tb testing.TB) *fuzzFixture {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	raw, err := os.ReadFile(goldenFile)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	var v goldenVector
-	if err := json.Unmarshal(raw, &v); err != nil {
-		tb.Fatal(err)
-	}
-	env, err := hex.DecodeString(v.Envelope)
-	if err != nil {
-		tb.Fatal(err)
-	}
 	return &fuzzFixture{
-		sender: c, senderKEL: c.KEL(), senderKP: sk, recipient: rk, ring: StaticKeyRing{rk},
+		sender: c, senderKEL: c.KEL(), senderKP: sk, self: v.Recipient.AID, recipient: rk, ring: StaticKeyRing{rk},
 		inner: &SealedInner{
-			From: c.AID(), KeyStateSeq: c.CurrentSeq(), To: goldenRecipientAID,
-			Type: TypeMessage, IX: goldenIX, MID: seed("mid")[:MIDLen],
-			TS: goldenTS, Exp: goldenTS + dayMS, Body: []byte(goldenBody),
-			KEL: kel, Keys: keys,
+			From: c.AID(), KeyStateSeq: c.CurrentSeq(), To: v.Recipient.AID,
+			Type: TypeMessage, IX: "ix-fuzz", MID: goldenSeed("SEALED-2A", "fuzz/mid")[:MIDLen],
+			TS: fuzzTS, Exp: fuzzTS + dayMS, Body: []byte("anet seal v2 fuzz"),
+			KEL: kel, Notices: [][]byte{v.Inner.Notice[0]}, Keys: keys,
 		},
-		golden: env,
+		golden: v.Envelope,
 	}
 }
 
-// sealedPlaintext seals in to the fixture recipient and returns the envelope and the inner
-// plaintext as sent.
-func (fx *fuzzFixture) sealedPlaintext(tb testing.TB, in *SealedInner) (env, pt []byte) {
+// sealed seals in to the fixture recipient with a session access and returns the envelope, the
+// Wrap and the inner plaintext as sent.
+func (fx *fuzzFixture) sealed(tb testing.TB, in *SealedInner, o SealOpts) (env, wrap, inner []byte) {
 	tb.Helper()
-	env, err := seal(in, &fx.recipient.Public, fx.sender.Sign, func(m fieldMap) {
-		b, err := coredet.Marshal(m)
-		if err != nil {
-			tb.Fatal(err)
-		}
-		pt = b
+	env, _, err := seal(in, &fx.recipient.Public, fx.sender.Sign, o, &sealHooks{
+		inner: func(m fieldMap) { inner = mustMarshal(tb, m) },
+		wrap:  func(m fieldMap) { wrap = mustMarshal(tb, m) },
 	})
 	if err != nil {
 		tb.Fatal(err)
 	}
-	return env, pt
+	env, err = SetAccess(env, session)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return env, wrap, inner
 }
 
-// fuzzSeedInners are variants of the golden inner used as seeds. The last carries the suite
-// KEL after a rotation at goldenTS+1000 and still declares key state 0: signed with the
-// pre-rotation key before the rotation, it reaches VerifyInnerSig's rotation-grace branch.
-func (fx *fuzzFixture) fuzzSeedInners(tb testing.TB) []*SealedInner {
+// seedInners are variants of the fixture inner used as seeds. The last carries the suite KEL
+// after a rotation at fuzzTS+1000 and still declares key state 0: signed with the pre-rotation
+// key before the rotation, it reaches VerifyInnerSig's rotation-grace branch.
+func (fx *fuzzFixture) seedInners(tb testing.TB) []*SealedInner {
 	a := *fx.inner
 	b := *fx.inner
 	b.Type, b.Body, b.Ext = TypeDelegate, bytes.Repeat([]byte{7}, 300), map[uint64][]byte{64: {0x01}, 100: {0x63, 'a', 'b', 'c'}}
+	b.Grant, b.RK = testGrant, &RK{Suite: SuiteX25519, Pub: bytes.Repeat([]byte{5}, 32)}
 	c := *fx.inner
 	c.Exp, c.IX, c.Body = c.TS, "", nil
+	c.KEL, c.Notices, c.Keys = nil, nil, nil // a preview frame's shape
 	d := *fx.inner
-	d.KEL = rotatedSuiteKEL(tb, goldenTS+1000)
+	d.KEL = rotatedSuiteKEL(tb, fuzzTS+1000)
 	return []*SealedInner{&a, &b, &c, &d}
 }
 
@@ -148,38 +146,207 @@ func rotatedSuiteKEL(tb testing.TB, ts uint64) []byte {
 	return b
 }
 
+func FuzzParseOuter(f *testing.F) {
+	fx := newFuzzFixture(f)
+	f.Add(fx.golden)
+	for _, in := range fx.seedInners(f) {
+		env, _, _ := fx.sealed(f, in, SealOpts{})
+		f.Add(env)
+	}
+	one := *fx.inner
+	env, _, _ := fx.sealed(f, &one, SealOpts{Exp: one.Exp})
+	f.Add(env)
+	kind1, err := SetAccess(env, &Access{Kind: AccessKindCap, Cap: &Cap{Body: []byte("b"), Sig: make([]byte, SigLen)}, Proof: make([]byte, SigLen)})
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(kind1)
+	f.Fuzz(func(t *testing.T, env []byte) {
+		d, derr := EnvDigest(env)
+		outer, err := ParseOuter(env)
+		if err != nil {
+			if ReasonOf(err) == "" || !IsPermanent(err) {
+				t.Fatalf("ParseOuter returned %v (reason %q)", err, ReasonOf(err))
+			}
+			if _, ok := AckKeyOf(err); ok {
+				t.Fatal("ParseOuter returned an ack_key")
+			}
+			return
+		}
+		// The structural checks the hub relies on.
+		if outer.V != EnvelopeVersion || outer.To == "" || len(outer.KID) != KIDLen ||
+			len(outer.Enc) != params(outer.Suite).encLen || len(outer.CT) == 0 || outer.Access == nil {
+			t.Fatalf("ParseOuter accepted %+v", outer)
+		}
+		a := outer.Access
+		switch a.Kind {
+		case AccessKindSession:
+			if a.Cap != nil || a.Proof != nil {
+				t.Fatalf("accepted kind 0 with %+v", a)
+			}
+		case AccessKindCap:
+			if a.Cap == nil || len(a.Cap.Sig) != SigLen || len(a.Proof) != SigLen {
+				t.Fatalf("accepted kind 1 with %+v", a)
+			}
+		default:
+			t.Fatalf("accepted access kind %d", a.Kind)
+		}
+		if derr != nil {
+			t.Fatalf("an accepted outer has no env_digest: %v", derr)
+		}
+		b, err := outer.Marshal()
+		if err != nil {
+			t.Fatalf("an accepted outer does not encode: %v", err)
+		}
+		again, err := ParseOuter(b)
+		if err != nil || !reflect.DeepEqual(again, outer) {
+			t.Fatalf("outer round trip: %v\n%+v\n%+v", err, outer, again)
+		}
+		// Replacing the credential keeps env_digest and the structure.
+		re, err := SetAccess(env, session)
+		if err != nil {
+			t.Fatalf("SetAccess on an accepted outer: %v", err)
+		}
+		if d2, err := EnvDigest(re); err != nil || d2 != d {
+			t.Fatalf("SetAccess changed env_digest (%v)", err)
+		}
+		if o2, err := ParseOuter(re); err != nil || o2.Access.Kind != AccessKindSession {
+			t.Fatalf("after SetAccess: %v", err)
+		}
+	})
+}
+
+// layer1Opens reports whether env opens at layer 1 for the fixture, by the test's own HPKE
+// calls, and the ack_key the recipient context exports.
+func (fx *fuzzFixture) layer1Opens(env []byte) (AckKey, bool) {
+	var ack AckKey
+	outer, err := ParseOuter(env)
+	if err != nil || outer.To != fx.self || !bytes.Equal(outer.KID, fx.recipient.Public.KID) {
+		return ack, false
+	}
+	p := params(outer.Suite)
+	sk, err := p.kem.NewPrivateKey(fx.recipient.Private)
+	if err != nil {
+		return ack, false
+	}
+	info, _ := HPKEInfo(outer.To, outer.Suite, outer.KID)
+	r, err := hpke.NewRecipient(outer.Enc, sk, p.kdf, p.aead, info)
+	if err != nil {
+		return ack, false
+	}
+	if _, err := r.Open(nil, outer.CT); err != nil {
+		return ack, false
+	}
+	k, err := r.Export(DAckExporterContext, AckKeyLen)
+	if err != nil {
+		return ack, false
+	}
+	copy(ack[:], k)
+	return ack, true
+}
+
 func FuzzOpenEnvelope(f *testing.F) {
 	fx := newFuzzFixture(f)
 	f.Add(fx.golden)
-	for _, in := range fx.fuzzSeedInners(f) {
-		env, _ := fx.sealedPlaintext(f, in)
+	for _, in := range fx.seedInners(f) {
+		env, _, _ := fx.sealed(f, in, SealOpts{})
 		f.Add(env)
 	}
 	f.Fuzz(func(t *testing.T, env []byte) {
-		outer, err := ParseOuter(env)
-		if err == nil {
-			// The structural checks the hub relies on.
-			if outer.V != EnvelopeVersion || outer.To == "" || len(outer.KID) != KIDLen ||
-				len(outer.Enc) != params(outer.Suite).encLen || len(outer.CT) == 0 {
-				t.Fatalf("ParseOuter accepted %+v", outer)
-			}
-			b, err := outer.Marshal()
-			if err != nil {
-				t.Fatalf("an accepted outer does not encode: %v", err)
-			}
-			again, err := ParseOuter(b)
-			if err != nil || !reflect.DeepEqual(again, outer) {
-				t.Fatalf("outer round trip: %v\n%+v\n%+v", err, outer, again)
-			}
-		} else if ReasonOf(err) == "" {
-			t.Fatalf("ParseOuter returned a non-*Error: %v", err)
-		}
-		o, err := Open(env, goldenRecipientAID, fx.ring)
+		want, opened := fx.layer1Opens(env)
+		o, err := Open(env, fx.self, fx.ring, nil)
 		if err != nil {
 			if ReasonOf(err) == "" || !IsPermanent(err) {
 				t.Fatalf("Open returned %v (reason %q)", err, ReasonOf(err))
 			}
+			ack, ok := AckKeyOf(err)
+			if ok != opened || (ok && ack != want) {
+				t.Fatalf("%s: AckKeyOf = %x %v; layer 1 opened: %v, export %x", ReasonOf(err), ack, ok, opened, want)
+			}
 			return
+		}
+		if !opened || o.AckKey != want {
+			t.Fatalf("opened, but layer 1 by itself: %v; ack %x, export %x", opened, o.AckKey, want)
+		}
+		fx.checkOpened(t, o)
+	})
+}
+
+// openReasons are the reasons Open may give once layer 1 opened.
+var openReasons = map[string]bool{
+	ReasonBadWrap: true, ReasonSealedToClosedInteraction: true, ReasonDecrypt: true, ReasonBadInner: true,
+	ReasonUnknownField: true, ReasonToMismatch: true, ReasonExpMismatch: true, ReasonBadRK: true,
+	ReasonKELTooLarge: true, ReasonBadKEL: true,
+}
+
+// encryptToFixture encrypts pt as a layer-1 plaintext to the fixture recipient.
+func (fx *fuzzFixture) encryptToFixture(t *testing.T, pt []byte, exp *uint64) ([]byte, []byte, []byte) {
+	p := params(SuiteX25519)
+	pk, err := p.kem.NewPublicKey(fx.recipient.Public.Pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := HPKEInfo(fx.self, SuiteX25519, fx.recipient.Public.KID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encKey, sender, err := hpke.NewSender(pk, p.kdf, p.aead, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := sender.Seal(nil, pt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ack, err := sender.Export(DAckExporterContext, AckKeyLen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := (&SealedEnvelope{V: EnvelopeVersion, To: fx.self, Suite: SuiteX25519,
+		KID: fx.recipient.Public.KID, Enc: encKey, CT: ct, Access: session, Exp: exp}).Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env, encKey, ack
+}
+
+func FuzzOpenWrap(f *testing.F) {
+	fx := newFuzzFixture(f)
+	for _, in := range fx.seedInners(f) {
+		_, wrap, _ := fx.sealed(f, in, SealOpts{})
+		f.Add(wrap)
+	}
+	f.Add([]byte{0xa2, 0x01, 0x50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x03, 0x40})
+	f.Fuzz(func(t *testing.T, wrap []byte) {
+		env, _, want := fx.encryptToFixture(t, wrap, nil)
+		o, err := Open(env, fx.self, fx.ring, nil)
+		if err != nil {
+			ack, ok := AckKeyOf(err)
+			if !ok || !bytes.Equal(ack[:], want) {
+				t.Fatalf("%v: no ack_key, or not the export (%x)", err, ack)
+			}
+			if !openReasons[ReasonOf(err)] || !IsPermanent(err) {
+				t.Fatalf("Open returned %v (reason %q) after layer 1", err, ReasonOf(err))
+			}
+			return
+		}
+		if !bytes.Equal(o.AckKey[:], want) {
+			t.Fatal("opened with another ack_key")
+		}
+		// Accepted: the Wrap follows FS-C8 (P-8).
+		w, err := decodeWrap(wrap)
+		if err != nil || w.ikid != nil {
+			t.Fatalf("Open accepted a Wrap decodeWrap refuses or with a second layer (%v)", err)
+		}
+		m, _ := decodeFields(wrap)
+		var pad []byte
+		if err := coredet.Unmarshal(m[wrapKeyPad], &pad); err != nil {
+			t.Fatalf("accepted a pad that does not decode: %v", err)
+		}
+		for _, x := range pad {
+			if x != 0 {
+				t.Fatal("accepted a non-zero pad")
+			}
 		}
 		fx.checkOpened(t, o)
 	})
@@ -187,53 +354,53 @@ func FuzzOpenEnvelope(f *testing.F) {
 
 func FuzzOpenInner(f *testing.F) {
 	fx := newFuzzFixture(f)
-	for _, in := range fx.fuzzSeedInners(f) {
-		_, pt := fx.sealedPlaintext(f, in)
-		f.Add(pt, true)
-		f.Add(pt, false)
+	for _, in := range fx.seedInners(f) {
+		_, _, pt := fx.sealed(f, in, SealOpts{})
+		f.Add(pt, true, false)
+		f.Add(pt, false, true)
 	}
-	f.Fuzz(func(t *testing.T, pt []byte, resign bool) {
+	f.Fuzz(func(t *testing.T, pt []byte, resign, oneShot bool) {
+		var exp *uint64
+		if oneShot {
+			if fields, err := decodeFields(pt); err == nil {
+				if e, err := rawUint(fields, keyExp); err == nil {
+					exp = &e
+				}
+			}
+		}
+		// The envelope's enc is in the preimage, so the plaintext is signed for the very HPKE
+		// context it travels in: the sender context exists before the plaintext is final.
 		p := params(SuiteX25519)
-		pk, err := p.kem.NewPublicKey(fx.recipient.Public.Pub)
-		if err != nil {
-			t.Fatal(err)
-		}
-		info, err := HPKEInfo(goldenRecipientAID, SuiteX25519, fx.recipient.Public.KID)
-		if err != nil {
-			t.Fatal(err)
-		}
+		pk, _ := p.kem.NewPublicKey(fx.recipient.Public.Pub)
+		info, _ := HPKEInfo(fx.self, SuiteX25519, fx.recipient.Public.KID)
 		encKey, sender, err := hpke.NewSender(pk, p.kdf, p.aead, info)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if resign {
-			// Sign the fuzzed field map over the preimage Open will build from it.
 			if fields, err := decodeFields(pt); err == nil {
-				if pre, err := sigPreimage(fields, encKey, fx.recipient.Public.KID, SuiteX25519); err == nil {
+				if pre, err := sigPreimage(fields, encKey, fx.recipient.Public.KID, SuiteX25519, nil, nil); err == nil {
 					sig, _ := fx.sender.Sign(pre)
 					fields[keySig] = enc(t, sig)
-					if b, err := coredet.Marshal(fields); err == nil {
-						pt = b
-					}
+					pt = mustMarshal(t, fields)
 				}
 			}
 		}
-		ct, err := sender.Seal(nil, pt)
+		w := fieldMap{wrapKeyBody: enc(t, pt)}
+		applyPad(w)
+		ct, err := sender.Seal(nil, mustMarshal(t, w))
 		if err != nil {
 			t.Fatal(err)
 		}
-		env, err := (&SealedEnvelope{V: EnvelopeVersion, To: goldenRecipientAID, Suite: SuiteX25519,
-			KID: fx.recipient.Public.KID, Enc: encKey, CT: ct}).Marshal()
+		env, err := (&SealedEnvelope{V: EnvelopeVersion, To: fx.self, Suite: SuiteX25519,
+			KID: fx.recipient.Public.KID, Enc: encKey, CT: ct, Access: session, Exp: exp}).Marshal()
 		if err != nil {
 			t.Fatal(err)
 		}
-		o, err := Open(env, goldenRecipientAID, fx.ring)
+		o, err := Open(env, fx.self, fx.ring, nil)
 		if err != nil {
-			if ReasonOf(err) == "" || !IsPermanent(err) {
-				t.Fatalf("Open returned %v (reason %q)", err, ReasonOf(err))
-			}
-			if r := ReasonOf(err); r == ReasonDecrypt || r == ReasonUnknownKey || r == ReasonBadOuter {
-				t.Fatalf("an envelope built for the recipient failed before decoding: %v", err)
+			if _, ok := AckKeyOf(err); !ok || !openReasons[ReasonOf(err)] || !IsPermanent(err) {
+				t.Fatalf("Open returned %v (reason %q) after layer 1", err, ReasonOf(err))
 			}
 			return
 		}
@@ -245,26 +412,43 @@ func FuzzOpenInner(f *testing.F) {
 func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 	t.Helper()
 	in := &o.Inner
-	if in.To != goldenRecipientAID || o.Outer.To != goldenRecipientAID {
-		t.Fatalf("opened a message to %q (outer %q)", in.To, o.Outer.To)
+	if in.To != fx.self || o.Outer.To != fx.self || o.Layers != 1 || o.IKID != nil {
+		t.Fatalf("opened a message to %q (outer %q), %d layers", in.To, o.Outer.To, o.Layers)
+	}
+	if o.Access == nil || o.Access != o.Outer.Access || o.RK != in.RK || !bytes.Equal(o.Grant, in.Grant) ||
+		len(o.Notices) != len(in.Notices) || (o.Notices == nil) != (in.Notices == nil) {
+		t.Fatal("Opened.Access, RK, Notices or Grant is not what Outer and Inner hold")
 	}
 	if len(in.MID) != MIDLen || len(in.Sig) != SigLen {
 		t.Fatalf("opened mid %d bytes, sig %d bytes", len(in.MID), len(in.Sig))
 	}
-	for _, b := range in.Pad {
-		if b != 0 {
-			t.Fatal("opened a message with a non-zero pad")
+	if strings.ContainsRune(in.From, 0) || strings.ContainsRune(in.To, 0) || strings.ContainsRune(in.IX, 0) {
+		t.Fatal("opened a from, to or ix with U+0000")
+	}
+	if (in.KEL != nil) != (in.Notices != nil) || (in.Notices != nil && len(in.Notices) != 1) {
+		t.Fatalf("opened kel %v with %d notices", in.KEL != nil, len(in.Notices))
+	}
+	for _, n := range in.Notices {
+		if len(n) > MaxNoticeBytes {
+			t.Fatalf("opened a notice of %d bytes", len(n))
 		}
+	}
+	if in.RK != nil && in.RK.check() != nil {
+		t.Fatalf("opened rk %+v", in.RK)
+	}
+	if o.Outer.Exp != nil && *o.Outer.Exp != in.Exp {
+		t.Fatalf("opened outer exp %d, inner exp %d", *o.Outer.Exp, in.Exp)
 	}
 	for k := range in.Ext {
 		if k < FirstIgnorableKey {
 			t.Fatalf("extension key %d below %d", k, FirstIgnorableKey)
 		}
 	}
-	if len(in.KEL) > MaxKELBytes || len(o.KEL) == 0 || len(o.KEL) > MaxKELEvents {
+	if in.KEL != nil && (len(in.KEL) > MaxKELBytes || len(o.KEL) == 0 || len(o.KEL) > MaxKELEvents) {
 		t.Fatalf("opened a KEL of %d bytes, %d events", len(in.KEL), len(o.KEL))
 	}
-	// The preimage never carries the signature or the pad, and carries the outer header.
+	// The preimage never carries the signature, carries the outer header and the digest of
+	// the body, and null for the second layer.
 	pm, err := decodeFields(o.Preimage)
 	if err != nil {
 		t.Fatalf("preimage does not decode: %v", err)
@@ -272,18 +456,25 @@ func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 	if _, ok := pm[keySig]; ok {
 		t.Fatal("preimage carries the signature")
 	}
-	if _, ok := pm[keyPad]; ok {
-		t.Fatal("preimage carries the pad")
-	}
 	if kid, err := rawBytes(pm, preKeyKID); err != nil || !bytes.Equal(kid, o.Outer.KID) {
 		t.Fatalf("preimage kid %x, outer %x (%v)", kid, o.Outer.KID, err)
 	}
 	if e, err := rawBytes(pm, preKeyEnc); err != nil || !bytes.Equal(e, o.Outer.Enc) {
 		t.Fatalf("preimage enc %x, outer %x (%v)", e, o.Outer.Enc, err)
 	}
+	digest := sha256.Sum256(in.Body)
+	if b, err := rawBytes(pm, keyBody); err != nil || !bytes.Equal(b, digest[:]) {
+		t.Fatalf("preimage key 9 is not the body digest (%v)", err)
+	}
+	if !bytes.Equal(pm[preKeyIKID], cborNull) || !bytes.Equal(pm[preKeyEnc2], cborNull) {
+		t.Fatal("a single layer's preimage has a second layer")
+	}
 
 	for _, now := range []uint64{0, in.TS, in.Exp, math.MaxUint64} {
 		_ = CheckTime(in, now)
+	}
+	if o.KEL == nil {
+		return
 	}
 	now := in.TS
 	if err := VerifyInnerSig(in, o.Preimage, o.KEL, now, DefaultRotationGrace); err == nil {
@@ -314,8 +505,8 @@ func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 
 func FuzzEncKeySet(f *testing.F) {
 	fx := newFuzzFixture(f)
-	signed, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: fx.sender.AID(), Seq: goldenTS,
-		Keys: []EncKey{fx.senderKP.Public}, IssuedAt: goldenTS, Mbox: fuzzMbox}, fx.sender.Sign)
+	signed, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: fx.sender.AID(), Seq: fuzzTS,
+		Keys: []EncKey{fx.senderKP.Public}, IssuedAt: fuzzTS, Mbox: fuzzMbox}, fx.sender.Sign)
 	if err != nil {
 		f.Fatal(err)
 	}
@@ -323,16 +514,16 @@ func FuzzEncKeySet(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	f.Add(b, false, goldenTS)
-	f.Add(b, true, goldenTS+dayMS)
-	two := NewEncKey(SuiteXWing, bytes.Repeat([]byte{9}, 1216), goldenTS, goldenTS+dayMS)
-	signed2, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: fx.sender.AID(), Seq: goldenTS + 1,
-		Keys: []EncKey{fx.senderKP.Public, two}, IssuedAt: goldenTS, Mbox: fuzzMbox}, fx.sender.Sign)
+	f.Add(b, false, fuzzTS)
+	f.Add(b, true, fuzzTS+dayMS)
+	two := NewEncKey(SuiteXWing, bytes.Repeat([]byte{9}, 1216), fuzzTS, fuzzTS+dayMS)
+	signed2, err := SignEncKeySet(&EncKeySet{Type: EncKeySetType, AID: fx.sender.AID(), Seq: fuzzTS + 1,
+		Keys: []EncKey{fx.senderKP.Public, two}, IssuedAt: fuzzTS, Mbox: fuzzMbox}, fx.sender.Sign)
 	if err != nil {
 		f.Fatal(err)
 	}
 	b2, _ := signed2.Marshal()
-	f.Add(b2, true, goldenTS)
+	f.Add(b2, true, fuzzTS)
 	f.Fuzz(func(t *testing.T, b []byte, resign bool, now uint64) {
 		s, err := UnmarshalSignedEncKeySet(b)
 		if err != nil {
@@ -342,7 +533,7 @@ func FuzzEncKeySet(f *testing.F) {
 			s.Sig, s.KeyStateSeq = fx.sender.Sign(s.Set)
 		}
 		_, _ = DecideHighWaterSigned(nil, s)
-		_, _ = DecideHighWaterSigned(&Seen{Seq: goldenTS, Set: signed.Set}, s)
+		_, _ = DecideHighWaterSigned(&Seen{Seq: fuzzTS, Set: signed.Set}, s)
 		set, err := VerifyEncKeySet(s, fx.sender.AID(), fx.senderKEL, now)
 		if err != nil {
 			if ReasonOf(err) == "" {
@@ -411,18 +602,19 @@ func FuzzPadme(f *testing.F) {
 				t.Fatalf("Padme(Padme(%d)) = %d, not %d", n, Padme(p), p)
 			}
 		}
-		// The padding Seal applies reaches its target exactly.
-		fields := fieldMap{keyBody: mustEncode(t, bytes.Repeat([]byte{1}, int(body%70000)))}
+		// The padding Seal applies to the Wrap reaches its target exactly.
+		w := fieldMap{wrapKeyBody: mustEncode(t, bytes.Repeat([]byte{1}, int(body%70000)))}
 		if body&1 != 0 {
-			fields[keyKEL] = mustEncode(t, make([]byte, int(body>>20)))
+			w[wrapKeyIKID] = mustEncode(t, make([]byte, KIDLen))
+			w[wrapKeyEnc2] = mustEncode(t, make([]byte, int(body>>20)))
 		}
-		want := applyPad(fields)
-		b, err := coredet.Marshal(fields)
+		want := applyPad(w)
+		b, err := coredet.Marshal(w)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(b) != want || Padme(want) != want || encodedLen(fields) != want {
-			t.Fatalf("padded inner is %d bytes, target %d, encodedLen %d", len(b), want, encodedLen(fields))
+		if len(b) != want || Padme(want) != want || encodedLen(w) != want {
+			t.Fatalf("padded wrap is %d bytes, target %d, encodedLen %d", len(b), want, encodedLen(w))
 		}
 	})
 }
@@ -430,6 +622,15 @@ func FuzzPadme(f *testing.F) {
 func mustEncode(tb testing.TB, v any) []byte {
 	tb.Helper()
 	b, err := encodeField(v)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return b
+}
+
+func mustMarshal(tb testing.TB, m fieldMap) []byte {
+	tb.Helper()
+	b, err := coredet.Marshal(m)
 	if err != nil {
 		tb.Fatal(err)
 	}

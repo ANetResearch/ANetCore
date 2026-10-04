@@ -3,24 +3,25 @@ package seal
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/coredet"
-	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/fxamacker/cbor/v2"
 )
 
-// designPreimage builds the §3.3 signature preimage from a decrypted inner
-// field map by the rule as the design states it: drop keys 20 and 21, add
-// 0: "anet-relay-sig/v1", 30: outer.enc, 31: outer.kid, 32: outer.suite, and
-// CoreDet-encode. It uses literal key numbers and the literal label and does
-// not call sigPreimage, so a change to the package constants or to
-// sigPreimage makes the two disagree.
-func designPreimage(t *testing.T, inner fieldMap, outer *SealedEnvelope) []byte {
+// designPreimage builds the signature preimage v2 from a decrypted inner field
+// map by the rule as core §3.3 states it: copy every key but 20; key 9 becomes
+// the SHA-256 of the body as a byte string; add 0: "anet-relay-sig/v2",
+// 30: enc, 31: kid, 32: suite, 33: ikid and 34: enc2 (CBOR null, 0xf6, for a
+// single layer); CoreDet-encode. It uses literal key numbers and the literal
+// label and does not call sigPreimage, so a change to the package constants
+// or to sigPreimage makes the two disagree.
+func designPreimage(t *testing.T, inner fieldMap, enc1, kid []byte, suite uint64, ikid, enc2 []byte) []byte {
 	t.Helper()
 	m := map[uint64]cbor.RawMessage{}
 	for k, v := range inner {
-		if k == 20 || k == 21 {
+		if k == 20 {
 			continue
 		}
 		m[k] = v
@@ -32,10 +33,21 @@ func designPreimage(t *testing.T, inner fieldMap, outer *SealedEnvelope) []byte 
 		}
 		m[k] = b
 	}
-	put(0, "anet-relay-sig/v1")
-	put(30, outer.Enc)
-	put(31, outer.KID)
-	put(32, uint64(outer.Suite))
+	var body []byte
+	if err := coredet.Unmarshal(inner[9], &body); err != nil {
+		t.Fatal(err)
+	}
+	d := sha256.Sum256(body)
+	put(9, d[:])
+	put(0, "anet-relay-sig/v2")
+	put(30, enc1)
+	put(31, kid)
+	put(32, suite)
+	m[33], m[34] = cbor.RawMessage{0xf6}, cbor.RawMessage{0xf6}
+	if ikid != nil {
+		put(33, ikid)
+		put(34, enc2)
+	}
 	b, err := coredet.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +65,7 @@ func sigOf(t *testing.T, inner fieldMap) []byte {
 	return sig
 }
 
-// The preimage Open returns is the one the design defines, and the sender's
+// The preimage Open returns is the one core §3.3 defines, and the sender's
 // signature is over exactly those bytes. The check uses ed25519 directly
 // with the sender's current public key, not identity.VerifyObject, so it
 // does not depend on the verification path under test elsewhere.
@@ -61,43 +73,48 @@ func TestSigPreimageFollowsDesign(t *testing.T) {
 	a, b := newParty(t), newParty(t)
 	in := innerFrom(t, a, b, t0)
 	in.Ext = map[uint64][]byte{64: enc(t, "ext"), 100000: enc(t, []byte{1, 2, 3})}
+	in.Grant, in.RK = testGrant, &RK{Suite: SuiteX25519, Pub: make([]byte, 32)}
 	env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
 	o := mustOpen(t, env, b)
 	fields := decryptFields(t, env, b.kp)
 
-	want := designPreimage(t, fields, &o.Outer)
+	want := designPreimage(t, fields, o.Outer.Enc, o.Outer.KID, uint64(o.Outer.Suite), nil, nil)
 	if !bytes.Equal(o.Preimage, want) {
 		t.Fatalf("Open preimage differs from the §3.3 rule\n got  %x\n want %x", o.Preimage, want)
+	}
+	if bytes.Contains(o.Preimage, in.Body) {
+		t.Fatal("the preimage carries the body, not its digest")
 	}
 	kel := a.c.KEL()
 	pub := ed25519.PublicKey(kel[len(kel)-1].Event.Keys[0])
 	if !ed25519.Verify(pub, want, sigOf(t, fields)) {
 		t.Fatal("the sender's signature is not over the §3.3 preimage")
 	}
-}
 
-// The pinned VEC-SEALED-1 preimage is the §3.3 preimage of the pinned
-// envelope, and the pinned signature is the conformance identity's signature
-// over it. Without this, the file only records what the implementation
-// produced when the vector was generated.
-func TestVEC_SEALED_1_PreimageFollowsDesign(t *testing.T) {
-	// See TestVEC_SEALED_1: the vector is retired with the v1 envelope.
-	t.Skip("v030-todo(CORE-2)")
-	_, g := readGolden(t)
-	_, rk := goldenKeys(t)
-	outer, err := ParseOuter(g["envelope"])
+	// Two layers: 33 and 34 carry ikid and enc2, so the preimage differs
+	// from the single-layer one (SI-31).
+	ikid, enc2 := bytes.Repeat([]byte{1}, KIDLen), bytes.Repeat([]byte{2}, 32)
+	two, err := sigPreimage(fields, o.Outer.Enc, o.Outer.KID, o.Outer.Suite, ikid, enc2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fields := decryptFields(t, g["envelope"], rk)
-	want := designPreimage(t, fields, outer)
-	if !bytes.Equal(g["sig_preimage"], want) {
-		t.Fatalf("pinned preimage differs from the §3.3 rule\n file %x\n want %x", g["sig_preimage"], want)
+	if !bytes.Equal(two, designPreimage(t, fields, o.Outer.Enc, o.Outer.KID, uint64(o.Outer.Suite), ikid, enc2)) || bytes.Equal(two, want) {
+		t.Fatal("the two-layer preimage does not follow §3.3")
 	}
-	kel := identity.SuiteController().KEL()
-	pub := ed25519.PublicKey(kel[0].Event.Keys[0])
-	if !ed25519.Verify(pub, want, sigOf(t, fields)) {
-		t.Fatal("the pinned signature is not the conformance identity's signature over the §3.3 preimage")
+	for _, half := range [][2][]byte{{ikid, nil}, {nil, enc2}} {
+		if _, err := sigPreimage(fields, o.Outer.Enc, o.Outer.KID, o.Outer.Suite, half[0], half[1]); err == nil {
+			t.Fatal("ikid without enc2 (or the reverse) built a preimage")
+		}
+	}
+	for _, k := range []uint64{0, 30, 31, 32, 33, 34} {
+		m := make(fieldMap, len(fields)+1)
+		for kk, v := range fields {
+			m[kk] = v
+		}
+		m[k] = enc(t, "x")
+		if _, err := sigPreimage(m, o.Outer.Enc, o.Outer.KID, o.Outer.Suite, nil, nil); err == nil {
+			t.Fatalf("an inner with key %d built a preimage", k)
+		}
 	}
 }
 
@@ -120,11 +137,11 @@ func TestInnerDuplicateKeyRejected(t *testing.T) {
 	dup := append([]byte{pt[0] + 1}, pt[1:]...)
 	dup = append(dup, 0x05)
 	dup = append(dup, enc(t, "ix-other")...)
-	_, err = Open(encryptPlaintext(t, dup, b.aid(), &b.kp.Public), b.aid(), b.ring())
-	wantReason(t, err, ReasonBadInner)
+	_, err = Open(encryptPlaintext(t, dup, b.aid(), &b.kp.Public), b.aid(), b.ring(), nil)
+	wantOpenFails(t, err, ReasonBadInner, true)
 
 	// Control: the unmodified plaintext, re-encrypted, opens.
-	if _, err := Open(encryptPlaintext(t, pt, b.aid(), &b.kp.Public), b.aid(), b.ring()); err != nil {
+	if _, err := Open(encryptPlaintext(t, pt, b.aid(), &b.kp.Public), b.aid(), b.ring(), nil); err != nil {
 		t.Fatalf("control: %v", err)
 	}
 }

@@ -390,6 +390,56 @@ class XCheck(unittest.TestCase):
         self.assertProblem("must return a dict with exactly its paths")
 
 
+class SealV2(unittest.TestCase):
+    """The helpers behind SEALED-2A and SEALED-2C (CORE-2)."""
+
+    def test_padme_values(self):
+        # The values of the Go test TestPadmeValues, computed by hand from the definition.
+        for n, want in [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (7, 7), (8, 8), (9, 10), (11, 12),
+                        (100, 104), (1000, 1024), (1025, 1088), (5000, 5120), (65536, 65536), (65537, 67584)]:
+            self.assertEqual(g.padme(n), want, n)
+        for n in range(2, 5000):
+            p = g.padme(n)
+            self.assertTrue(p >= n and g.padme(p) == p, n)
+
+    def test_wrap_lands_on_a_padme_length(self):
+        unreachable = 0
+        for n in range(0, 1300):
+            body = bytes(n)
+            w, pad = g.seal_wrap(body)
+            self.assertEqual(g.padme(len(w)), len(w), n)
+            self.assertEqual(g.uncbor(w), {3: body, 21: bytes(pad)})
+            unpadded = len(g.cbor({3: body, 21: b""}))
+            if len(w) != g.padme(unpadded):
+                unreachable += 1  # the next Padmé length, because the first is out of reach
+        self.assertGreater(unreachable, 0)
+
+    def test_preimage_refuses_its_own_keys(self):
+        fields = {1: g.Raw(g.cbor("a")), 9: g.Raw(g.cbor(b"body"))}
+        pre = g.uncbor(g.seal_preimage(fields, b"e" * 32, b"k" * 16, 1))
+        self.assertEqual(pre[9], g.sha256(b"body"))
+        self.assertIsNone(pre[33])
+        self.assertIsNone(pre[34])
+        self.assertEqual(pre[0], "anet-relay-sig/v2")
+        for k in (0, 30, 31, 32, 33, 34):
+            with self.assertRaises(g.GoldenError):
+                g.seal_preimage({**fields, k: g.Raw(g.cbor("x"))}, b"e" * 32, b"k" * 16, 1)
+
+    def test_sealed_2a_opens_in_python(self):
+        """The independent side reads its own vector back: layer 1 opens with the recipient key and
+        gives the Wrap, the ack_key and the inner it records."""
+        v = g.gen_sealed_2a()
+        env = g.uncbor(bytes.fromhex(v["envelope"]))
+        info = bytes.fromhex(v["hpke_info"])
+        ctx = g.SUITE1.setup_base_r(env[5], bytes.fromhex(v["recipient"]["sk"]), info)
+        self.assertEqual(ctx.open(b"", env[6]), bytes.fromhex(v["wrap"]))
+        self.assertEqual(ctx.export(b"anet-dack/v1", 32).hex(), v["ack_key"])
+        wrap = g.uncbor(bytes.fromhex(v["wrap"]))
+        self.assertEqual(wrap[3], bytes.fromhex(v["inner_cbor"]))
+        self.assertTrue(g.ed25519_verify(bytes.fromhex(v["sender"]["pub"]), bytes.fromhex(v["sig_preimage"]),
+                                         bytes.fromhex(v["inner"]["sig"])))
+
+
 class Repository(unittest.TestCase):
     def test_every_registered_vector_reproduces(self):
         """What the CI job golden-xcheck runs, on this checkout."""

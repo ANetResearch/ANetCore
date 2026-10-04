@@ -31,7 +31,7 @@ func TestPadmeValues(t *testing.T) {
 }
 
 // Near math.MaxInt the next Padmé length does not fit in an int. Padme used to
-// round up anyway and return a negative length (ANet docs/notes/0033, found by
+// round up anyway and return a negative length (ANet an internal note, found by
 // FuzzPadme); it returns n, which is at least n and a fixed point.
 func TestPadmeDoesNotWrapNearMaxInt(t *testing.T) {
 	const top = math.MaxInt - (1<<56 - 1) // the last Padmé length of a 64-bit int
@@ -69,51 +69,6 @@ func TestPadLenFor(t *testing.T) {
 		if len(b)-1 != d {
 			t.Fatalf("padLenFor(%d) = %d, which encodes %d bytes longer than empty", d, n, len(b)-1)
 		}
-	}
-}
-
-// The encoded inner of every sealed message has a Padmé length, including
-// bodies whose natural offset is one of the unreachable ones.
-func TestSealedInnerIsPadded(t *testing.T) {
-	a, b := newParty(t), newParty(t)
-	hitUnreachable := false
-	sizes := []int{0, 1, 2, 50, 100, 500, 1000, 1500, 4000, 70000}
-	for n := 0; n < 1200; n++ {
-		sizes = append(sizes, n)
-	}
-	for _, n := range sizes {
-		in := innerFrom(t, a, b, t0)
-		in.Body = make([]byte, n)
-		fields, err := in.fieldMap()
-		if err != nil {
-			t.Fatal(err)
-		}
-		fields[keySig] = enc(t, make([]byte, SigLen))
-		fields[keyPad] = []byte{0x40}
-		base := encodedLen(fields)
-		if _, ok := padLenFor(Padme(base) - base); !ok {
-			hitUnreachable = true
-		}
-
-		env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
-		outer, err := ParseOuter(env)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pt := len(outer.CT) - 16 // ChaCha20-Poly1305 tag
-		if pt < base || Padme(pt) != pt {
-			t.Fatalf("body %d: inner is %d bytes (unpadded %d), not a Padmé length", n, pt, base)
-		}
-		if n < 1200 {
-			continue
-		}
-		o := mustOpen(t, env, b)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0, DefaultRotationGrace); err != nil {
-			t.Fatalf("body %d: %v", n, err)
-		}
-	}
-	if !hitUnreachable {
-		t.Fatal("no size exercised an unreachable pad offset; widen the range")
 	}
 }
 
