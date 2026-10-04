@@ -364,7 +364,9 @@ func renderRecovery(b *recoveryBlob, raw []byte) []byte {
 // WithRecoveryNote returns file (a recovery file as SealRecoveryFile or SealRecoveryFileLocal
 // wrote it, without a note) with a blank line and the note lines appended: the sentence the
 // caller's reason table holds for the file, in Chinese and in English (KEL §2.4, C-36). Readers
-// ignore the note. Each line must be non-empty, valid UTF-8 and free of control characters.
+// ignore the note. Each line must be non-empty, valid UTF-8 and free of control characters, and
+// the noted file must still read back (file ends in a line end, and the whole stays within the size
+// a reader accepts), so that a file nobody could read at recovery time is never written.
 func WithRecoveryNote(file []byte, lines ...string) ([]byte, error) {
 	f, err := parseRecovery(file)
 	if err != nil {
@@ -384,6 +386,9 @@ func WithRecoveryNote(file []byte, lines ...string) ([]byte, error) {
 		}
 		out = append(out, l...)
 		out = append(out, '\n')
+	}
+	if _, err := parseRecovery(out); err != nil {
+		return nil, fmt.Errorf("identity: the recovery file with this note would not read back: %v", err)
 	}
 	return out, nil
 }

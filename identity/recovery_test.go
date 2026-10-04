@@ -753,6 +753,30 @@ func TestRecoveryP7(t *testing.T) {
 	}
 }
 
+// nonZeroPadBits returns text with the last character of its base64 block changed in its padding
+// bits only: a lenient decoder reads the same block from it, a strict one refuses it.
+func nonZeroPadBits(tb testing.TB, text string) string {
+	tb.Helper()
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := strings.TrimRight(lines[i], "=")
+		if pad := len(lines[i]) - len(l); pad > 0 && l != "" {
+			j := strings.IndexByte(alphabet, l[len(l)-1])
+			lines[i] = l[:len(l)-1] + string(alphabet[j^1]) + strings.Repeat("=", pad)
+			out := strings.Join(lines, "\n")
+			a, errA := blockOf(text)
+			b, errB := blockOf(out)
+			if errA != nil || errB != nil || !bytes.Equal(a, b) {
+				tb.Fatalf("the padding-bit edit changed the block: %v %v", errA, errB)
+			}
+			return out
+		}
+	}
+	tb.Fatal("the block has no padding")
+	return ""
+}
+
 func mustParse(tb testing.TB, b []byte) *recoveryFile {
 	tb.Helper()
 	f, err := parseRecovery(b)
@@ -826,6 +850,18 @@ func TestRecoveryHeaderMustMatchTheBlock(t *testing.T) {
 	if fi, err := ParseRecoveryFile(nh); err != nil || fi.Hub != "" {
 		t.Fatalf("hub-less file: %+v %v", fi, err)
 	}
+	// ...but its block still carries key 5, as "" (core §2.6: every key of RecoveryBlob is required)
+	nhRaw, err := blockOf(string(nh))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nhMap := map[uint64]cbor.RawMessage{}
+	if err := coredet.Unmarshal(nhRaw, &nhMap); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := nhMap[5]; !ok || !bytes.Equal(v, []byte{0x60}) {
+		t.Fatalf("a hub-less block: key 5 is %x (present %v), want the empty text string", v, ok)
+	}
 	if _, err := ParseRecoveryFile([]byte(strings.Replace(string(nh), "\ncommits ", "\nhub "+recHub+"\ncommits ", 1))); !errors.Is(err, ErrRecoveryWrongIdentity) {
 		t.Fatalf("a hub line added to a hub-less file: %v", err)
 	}
@@ -862,10 +898,14 @@ func TestRecoveryText(t *testing.T) {
 	if _, err := WithRecoveryNote(noted, "again"); err == nil {
 		t.Fatal("a second note was added")
 	}
-	for _, bad := range [][]string{{}, {""}, {"two\nlines"}, {"a\rb"}, {"\x00"}} {
+	for _, bad := range [][]string{{}, {""}, {"two\nlines"}, {"a\rb"}, {"\x00"}, {strings.Repeat("x", maxRecoveryFileLen)}} {
 		if _, err := WithRecoveryNote(file, bad...); err == nil {
-			t.Errorf("note %q accepted", bad)
+			t.Errorf("note %.40q accepted", bad)
 		}
+	}
+	// a file that lost its final line end would take the note into its block: refused, not written
+	if _, err := WithRecoveryNote(bytes.TrimSuffix(file, []byte("\n")), "a note"); err == nil {
+		t.Error("a note was added to a file without its final line end")
 	}
 	crlf := strings.ReplaceAll(string(noted), "\n", "\r\n")
 	for name, text := range map[string]string{"as written": string(file), "noted": string(noted), "CRLF": crlf, "BOM": "\ufeff" + string(noted), "no final newline": strings.TrimSuffix(string(file), "\n")} {
@@ -874,12 +914,13 @@ func TestRecoveryText(t *testing.T) {
 		}
 	}
 	for name, text := range map[string]string{
-		"empty":       "",
-		"header only": "anet-recovery v1\nAID " + aid + "\ncommits 2 " + hex.EncodeToString(c.Digest[:]) + "\n",
-		"not base64":  strings.Replace(string(file), "\n\n", "\n\n*", 1),
-		"not UTF-8":   string(file) + "\n\xff\n",
-		"too large":   string(file) + "\n" + strings.Repeat("x", maxRecoveryFileLen) + "\n",
-		"block split": strings.Replace(string(file), "\n\n", "\n\n"+strings.Split(string(file), "\n")[5]+"\n\n", 1),
+		"empty":                   "",
+		"header only":             "anet-recovery v1\nAID " + aid + "\ncommits 2 " + hex.EncodeToString(c.Digest[:]) + "\n",
+		"not base64":              strings.Replace(string(file), "\n\n", "\n\n*", 1),
+		"base64 padding bits set": nonZeroPadBits(t, string(file)),
+		"not UTF-8":               string(file) + "\n\xff\n",
+		"too large":               string(file) + "\n" + strings.Repeat("x", maxRecoveryFileLen) + "\n",
+		"block split":             strings.Replace(string(file), "\n\n", "\n\n"+strings.Split(string(file), "\n")[5]+"\n\n", 1),
 	} {
 		if _, err := ParseRecoveryFile([]byte(text)); !errors.Is(err, ErrRecoveryFormat) {
 			t.Errorf("%s: %v", name, err)
@@ -898,6 +939,14 @@ func TestSealRefuses(t *testing.T) {
 	copy(lk[:], recSeed("local-key"))
 	c3 := Commit{Seq: 3, Digest: c.Digest}
 	other := Commit{Seq: 2, Digest: mustDigest(t, sha256.Sum256([]byte("other")), aid, 2)}
+	// commitsOf is what rs commits to at seq 2 for a, so that an AID the header cannot carry is
+	// refused for itself and not because commits were derived for another AID.
+	commitsOf := func(a string) Commit {
+		if d, err := NextDigest(rs, a, 2); err == nil {
+			return Commit{Seq: 2, Digest: d}
+		}
+		return c
+	}
 	for name, in := range map[string]struct {
 		rs  [32]byte
 		aid string
@@ -906,8 +955,10 @@ func TestSealRefuses(t *testing.T) {
 	}{
 		"commits of another seq":   {rs, aid, "", c3},
 		"commits of another seed":  {rs, aid, "", other},
-		"AID with a space":         {rs, "bafy x", "", c},
-		"AID with a newline":       {rs, aid + "\nhub x", "", c},
+		"AID with a space":         {rs, "bafy x", "", commitsOf("bafy x")},
+		"AID with a newline":       {rs, aid + "\nhub x", "", commitsOf(aid + "\nhub x")},
+		"AID with a tab":           {rs, "bafy\tx", "", commitsOf("bafy\tx")},
+		"AID with a byte-order mk": {rs, "\ufeff" + aid, "", commitsOf("\ufeff" + aid)},
 		"AID with U+0000":          {rs, "a\x00b", "", c},
 		"empty AID":                {rs, "", "", c},
 		"hub with a newline":       {rs, aid, recHub + "\nAID x", c},
@@ -930,6 +981,132 @@ func TestSealRefuses(t *testing.T) {
 	file, _ := SealRecoveryFileLocal(rs, aid, "", c, lk)
 	if _, _, _, _, err := OpenRecoveryFileLocal(file, [32]byte{}); !errors.Is(err, ErrRecoveryFormat) {
 		t.Errorf("an all-zero local key: %v", err)
+	}
+	// a block that was sealed under the all-zero key still does not open with it
+	zb, zraw := recBlob(t, aid, "", recoveryKDF{Alg: kdfLocal}, recSeed("nonce")[:recoveryNonce], c, make([]byte, 32), rs)
+	if _, _, _, _, err := OpenRecoveryFileLocal(renderRecovery(zb, zraw), [32]byte{}); !errors.Is(err, ErrRecoveryFormat) {
+		t.Errorf("a block sealed under the all-zero local key: %v", err)
+	}
+	// the salt and nonce sizes are checked before anything is sealed (no panic in the AEAD)
+	if _, err := sealRecoveryPassphrase(rs, aid, "", c, pass, make([]byte, recoverySalt-1), make([]byte, recoveryNonce)); err == nil {
+		t.Error("a 15-byte salt was used")
+	}
+	if _, err := sealRecoveryLocal(rs, aid, "", c, lk, make([]byte, 12)); err == nil {
+		t.Error("a 12-byte nonce was used")
+	}
+}
+
+// Every key of the block is checked when a file is read (core \u00a72.6, C-33), not left to the AEAD:
+// each block below is sealed so that its ciphertext opens under the key given, and only the check
+// of the key it breaks refuses it. All three readers refuse it as ErrRecoveryFormat, without a
+// panic, before any secret is used.
+func TestRecoveryBlockKeysAreChecked(t *testing.T) {
+	withFastKDF(t)
+	rs := sha256.Sum256([]byte("kel-3 test rs"))
+	aid := kel2B()[0].EventID
+	c := Commit{Seq: 2, Digest: mustDigest(t, rs, aid, 2)}
+	pass := []byte("a passphrase of some length")
+	salt := recSeed("salt")[:recoverySalt]
+	nonce := recSeed("nonce")[:recoveryNonce]
+	var lk [32]byte
+	copy(lk[:], recSeed("local-key"))
+	argon := recoveryKDF{Alg: kdfArgon2id, T: argon2Time, MKiB: argon2MemKiB, P: argon2Lanes, Salt: salt}
+	setAID := func(b *recoveryBlob, a string) {
+		b.AID = a
+		if d, err := NextDigest(rs, a, 2); err == nil {
+			b.Commits.Digest = d[:]
+		}
+	}
+	cases := []struct {
+		name string
+		edit func(b *recoveryBlob)
+		pt   []byte // what is sealed; rs when nil
+		ct   func(ct []byte) []byte
+	}{
+		{name: "key 0: another type tag", edit: func(b *recoveryBlob) { b.Type = "anet.recovery/2" }},
+		{name: "key 1: an AID with a space", edit: func(b *recoveryBlob) { setAID(b, "bafy x") }},
+		{name: "key 1: an AID holding U+0000", edit: func(b *recoveryBlob) { setAID(b, "bafy\x00x") }},
+		{name: "key 1: an AID with a byte-order mark", edit: func(b *recoveryBlob) { setAID(b, "\ufeff"+aid) }},
+		{name: "key 2: argon2id t = 4", edit: func(b *recoveryBlob) { b.KDF.T = 4 }},
+		{name: "key 2: argon2id m = 1 GiB", edit: func(b *recoveryBlob) { b.KDF.MKiB = 1 << 20 }},
+		{name: "key 2: argon2id m = 8 KiB", edit: func(b *recoveryBlob) { b.KDF.MKiB = 8 }},
+		{name: "key 2: argon2id p = 1", edit: func(b *recoveryBlob) { b.KDF.P = 1 }},
+		{name: "key 2: a 15-byte salt", edit: func(b *recoveryBlob) { b.KDF.Salt = salt[:15] }},
+		{name: "key 2: a 17-byte salt", edit: func(b *recoveryBlob) { b.KDF.Salt = append(bytes.Clone(salt), 0) }},
+		{name: "key 2: another algorithm", edit: func(b *recoveryBlob) { b.KDF.Alg = "scrypt" }},
+		{name: "key 2: local with t", edit: func(b *recoveryBlob) { b.KDF = recoveryKDF{Alg: kdfLocal, T: argon2Time} }},
+		{name: "key 2: local with a salt", edit: func(b *recoveryBlob) { b.KDF = recoveryKDF{Alg: kdfLocal, Salt: salt} }},
+		{name: "key 3: another AEAD", edit: func(b *recoveryBlob) { b.AEAD = "chacha20poly1305" }},
+		{name: "key 4: a 12-byte nonce", edit: func(b *recoveryBlob) { b.Nonce = nonce[:12] }},
+		{name: "key 4: a 25-byte nonce", edit: func(b *recoveryBlob) { b.Nonce = append(bytes.Clone(nonce), 0) }},
+		{name: "key 5: a hub hint with a space", edit: func(b *recoveryBlob) { b.Hub = "https://hub.example/a b" }},
+		{name: "key 5: a hub hint holding U+0000", edit: func(b *recoveryBlob) { b.Hub = "https://hub.example/\x00" }},
+		{name: "key 5: a hub hint over 2048 bytes", edit: func(b *recoveryBlob) { b.Hub = "https://" + strings.Repeat("h", maxRecoveryHubLen) }},
+		{name: "key 6: a 31-byte digest", edit: func(b *recoveryBlob) { b.Commits.Digest = c.Digest[:31] }},
+		{name: "key 6: a 33-byte digest", edit: func(b *recoveryBlob) { b.Commits.Digest = append(bytes.Clone(c.Digest[:]), 0) }},
+		{name: "key 7: a sealed 31-byte seed", pt: rs[:31]},
+		{name: "key 7: a sealed 33-byte seed", pt: append(bytes.Clone(rs[:]), 0)},
+		{name: "key 7: one byte short", ct: func(ct []byte) []byte { return ct[:len(ct)-1] }},
+		{name: "key 7: missing", ct: func([]byte) []byte { return nil }},
+	}
+	for _, kdf := range []recoveryKDF{argon, {Alg: kdfLocal}} {
+		for _, tc := range cases {
+			name := kdf.Alg + ", " + tc.name
+			b := recoveryBlob{Type: recoveryType, AID: aid, KDF: kdf, AEAD: recoveryAEAD, Nonce: bytes.Clone(nonce), Hub: recHub,
+				Commits: recoveryCommits{Seq: c.Seq, Digest: bytes.Clone(c.Digest[:])}}
+			if tc.edit != nil {
+				tc.edit(&b)
+			}
+			key := lk[:]
+			if b.KDF.Alg != kdfLocal {
+				key = passphraseKey(nfc(pass), b.KDF.Salt)
+			}
+			aad, err := b.aad()
+			if err != nil {
+				t.Fatal(err)
+			}
+			n := b.Nonce
+			if len(n) != recoveryNonce {
+				n = nonce // the AEAD needs 24 bytes; the block states the other length
+			}
+			pt := tc.pt
+			if pt == nil {
+				pt = rs[:]
+			}
+			a, err := chacha20poly1305.NewX(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.CT = a.Seal(nil, n, pt, aad)
+			if tc.ct != nil {
+				b.CT = tc.ct(b.CT)
+			}
+			raw, err := coredet.Marshal(&b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(renderRecovery(&b, raw))
+			if len(b.Commits.Digest) != sha256.Size {
+				// the header can only state a 32-byte digest; it states the one the block nearly has
+				text = recReplace(t, text, fmt.Sprintf("commits %d %x\n", c.Seq, b.Commits.Digest), fmt.Sprintf("commits %d %x\n", c.Seq, c.Digest))
+			}
+			for reader, read := range map[string]func() error{
+				"ParseRecoveryFile":     func() error { _, err := ParseRecoveryFile([]byte(text)); return err },
+				"OpenRecoveryFile":      func() error { _, _, _, _, err := OpenRecoveryFile([]byte(text), pass); return err },
+				"OpenRecoveryFileLocal": func() error { _, _, _, _, err := OpenRecoveryFileLocal([]byte(text), lk); return err },
+			} {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							t.Errorf("%s: %s panicked: %v", name, reader, r)
+						}
+					}()
+					if err := read(); !errors.Is(err, ErrRecoveryFormat) {
+						t.Errorf("%s: %s gave %v, want ErrRecoveryFormat", name, reader, err)
+					}
+				}()
+			}
+		}
 	}
 }
 
