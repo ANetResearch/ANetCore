@@ -31,8 +31,10 @@ func ValidStatusState(state string) bool {
 //
 // State and At are always encoded. Text and Metadata are optional and omitted when empty.
 //
-// Like ChatMsg it carries no signature of its own; under wire 2 it travels only inside a sealed
-// envelope whose inner signature covers it.
+// Like ChatMsg it carries no signature of its own; it travels only inside a sealed envelope whose
+// inner signature covers it.
+//
+//anet:wire StatusMsg
 type StatusMsg struct {
 	State string `cbor:"1,keyasint"`
 	// Text is a human-readable explanation, for example why input is required.
@@ -47,10 +49,13 @@ type StatusMsg struct {
 // Marshal encodes a StatusMsg (CoreDet-CBOR).
 func (m *StatusMsg) Marshal() ([]byte, error) { return coredet.Marshal(*m) }
 
-// UnmarshalStatusMsg decodes a StatusMsg. It does not check State; see ValidStatusState.
+// UnmarshalStatusMsg decodes the body of an anet.status/1 by the body rule (decodeBody: no key
+// the object does not assign, its one canonical encoding); a refusal is ErrBody. It does not
+// check State: an unknown state is a refusal of its own (ValidStatusState), which the receiver
+// counts apart from a malformed body.
 func UnmarshalStatusMsg(b []byte) (*StatusMsg, error) {
 	var m StatusMsg
-	if err := coredet.Unmarshal(b, &m); err != nil {
+	if err := decodeBody("status", b, &m); err != nil {
 		return nil, err
 	}
 	return &m, nil

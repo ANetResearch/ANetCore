@@ -642,6 +642,31 @@ class Repository(unittest.TestCase):
             for v in values:
                 self.assertIn('"%s"' % v, src, "%s does not pin %s" % (path, v[:24]))
 
+    def test_cux_go_pins_match_the_go_tests(self):
+        """DELEGATE-3, CHATMSG-3 and RESULT-3 are held by a Go test (gen "go"); the bytes it pins
+        must be the ones computed here independently."""
+        for path, values in g.cux_go_pins().items():
+            src = (g.CORE_DIR / path).read_text(encoding="utf-8")
+            for v in values:
+                self.assertIn('"%s"' % v, src, "%s does not pin %s" % (path, v[:24]))
+
+    def test_preview_frame_is_a_frame(self):
+        """The SEALED-PREVIEW-1 frame satisfies CUX-P2 here too, and its envelope is one-shot:
+        outer key 8 = inner exp = inner ts + 60000, no keys 10, 11, 12, 14 in the inner."""
+        v = g.gen_sealed_preview_1()
+        f = g.preview_frame_map(v["inner"]["ts"])
+        self.assertEqual(f[1], "stream_preview")
+        for k in (4, 5, 9, 13):
+            self.assertTrue(f[k], k)
+        for k in (2, 6):
+            self.assertLessEqual(len(f[k].encode("utf-8")), 8192)
+        self.assertEqual(v["inner"]["exp"], v["inner"]["ts"] + 60000)
+        outer = g.uncbor(bytes.fromhex(v["envelope"]))
+        self.assertEqual(outer[8], v["inner"]["exp"])
+        inner = g.uncbor(bytes.fromhex(v["inner_cbor"]))
+        self.assertFalse({10, 11, 12, 14} & set(inner))
+        self.assertIn(15, inner)
+
     def test_evidence_helpers_refuse_nul_and_empty(self):
         """CORE-E9 (and "not empty") in the independent implementation of L27, L28, L31, L33 and
         L34: no evidence vector is built on a field that holds U+0000."""
