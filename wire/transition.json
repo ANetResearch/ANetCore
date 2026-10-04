@@ -38,7 +38,6 @@
     {"todo": "v030-todo(PAY-3)", "repo": "ANetHub", "kind": "string", "value": "anet.credit.issued", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(PAY-3)", "repo": "ANetHub", "kind": "string", "value": "anet.credit.retired", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(PAY-3)", "repo": "ANetHub", "kind": "string", "value": "anet.credit.opening", "note": "per-event issuance records are replaced by supply epochs"},
-    {"todo": "v030-todo(SS-5)", "repo": "ANetHub", "kind": "action", "value": "p2p", "note": "retired relayauth action (rendezvous routes removed)"},
     {"todo": "v030-todo(SS-4)", "repo": "ANetHub", "kind": "action", "value": "send", "note": "retired relayauth action (relay v3)"},
     {"todo": "v030-todo(SS-4)", "repo": "ANetHub", "kind": "string", "value": "anet-relay/", "note": "the wire-1 challenge left relayauth; the taskboard's Store.VerifyAgentChallenge still verifies it until the board gets a registered form"},
     {"todo": "v030-todo(SS-6)", "repo": "ANetHub", "kind": "action", "value": "fedkeys", "note": "retired relayauth action (federation v3)"},
