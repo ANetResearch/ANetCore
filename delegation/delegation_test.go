@@ -7,6 +7,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 	"github.com/ANetResearch/ANetCore/tsir"
 )
 
@@ -40,7 +41,7 @@ func signedReq(t *testing.T, c *identity.Controller, goal string) *DelegateReq {
 }
 
 func TestAGenuineDelegationVerifies(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,11 +67,11 @@ func TestAGenuineDelegationVerifies(t *testing.T) {
 // Each of these is a way to claim to be someone else. The names describe
 // the attack, because a table of "bad input" is a table nobody reads.
 func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mallory, err := identity.Incept()
+	mallory, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +178,7 @@ func TestVerifyRefusesNil(t *testing.T) {
 // a field lost in encoding is a message that fails verification at the far
 // end for a reason nobody can find from the far end.
 func TestWireTypesRoundTrip(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

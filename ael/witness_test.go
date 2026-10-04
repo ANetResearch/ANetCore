@@ -7,6 +7,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/ael"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 func attest(t *testing.T, w *identity.Controller, chainDID, headID string, seq uint64) *ael.HeadAttestation {
@@ -22,7 +23,7 @@ func attest(t *testing.T, w *identity.Controller, chainDID, headID string, seq u
 }
 
 func TestAGenuineAttestationVerifies(t *testing.T) {
-	w, err := identity.Incept()
+	w, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +42,11 @@ func TestAGenuineAttestationVerifies(t *testing.T) {
 }
 
 func TestAttestationsThatMustBeRefused(t *testing.T) {
-	w, err := identity.Incept()
+	w, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := identity.Incept()
+	other, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestAttestationsThatMustBeRefused(t *testing.T) {
 }
 
 func TestAnAttestationSurvivesTheWire(t *testing.T) {
-	w, err := identity.Incept()
+	w, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +124,7 @@ func TestAnAttestationSurvivesTheWire(t *testing.T) {
 // chain with different contents. Neither party has to agree for the
 // contradiction to be checkable.
 func TestAnAttestationDetectsARewrittenHistory(t *testing.T) {
-	w, err := identity.Incept()
+	w, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +154,7 @@ func TestAnAttestationDetectsARewrittenHistory(t *testing.T) {
 // "there is no head". That refused every attestation of a one-record
 // chain.
 func TestSeqZeroIsAHeadLikeAnyOther(t *testing.T) {
-	w, err := identity.Incept()
+	w, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

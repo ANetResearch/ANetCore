@@ -15,6 +15,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // ENCKEYS-2 (core §5.2): golden/py/gen_v016.py writes testdata/vec-enckeys-2.json from its own
@@ -240,7 +241,7 @@ func TestENCKEYS_2(t *testing.T) {
 	}
 
 	// A real identity for the end-to-end checks.
-	owner, err := identity.Incept()
+	owner, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

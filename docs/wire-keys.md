@@ -775,6 +775,14 @@ Head attestation on the wire (unchanged).
 | 1 | `body` | `<AELHeadAttestation>` | required | — |
 | 2 | `env` | `<aobj.Envelope>` | required | — |
 
+#### A2ACardJWS
+
+The JWS signing input of an A2A agent card signature (A2A §8.4, RFC 7515 §5.1): ASCII(BASE64URL(protected header)) '.' BASE64URL(RFC 8785 form of the card without signatures). Not a CBOR map, so it has no keys; it starts with eyJ, which no CBOR map and no text preimage does (core §3.4). Signed under kid did:anet:<AID>#<seq> by the identity's current key (a2acard.SignWithSnapshot); its vectors are the a2a-python ones (CORE-G3).
+
+*not a CBOR map: a signing input defined outside anet.*
+
+No keys: not a CBOR map.
+
 ### Task documents
 
 #### TaskDoc
@@ -2421,7 +2429,7 @@ Retired or never introduced (never to be reused):
 
 ## Identity-key signers
 
-Every call of an identity signing method (`(*github.com/ANetResearch/ANetCore/identity.Controller).Sign`, `(*github.com/ANetResearch/ANetCore/identity.Controller).CurrentPrivateKey`), and every reference that hands one on, is
+Every call of an identity signing method (`(github.com/ANetResearch/ANetCore/identity.Signer).Sign`, `(github.com/ANetResearch/ANet/module.PaymentSeam).Sign`, `(github.com/ANetResearch/ANet/module.HubSeam).Sign`), and every reference that hands one on, is
 made from one of these functions; each signs a typed object, one of the carried untyped ones,
 or the relayauth text preimage (L22).
 
@@ -2434,6 +2442,16 @@ or the relayauth text preimage (L22).
 | ANetCore | `(*ael.HeadAttestation).Sign` | AELHeadAttestation |
 | ANetCore | `(*evidence.ReceiptBody).Sign` | ReceiptBody |
 | ANetCore | `(*evidence.ReviewAttBody).Sign` | ReviewAttBody |
+| ANetCore | `a2acard.SignWithSnapshot` | A2ACardJWS |
+| ANet | `(*internal/daemon.Daemon).hubSigned` | L22 |
+| ANet | `(*internal/daemon.Daemon).sealWithOpts` | InnerSigPreimage |
+| ANet | `(*internal/daemon.Daemon).setupKeyRing` | EncKeySet |
+| ANet | `(*internal/daemon.Daemon).maintainKeyRing` | EncKeySet |
+| ANet | `(*module/x402.Module).Authorize` | PaymentAuthorization |
+| ANet | `(*module/x402.Module).WitnessHub` | AELHeadAttestation |
+| ANet | `(*module/x402.Module).signedGet` | L22 |
+| ANet | `tools/anetfixture.cmdSeal` | InnerSigPreimage |
+| ANet | `tools/anetfixture.v2Headers` | L22 |
 
 ## Fields that must not hold U+0000
 

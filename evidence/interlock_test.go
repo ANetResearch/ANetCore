@@ -12,6 +12,7 @@ import (
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 	"github.com/ANetResearch/ANetCore/payment"
 )
 
@@ -92,7 +93,7 @@ func TestEveryWayOfManufacturingARating(t *testing.T) {
 func TestCheckV2JudgesTheReceiptAtItsOwnDay(t *testing.T) {
 	early := incept(t)
 	w := signReceipt(t, early, testBody(t, ""))
-	if err := early.Rotate(uint64(day)*evidence.DayMS - 1); err != nil { // the evening before
+	if err := identitytest.Rotate(early, uint64(day)*evidence.DayMS-1); err != nil { // the evening before
 		t.Fatal(err)
 	}
 	rv, _ := testReview(t, w).Sign(reviewKey())
@@ -101,7 +102,7 @@ func TestCheckV2JudgesTheReceiptAtItsOwnDay(t *testing.T) {
 	}
 	late := incept(t)
 	w = signReceipt(t, late, testBody(t, ""))
-	if err := late.Rotate(uint64(day)*evidence.DayMS + 1); err != nil { // just after midnight
+	if err := identitytest.Rotate(late, uint64(day)*evidence.DayMS+1); err != nil { // just after midnight
 		t.Fatal(err)
 	}
 	rv, _ = testReview(t, w).Sign(reviewKey())

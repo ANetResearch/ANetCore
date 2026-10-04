@@ -181,7 +181,7 @@ func signingInput(protectedB64 string, payload []byte) []byte {
 // form, so the returned bytes show exactly the values the signature covers.
 //
 // Sign does not check anet network card rules (see Verify): it also signs the proxy cards of
-// the local A2A interface, which carry no anet-card extension. Use SignWithController to sign
+// the local A2A interface, which carry no anet-card extension. Use SignWithSnapshot to sign
 // under an identity's current key state.
 func Sign(cardJSON []byte, priv ed25519.PrivateKey, kid, jku string) ([]byte, error) {
 	return sign(cardJSON, priv, kid, jku, true)
@@ -194,6 +194,11 @@ func sign(cardJSON []byte, priv ed25519.PrivateKey, kid, jku string, checkForm b
 	if len(priv) != ed25519.PrivateKeySize {
 		return nil, newErr(CodeBadHeader, "private key is not an Ed25519 private key")
 	}
+	return signWith(cardJSON, func(in []byte) []byte { return ed25519.Sign(priv, in) }, kid, jku, checkForm)
+}
+
+// signWith is sign with the signature made by signFn over the JWS signing input.
+func signWith(cardJSON []byte, signFn func([]byte) []byte, kid, jku string, checkForm bool) ([]byte, error) {
 	if kid == "" {
 		return nil, newErr(CodeBadHeader, "kid is empty")
 	}
@@ -214,12 +219,12 @@ func sign(cardJSON []byte, priv ed25519.PrivateKey, kid, jku string, checkForm b
 	if err != nil {
 		return nil, err
 	}
-	return appendSignature(card, sigs, present, priv, kid, jku, payload)
+	return appendSignature(card, sigs, present, signFn, kid, jku, payload)
 }
 
 // appendSignature signs payload under a new protected header and returns the canonical card
 // with the signature entry appended.
-func appendSignature(card, sigs *value, present bool, priv ed25519.PrivateKey, kid, jku string, payload []byte) ([]byte, error) {
+func appendSignature(card, sigs *value, present bool, signFn func([]byte) []byte, kid, jku string, payload []byte) ([]byte, error) {
 	hdr := map[string]string{"alg": AlgEdDSA, "kid": kid, "typ": TypJOSE}
 	if jku != "" {
 		hdr["jku"] = jku
@@ -229,7 +234,10 @@ func appendSignature(card, sigs *value, present bool, priv ed25519.PrivateKey, k
 		return nil, err
 	}
 	protected := b64.EncodeToString(hdrJSON)
-	sig := ed25519.Sign(priv, signingInput(protected, payload))
+	sig := signFn(signingInput(protected, payload))
+	if len(sig) != ed25519.SignatureSize {
+		return nil, newErr(CodeInvalidSignature, "the signer made no Ed25519 signature")
+	}
 
 	entry := &value{kind: kindObject, obj: map[string]*value{
 		"protected": {kind: kindString, str: protected},
@@ -248,9 +256,32 @@ func appendSignature(card, sigs *value, present bool, priv ed25519.PrivateKey, k
 	return buf.Bytes(), nil
 }
 
-// SignWithController signs cardJSON with c's current key under kid did:anet:<AID>#<current seq>.
-func SignWithController(cardJSON []byte, c *identity.Controller, jku string) ([]byte, error) {
-	return Sign(cardJSON, c.CurrentPrivateKey(), KID(c.AID(), c.CurrentSeq()), jku)
+// SignWithSnapshot signs cardJSON as s, under kid did:anet:<AID>#<seq> (KEL C-23). The seq in
+// the kid and the key that signs come from one snapshot of s (identity.SnapshotOf): a rotation
+// between reading one and using the other could otherwise publish a card whose kid names another
+// key than the one that signed it. A card is a statement about the present, so the snapshot must
+// be of the identity's current key state (KEL C-11); Verify refuses anything else.
+//
+// cardJSON must be in publish form, as for Sign.
+func SignWithSnapshot(cardJSON []byte, s identity.Signer, jku string) ([]byte, error) {
+	s = identity.SnapshotOf(s)
+	seq, err := identity.SeqOf(s)
+	if err != nil {
+		return nil, &Error{Code: CodeBadHeader, Detail: "the signer has no key state", Err: err}
+	}
+	var signedAt uint64
+	out, err := signWith(cardJSON, func(in []byte) []byte {
+		sig, at := s.Sign(in)
+		signedAt = at
+		return sig
+	}, KID(s.AID(), seq), jku, true)
+	if err != nil {
+		return nil, err
+	}
+	if signedAt != seq {
+		return nil, &Error{Code: CodeBadHeader, Detail: "the kid's key state is not the one that signed", Err: identity.ErrSignerSeq}
+	}
+	return out, nil
 }
 
 // VerifySignature checks one JWS signature over cardJSON against pub, with no anet rules: the

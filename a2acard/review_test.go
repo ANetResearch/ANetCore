@@ -57,17 +57,17 @@ func TestVerifyKELUnavailableIsNotMaskedByEarlierSignature(t *testing.T) {
 	card := marshal(t, baseCard(a.AID()))
 
 	// First signature: a non-anet kid (for example one added by an a2a-go signer).
-	foreign, err := Sign(card, b.CurrentPrivateKey(), "key-1", "")
+	foreign, err := Sign(card, privateKeyOf(b), "key-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// First signature: a kid of another AID.
-	otherAID, err := Sign(card, b.CurrentPrivateKey(), KID(b.AID(), 0), "")
+	otherAID, err := Sign(card, privateKeyOf(b), KID(b.AID(), 0), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for name, first := range map[string][]byte{"non-anet kid": foreign, "kid of another AID": otherAID} {
-		both, err := SignWithController(first, a, "")
+		both, err := SignWithSnapshot(first, a, "")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // signRaw signs arbitrary set bytes, bypassing SignEncKeySet's refusal of
@@ -84,7 +85,7 @@ func TestVerifyEncKeySetRecipientSubstitution(t *testing.T) {
 func TestVerifyEncKeySetKeyState(t *testing.T) {
 	t.Run("rotated away", func(t *testing.T) {
 		a := newParty(t)
-		if err := a.c.Rotate(t0 - 1); err != nil {
+		if err := identitytest.Rotate(a.c, t0-1); err != nil {
 			t.Fatal(err)
 		}
 		_, err := VerifyEncKeySet(a.signed, a.aid(), a.c.KEL(), t0)
@@ -96,7 +97,7 @@ func TestVerifyEncKeySetKeyState(t *testing.T) {
 	})
 	t.Run("rotated away after now", func(t *testing.T) {
 		a := newParty(t) // signed at seq 0
-		if err := a.c.Rotate(t0 + 1); err != nil {
+		if err := identitytest.Rotate(a.c, t0+1); err != nil {
 			t.Fatal(err)
 		}
 		// Signed before the rotation. VerifyObject alone would accept it
@@ -106,7 +107,7 @@ func TestVerifyEncKeySetKeyState(t *testing.T) {
 	})
 	t.Run("deactivated", func(t *testing.T) {
 		a := newParty(t)
-		if err := a.c.Deactivate(t0 + 1); err != nil {
+		if err := identitytest.Deactivate(a.c, t0+1); err != nil {
 			t.Fatal(err)
 		}
 		_, err := VerifyEncKeySet(a.signed, a.aid(), a.c.KEL(), t0)

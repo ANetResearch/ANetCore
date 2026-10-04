@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 	"github.com/ANetResearch/ANetCore/payment"
 )
 
@@ -24,7 +25,7 @@ func auth(t *testing.T, payer *identity.Controller, payTo string, amount uint64)
 }
 
 func TestAGenuineAuthorizationVerifies(t *testing.T) {
-	payer, err := identity.Incept()
+	payer, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,11 +47,11 @@ func TestAGenuineAuthorizationVerifies(t *testing.T) {
 
 // Each of these is a way to spend money that was not authorised.
 func TestEveryWayOfPayingWithoutPermission(t *testing.T) {
-	payer, err := identity.Incept()
+	payer, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	stranger, err := identity.Incept()
+	stranger, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +153,7 @@ func TestEveryWayOfPayingWithoutPermission(t *testing.T) {
 // the bytes it covers, so marshalling the object alone would ship an
 // unsigned authorization — the bug the org credential once had.
 func TestTheSignatureSurvivesTheWire(t *testing.T) {
-	payer, err := identity.Incept()
+	payer, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,11 +226,11 @@ func TestAmountRoundTrip(t *testing.T) {
 // another hub's word. That word has to be attributable, and pinned to the
 // hub whose ledger it claims to have moved.
 func TestASettlementReceiptIsAttributable(t *testing.T) {
-	hubA, err := identity.Incept()
+	hubA, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	hubB, err := identity.Incept()
+	hubB, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +287,7 @@ func TestASettlementReceiptIsAttributable(t *testing.T) {
 // not-yet-valid. Nothing was wrong with the payment. Found on live
 // machines; no single-process test could have produced the skew.
 func TestAPaymentSurvivesOrdinaryClockSkew(t *testing.T) {
-	payer, err := identity.Incept()
+	payer, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

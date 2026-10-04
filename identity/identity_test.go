@@ -3,14 +3,14 @@ package identity
 import (
 	"bytes"
 	"crypto/ed25519"
+	"errors"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/anetcid"
-	"github.com/ANetResearch/ANetCore/coredet"
 )
 
 func TestInceptionAndReplay(t *testing.T) {
-	c, err := Incept()
+	c, err := testIncept()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,13 +31,13 @@ func TestInceptionAndReplay(t *testing.T) {
 
 // AID is stable across rotation; key_state_seq increments; current key changes.
 func TestRotationStableAID(t *testing.T) {
-	c, _ := Incept()
+	c, _ := testIncept()
 	aid0 := c.AID()
 	firstKey := append([]byte(nil), c.cur.Public().(ed25519.PublicKey)...)
-	if err := c.Rotate(1000); err != nil {
+	if err := testRotate(c, 1000); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rotate(2000); err != nil {
+	if err := testRotate(c, 2000); err != nil {
 		t.Fatal(err)
 	}
 	if c.AID() != aid0 {
@@ -68,10 +68,10 @@ func TestRotationStableAID(t *testing.T) {
 // key-states and still verifies objects signed across a rotation (the basis for persisting/wiring
 // member KELs, e.g. org-central restart resume).
 func TestKELMarshalRoundTrip(t *testing.T) {
-	c, _ := Incept()
+	c, _ := testIncept()
 	pre0 := []byte("object-at-seq-0")
 	sig0, seq0 := c.Sign(pre0)
-	if err := c.Rotate(5000); err != nil {
+	if err := testRotate(c, 5000); err != nil {
 		t.Fatal(err)
 	}
 	pre1 := []byte("object-at-seq-1")
@@ -108,8 +108,8 @@ func TestKELMarshalRoundTrip(t *testing.T) {
 // A Controller survives Export→Restore (durable daemon identity): the restored controller has the
 // same AID, can still Sign verifiably, and can Rotate — even after a prior rotation.
 func TestControllerExportRestore(t *testing.T) {
-	c, _ := Incept()
-	if err := c.Rotate(1000); err != nil { // export a controller that has rotated once
+	c, _ := testIncept()
+	if err := testRotate(c, 1000); err != nil { // export a controller that has rotated once
 		t.Fatal(err)
 	}
 	blob, err := c.Export()
@@ -129,8 +129,8 @@ func TestControllerExportRestore(t *testing.T) {
 	if err := VerifyObject(r.KEL(), r.AID(), seq, 2000, pre, sig); err != nil {
 		t.Fatalf("restored controller sign/verify: %v", err)
 	}
-	// and it can still rotate (the pre-committed next key was restored).
-	if err := r.Rotate(3000); err != nil {
+	// and it can still rotate (the KEL's commitment was restored).
+	if err := testRotate(r, 3000); err != nil {
 		t.Fatalf("restored controller rotate: %v", err)
 	}
 	if r.CurrentSeq() != 2 {
@@ -143,50 +143,56 @@ func TestControllerExportRestore(t *testing.T) {
 	}
 }
 
-// Restore rejects a tampered NEXT seed (which would silently brick rotation) and a deactivated
-// identity (which must not be reconstituted as a signer).
-func TestRestoreRejectsCorruptNxtAndDeactivated(t *testing.T) {
-	c, _ := Incept()
+// Restore rejects a tampered hot key (which would silently brick the first rotation), and restores
+// a deactivated identity as deactivated: it cannot build another event.
+func TestRestoreRejectsCorruptHotKeyAndKeepsDeactivated(t *testing.T) {
+	c, _ := testIncept()
 	blob, err := c.Export()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var e controllerExport
-	if err := coredet.Unmarshal(blob, &e); err != nil {
-		t.Fatal(err)
-	}
-	e.NxtSeed[0] ^= 0xff // corrupt the pre-committed next key
-	bad, err := coredet.Marshal(e)
+	f, err := ParseIdentityFile(blob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(bad); err == nil {
-		t.Fatal("Restore must reject a corrupt NxtSeed (mismatched pre-rotation commitment)")
+	f.HotNext[0] ^= 0xff // corrupt the key the icp committed
+	bad, err := f.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Restore(bad); !errors.Is(err, ErrIdentityFileInconsistent) {
+		t.Fatalf("Restore must reject a corrupt hot_next (mismatched pre-rotation commitment): %v", err)
 	}
 
-	// a deactivated identity must not be restorable.
-	c2, _ := Incept()
-	if err := c2.Deactivate(1000); err != nil {
+	c2, _ := testIncept()
+	if err := testDeactivate(c2, 1000); err != nil {
 		t.Fatal(err)
 	}
 	db, err := c2.Export()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Restore(db); err == nil {
-		t.Fatal("Restore must reject a deactivated identity")
+	r, err := Restore(db)
+	if err != nil {
+		t.Fatalf("a deactivated identity restores as deactivated: %v", err)
+	}
+	if r.State() != StateDeactivated {
+		t.Fatalf("state %q", r.State())
+	}
+	if _, err := r.BuildRotation(nil, make([]byte, 32), "", false, 2000); err == nil {
+		t.Fatal("a deactivated identity built a rot")
 	}
 }
 
 func TestSignVerifyAcrossRotation(t *testing.T) {
-	c, _ := Incept()
+	c, _ := testIncept()
 	pre0 := []byte("object-at-seq-0")
 	sig0, seq0 := c.Sign(pre0)
 	if err := VerifyObject(c.KEL(), c.AID(), seq0, 0, pre0, sig0); err != nil {
 		t.Fatalf("verify at seq0: %v", err)
 	}
 	// rotate at t=5000.
-	if err := c.Rotate(5000); err != nil {
+	if err := testRotate(c, 5000); err != nil {
 		t.Fatal(err)
 	}
 	pre1 := []byte("object-at-seq-1")
@@ -221,7 +227,7 @@ func TestSignVerifyAcrossRotation(t *testing.T) {
 // was pre-committed only as a digest, and cannot rotate to the committed key either, because a rot
 // is signed by the key it reveals (KEL R-3).
 func TestPreRotationTheftPrevented(t *testing.T) {
-	c, _ := Incept()
+	c, _ := testIncept()
 	last := c.kel[len(c.kel)-1]
 	rot := func(revealed ed25519.PublicKey, signer ed25519.PrivateKey) []SignedEvent {
 		_, nxt, _ := ed25519.GenerateKey(nil)
@@ -243,12 +249,12 @@ func TestPreRotationTheftPrevented(t *testing.T) {
 
 	// Gate 2 — the signer: the rot reveals the correct committed key (so gate 1 passes) but is
 	// signed by the stolen current key, as a v0.2 rot was. It must still be rejected.
-	err = Replay2Err(rot(c.nxt.Public().(ed25519.PublicKey), c.cur))
+	err = Replay2Err(rot(c.hot.Public().(ed25519.PublicKey), c.cur))
 	if err == nil || !contains(err.Error(), "not signed by the key it reveals") {
 		t.Fatalf("want the revealed-key signature rejection, got: %v", err)
 	}
 	// And the owner, who holds the committed key, can.
-	if err := Replay2Err(rot(c.nxt.Public().(ed25519.PublicKey), c.nxt)); err != nil {
+	if err := Replay2Err(rot(c.hot.Public().(ed25519.PublicKey), c.hot)); err != nil {
 		t.Fatalf("the owner's rot: %v", err)
 	}
 }
@@ -267,10 +273,10 @@ func contains(s, sub string) bool {
 
 // Deactivation terminates the AID; an object at the terminal seq is REVOKED_KEY.
 func TestDeactivation(t *testing.T) {
-	c, _ := Incept()
+	c, _ := testIncept()
 	pre := []byte("final-object")
 	sig, seq := c.Sign(pre)
-	if err := c.Deactivate(8000); err != nil { // dip at t=8000
+	if err := testDeactivate(c, 8000); err != nil { // dip at t=8000
 		t.Fatal(err)
 	}
 	states, err := Replay(c.KEL())
@@ -280,7 +286,7 @@ func TestDeactivation(t *testing.T) {
 	if states[len(states)-1].Status != StatusDeactivated {
 		t.Fatalf("want deactivated, got %s", states[len(states)-1].Status)
 	}
-	if err := c.Rotate(9000); err == nil {
+	if err := testRotate(c, 9000); err == nil {
 		t.Fatal("rotate after deactivation should fail")
 	}
 	// An object of seq0 that carries no time cannot be shown to predate the dip (KEL C-10).
@@ -308,7 +314,7 @@ func TestDeactivation(t *testing.T) {
 }
 
 func TestTamperAndWrongAID(t *testing.T) {
-	c, _ := Incept()
+	c, _ := testIncept()
 	pre := []byte("x")
 	sig, seq := c.Sign(pre)
 	if err := VerifyObject(c.KEL(), "did-not-this", seq, 0, pre, sig); err == nil {

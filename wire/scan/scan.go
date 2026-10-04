@@ -108,7 +108,7 @@ type scanner struct {
 	usedSign map[*wire.Signer]bool
 	annot    map[string]string // "<pkg path>.<Type>" -> registry object, for nested type checks
 	localTyp map[string]map[string]ast.Expr
-	ifaces   [][]*types.Interface // per configuration: the signing interfaces
+	ifaces   [][]signingIface // per configuration: the signing interfaces
 }
 
 // Check scans cfg.Dir and returns its problems in file order.
@@ -343,7 +343,7 @@ func (s *scanner) typecheck() error {
 	}
 	// one importer per configuration: a package's export data differs between tag sets
 	imps := make([]types.ImporterFrom, len(lists))
-	s.ifaces = make([][]*types.Interface, len(lists))
+	s.ifaces = make([][]signingIface, len(lists))
 	for i, pkgs := range lists {
 		exports := map[string]string{}
 		for _, p := range pkgs {
@@ -371,7 +371,7 @@ func (s *scanner) typecheck() error {
 			if tp, err := imps[i].Import(pkgPath); err == nil {
 				if obj := tp.Scope().Lookup(tname); obj != nil {
 					if it, ok := obj.Type().Underlying().(*types.Interface); ok && hasMethod(it, name) {
-						s.ifaces[i] = append(s.ifaces[i], it)
+						s.ifaces[i] = append(s.ifaces[i], signingIface{it, name})
 					}
 				}
 			}
@@ -1423,6 +1423,13 @@ func (s *scanner) tableKeys(f *file, v ast.Expr, out map[string]token.Pos) {
 
 // ---- signers ----
 
+// signingIface is an interface whose method is registered as signing (signers.methods): calling
+// that method on anything that implements the interface signs.
+type signingIface struct {
+	it     *types.Interface
+	method string
+}
+
 func (s *scanner) relFunc(full string) string {
 	for _, m := range []string{"github.com/ANetResearch/ANetCore", "github.com/ANetResearch/ANetHub", "github.com/ANetResearch/ANet", s.modPath} {
 		full = strings.ReplaceAll(full, m+"/", "")
@@ -1438,15 +1445,27 @@ func (s *scanner) isSigning(f *file, fn *types.Func, recv types.Type) bool {
 			return true
 		}
 	}
-	if recv == nil {
-		return false
+	// The types whose method this is: the receiver of the selection and the type that declares
+	// the method. They differ for a method promoted through an embedded field: a struct that
+	// embeds a signer but does not itself implement the signing interface (a field shadows one
+	// of its methods, say) still signs with the embedded signer's key.
+	var recvs []types.Type
+	if recv != nil {
+		recvs = append(recvs, recv)
 	}
-	for _, it := range s.ifaces[f.conf] {
-		if !hasMethod(it, fn.Name()) {
+	if sig, ok := fn.Type().(*types.Signature); ok && sig.Recv() != nil {
+		recvs = append(recvs, sig.Recv().Type())
+	}
+	for _, si := range s.ifaces[f.conf] {
+		// only the registered method: the interface's other methods (identity.Signer's AID and
+		// KEL) are not signing
+		if fn.Name() != si.method {
 			continue
 		}
-		if types.Implements(recv, it) || types.Implements(types.NewPointer(recv), it) {
-			return true
+		for _, r := range recvs {
+			if types.Implements(r, si.it) || types.Implements(types.NewPointer(r), si.it) {
+				return true
+			}
 		}
 	}
 	return false

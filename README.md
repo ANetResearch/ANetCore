@@ -70,10 +70,11 @@ go get github.com/ANetResearch/ANetCore@latest
 ```
 
 ```go
-ctrl, _ := identity.Incept()                                            // a new self-certifying AID and its key event log
+ctrl, _ := identity.InceptAgent(uint64(time.Now().UnixMilli()))         // a new self-certifying AID and its key event log
 pre, _ := coredet.Marshal(map[string]any{"goal": "hello"})             // canonical (deterministic) CBOR preimage
 cid, _ := anetcid.Sum(pre)                                              // content id: CIDv1 · dag-cbor · sha2-256
-sig, seq := ctrl.Sign(pre)                                              // Ed25519 under the current key
+var signer identity.Signer = ctrl                                       // what signing code is given: it signs, nothing else
+sig, seq := signer.Sign(pre)                                            // Ed25519 under the current key
 err := identity.VerifyObject(ctrl.KEL(), ctrl.AID(), seq, 0, pre, sig) // verify against the key history
 ```
 

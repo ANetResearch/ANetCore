@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // VEC-TSIR-CID-1 (tsir-spec §6.1): the typed TaskDoc preimage + CID must reproduce the
@@ -61,7 +62,7 @@ func TestCIDSignificance(t *testing.T) {
 	}
 
 	// signing adds an envelope but MUST NOT change the CID.
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	signed := &TaskDoc{Version: VersionPair{Major: 1}, Tasks: []Task{{ID: "t1", Intent: Intent{Body: "do x"}}}}
 	if err := signed.Sign(c); err != nil {
 		t.Fatal(err)
@@ -73,7 +74,7 @@ func TestCIDSignificance(t *testing.T) {
 
 // compile() is verify-before-compile and projects the load-bearing classes (§5.4).
 func TestCompile(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	d := &TaskDoc{
 		Version: VersionPair{Major: 1},
 		Tasks: []Task{{
@@ -128,7 +129,7 @@ func TestCompile(t *testing.T) {
 // F10: Compile range-checks coupling_hint — a non-zero hint outside 1..4 is MALFORMED; a hint
 // inside 1..4 (and the absent/0 case) compiles.
 func TestCompileCouplingHintRange(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	mk := func(hint int) *TaskDoc {
 		d := &TaskDoc{Version: VersionPair{Major: 1}, Tasks: []Task{{ID: "t1",
 			Intent: Intent{Body: "x"}, Accepts: []Accept{{Type: "artifact"}}, CouplingHint: hint}}}
@@ -152,13 +153,13 @@ func TestCompileCouplingHintRange(t *testing.T) {
 // before the rotation (grace) still verifies; msgTime=0 (unknown) cannot be shown to predate
 // the rotation → REVOKED_KEY (KEL C-10).
 func TestVerifyMsgTimeRevocation(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	d := &TaskDoc{Version: VersionPair{Major: 1}, Tasks: []Task{{ID: "t1", Intent: Intent{Body: "do x"}}}}
 	if err := d.Sign(c); err != nil { // signs under key_state_seq 0
 		t.Fatal(err)
 	}
 	// rotate at T=5000: seq0 is now retired as-of 5000.
-	if err := c.Rotate(5000); err != nil {
+	if err := identitytest.Rotate(c, 5000); err != nil {
 		t.Fatal(err)
 	}
 	// msgTime=0: the time is unknown, so the retired key is refused.
@@ -183,7 +184,7 @@ func TestVerifyMsgTimeRevocation(t *testing.T) {
 
 // Tampering a signed TaskDoc fails verification.
 func TestTaskDocTamper(t *testing.T) {
-	c, _ := identity.Incept()
+	c, _ := identitytest.Hub()
 	d := &TaskDoc{Version: VersionPair{Major: 1}, Tasks: []Task{{ID: "t1", Intent: Intent{Body: "do x"}}}}
 	if err := d.Sign(c); err != nil {
 		t.Fatal(err)
