@@ -137,10 +137,17 @@ func TestGenerateIXKey(t *testing.T) {
 	if k.Pub[0] == rk.Pub[0] {
 		t.Fatal("RK shares its bytes with the key")
 	}
-	// Printing a key never prints its private half.
-	for _, out := range []string{fmt.Sprint(k), fmt.Sprintf("%v %+v %#v %s", k, k, k, *k), fmt.Sprintf("%+v", []*IXKey{k})} {
-		if strings.Contains(out, fmt.Sprintf("%x", k.Private)) || strings.Contains(out, fmt.Sprint(k.Private)) ||
-			!strings.Contains(out, fmt.Sprintf("%x", k.KID())) {
+	// Printing a key never prints its private half, whatever the verb.
+	for _, out := range []string{fmt.Sprint(k), fmt.Sprintf("%v %+v %#v %s", k, k, k, *k), fmt.Sprintf("%+v", []*IXKey{k}),
+		fmt.Sprintf("%d %o %b %x %X %q", k, k, *k, k, *k, k), fmt.Sprintf("%d", []IXKey{*k}),
+		fmt.Sprintf("%+v", struct{ K IXKey }{*k})} {
+		for _, secret := range []string{fmt.Sprintf("%x", k.Private), fmt.Sprintf("%X", k.Private), fmt.Sprint(k.Private),
+			fmt.Sprintf("%o", k.Private), fmt.Sprintf("%b", k.Private)} {
+			if strings.Contains(out, secret) {
+				t.Fatalf("printed key: %s", out)
+			}
+		}
+		if !strings.Contains(out, fmt.Sprintf("%x", k.KID())) {
 			t.Fatalf("printed key: %s", out)
 		}
 	}
@@ -402,6 +409,8 @@ func TestOpenOrder(t *testing.T) {
 		{"4: inner not a map", encryptInner2(t, enc(t, "x"), b.aid(), &b.kp.Public, bk), b, ixKeys{bk}, ReasonBadInner, true, false, 1},
 		{"4: inner key 21", with(func(m fieldMap) { m[21] = enc(t, []byte{0}) }), b, ixKeys{bk}, ReasonUnknownField, true, false, 1},
 		{"4: rk of suite 2", with(func(m fieldMap) { m[keyRK] = enc(t, &RK{Suite: SuiteXWing, Pub: make([]byte, 32)}) }), b, ixKeys{bk}, ReasonBadRK, true, false, 1},
+		// 257 is 1 in a uint8: it must be refused, not truncated into suite 1.
+		{"4: rk of suite 257", with(func(m fieldMap) { m[keyRK] = enc(t, map[uint64]any{1: uint64(257), 2: make([]byte, 32)}) }), b, ixKeys{bk}, ReasonBadRK, true, false, 1},
 		{"4: another interaction", with(func(m fieldMap) { m[keyIX] = enc(t, "ix-2") }), b, ixKeys{bk}, ReasonIKeyMismatch, true, false, 1},
 		{"4: another sender", with(func(m fieldMap) { m[keyFrom] = enc(t, c.aid()) }), b, ixKeys{bk}, ReasonIKeyMismatch, true, false, 1},
 		{"4: inner to is not outer to", with(func(m fieldMap) { m[keyTo] = enc(t, c.aid()) }), b, ixKeys{bk}, ReasonToMismatch, true, false, 1},

@@ -34,7 +34,8 @@ func FuzzRKDecode(f *testing.F) {
 	f.Add(mustEncode(f, &RK{Suite: SuiteX25519, Pub: bytes.Repeat([]byte{5}, 31)}))
 	f.Add(mustEncode(f, map[uint64]any{1: uint64(1), 2: make([]byte, 32), 3: "x"}))
 	f.Add(mustEncode(f, map[uint64]any{1: uint64(1)}))
-	f.Add(append([]byte{0xa2, 0x01, 0x18, 0x01, 0x02, 0x58, 0x20}, make([]byte, 32)...)) // suite in two bytes
+	f.Add(append([]byte{0xa2, 0x01, 0x18, 0x01, 0x02, 0x58, 0x20}, make([]byte, 32)...))       // suite in two bytes
+	f.Add(append([]byte{0xa2, 0x01, 0x19, 0x01, 0x01, 0x02, 0x58, 0x20}, make([]byte, 32)...)) // suite 257, 1 as a uint8
 	f.Add([]byte{0xf6})
 	_, _, plain := fx.sealed(f, fx.inner, SealOpts{})
 	base, err := decodeFields(plain)
@@ -49,6 +50,9 @@ func FuzzRKDecode(f *testing.F) {
 			m, ferr := decodeFields(b)
 			if ferr != nil || len(m) != 2 || m[1] == nil || m[2] == nil {
 				t.Fatalf("accepted rk %x of keys %v (%v)", b, m, ferr)
+			}
+			if s, err := rawUint(m, 1); err != nil || s != uint64(SuiteX25519) {
+				t.Fatalf("accepted rk %x whose suite on the wire is %d (%v)", b, s, err)
 			}
 			if r.Suite != SuiteX25519 || len(r.Pub) != 32 || r.check() != nil {
 				t.Fatalf("accepted rk %+v", r)

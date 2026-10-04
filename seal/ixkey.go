@@ -5,6 +5,7 @@ import (
 	"crypto/hpke"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/ANetResearch/ANetCore/coredet"
@@ -131,8 +132,10 @@ func (k IXKey) String() string {
 	return fmt.Sprintf("IXKey{ix %q, peer %s, kid %x}", k.IX, k.PeerAID, KID(k.Suite, k.Pub))
 }
 
-// GoString is String, for %#v.
-func (k IXKey) GoString() string { return k.String() }
+// Format prints String for every verb, %#v included. fmt calls String only
+// for %v, %s, %q, %x and %X; under %d, %o or %b it would print the fields,
+// Private among them.
+func (k IXKey) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, k.String()) }
 
 // RK returns the public half of k as inner key 15 carries it.
 func (k *IXKey) RK() *RK { return &RK{Suite: k.Suite, Pub: append([]byte(nil), k.Pub...)} }
