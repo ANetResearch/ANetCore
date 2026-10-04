@@ -1620,7 +1620,7 @@ Response (registration):
 | `card_error` | string | optional | price_in_public_card among others |
 | `probation_until` | uint | optional | — |
 | `trial` | enum: `pending`, `granted` | optional | only for an account that came in through a sign-up window or open registration |
-| `revocations` | array | required | — |
+| `revocations` | uint | required | the owner's unexpired revocations here, as total of /mailbox/revoke |
 | `key_state_notice` | b64url | optional | NoticeWire bytes |
 | `key_state_notice_error` | enum: `quarantine`, `not_admitted`, `not_witness` | optional | — |
 
