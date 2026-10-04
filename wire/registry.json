@@ -1745,7 +1745,7 @@
                 {"name": "card_error", "type": "string", "req": "may", "note": "price_in_public_card among others"},
                 {"name": "probation_until", "type": "uint", "req": "may"},
                 {"name": "trial", "type": "enum", "req": "may", "values": ["pending", "granted"], "note": "only for an account that came in through a sign-up window or open registration"},
-                {"name": "revocations", "type": "array", "req": "must"},
+                {"name": "revocations", "type": "uint", "req": "must", "note": "the owner's unexpired revocations here, as total of /mailbox/revoke"},
                 {"name": "key_state_notice", "type": "b64url", "req": "may", "note": "NoticeWire bytes"},
                 {"name": "key_state_notice_error", "type": "enum", "req": "may", "values": ["quarantine", "not_admitted", "not_witness"]}
               ],
