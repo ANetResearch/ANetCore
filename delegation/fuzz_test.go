@@ -12,8 +12,8 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
-	"reflect"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/coredet"
@@ -43,21 +43,12 @@ func rotatedSuite(tb testing.TB) *identity.Controller {
 	return c
 }
 
-func kelBytes(tb testing.TB, c *identity.Controller) []byte {
-	tb.Helper()
-	b, err := identity.MarshalKEL(c.KEL())
-	if err != nil {
-		tb.Fatal(err)
-	}
-	return b
-}
-
 // signers are the identities a fuzz input can pick with its selector byte.
 func signers(tb testing.TB) []*identity.Controller {
 	return []*identity.Controller{identity.SuiteController(), rotatedSuite(tb)}
 }
 
-func seedDelegateReq(tb testing.TB, c *identity.Controller, bodyKEL []byte) []byte {
+func seedDelegateReq(tb testing.TB, c *identity.Controller) []byte {
 	tb.Helper()
 	doc := &tsir.TaskDoc{
 		Version: tsir.VersionPair{Major: 1, Minor: 2},
@@ -74,7 +65,7 @@ func seedDelegateReq(tb testing.TB, c *identity.Controller, bodyKEL []byte) []by
 	if err != nil {
 		tb.Fatal(err)
 	}
-	req := &delegation.DelegateReq{TaskDoc: raw, Envelope: doc.Envelope, KEL: bodyKEL, InteractionID: "ix-golden-1",
+	req := &delegation.DelegateReq{TaskDoc: raw, Envelope: doc.Envelope, InteractionID: "ix-golden-1",
 		Attachments: []delegation.Attachment{{Name: "a.txt", Mime: "text/plain", Size: 3, CID: anetcid.MustSum([]byte("abc")), Data: []byte("abc")}},
 		ContextID:   "ctx", Metadata: []byte(`{}`)}
 	b, err := req.Marshal()
@@ -84,47 +75,43 @@ func seedDelegateReq(tb testing.TB, c *identity.Controller, bodyKEL []byte) []by
 	return b
 }
 
-// roundTrip asserts that an accepted payload re-encodes to bytes that decode to the same value
-// and re-encode to the same bytes.
-func roundTrip[T any](t *testing.T, v *T, marshal func(*T) ([]byte, error), unmarshal func([]byte) (*T, error)) {
-	t.Helper()
-	b, err := marshal(v)
-	if err != nil {
-		return // a decoded string may hold bytes the encoder refuses; that is coredet's contract
-	}
-	back, err := unmarshal(b)
-	if err != nil {
-		t.Fatalf("re-encoded payload does not decode: %v", err)
-	}
-	if !reflect.DeepEqual(back, v) {
-		b2, _ := marshal(back)
-		if !bytes.Equal(b, b2) {
-			t.Fatalf("round trip changed the payload:\n%+v\n%+v", v, back)
-		}
-	}
-}
-
+// FuzzDelegateReq decodes a delegation (body and TaskDoc by the body rule), re-signs its TaskDoc
+// with one of two fixed identities when asked, and checks every accepted delegation against the
+// KEL of the identity picked.
 func FuzzDelegateReq(f *testing.F) {
 	ss := signers(f)
 	suite, rotated := ss[0], ss[1]
-	f.Add(seedDelegateReq(f, suite, kelBytes(f, suite)), false, byte(0), uint64(fuzzTS))
-	f.Add(seedDelegateReq(f, rotated, kelBytes(f, suite)), false, byte(1), uint64(fuzzTS))
-	f.Add(seedDelegateReq(f, rotated, nil), true, byte(1), uint64(0))
-	f.Add(seedDelegateReq(f, suite, kelBytes(f, rotated)), true, byte(0), uint64(fuzzTS))
+	f.Add(seedDelegateReq(f, suite), false, byte(0), uint64(fuzzTS))
+	f.Add(seedDelegateReq(f, rotated), false, byte(1), uint64(fuzzTS))
+	f.Add(seedDelegateReq(f, rotated), true, byte(1), uint64(0))
+	f.Add(seedDelegateReq(f, suite), true, byte(0), uint64(fuzzTS))
 	f.Fuzz(func(t *testing.T, b []byte, resign bool, sel byte, msgTime uint64) {
 		r, err := delegation.UnmarshalDelegateReq(b)
 		if err != nil {
+			if !errors.Is(err, delegation.ErrBody) {
+				t.Fatalf("a refusal that is not ErrBody: %v", err)
+			}
 			return
 		}
-		roundTrip(t, r, (*delegation.DelegateReq).Marshal, delegation.UnmarshalDelegateReq)
-		c := ss[int(sel)%len(ss)]
-		if resign {
-			var doc tsir.TaskDoc
-			if coredet.Unmarshal(r.TaskDoc, &doc) == nil && doc.Sign(c) == nil {
-				r.Envelope = doc.Envelope
-			}
+		// Accepted means canonical: the bytes are the encoding of what they decoded to, and the
+		// TaskDoc inside them is the encoding of its own decoding.
+		if again, err := r.Marshal(); err != nil || !bytes.Equal(again, b) {
+			t.Fatalf("accepted a delegation that is not its canonical encoding (%v)", err)
 		}
-		_, _, _, _ = delegation.VerifyDelegateReq(r)
+		var doc tsir.TaskDoc
+		if err := coredet.UnmarshalStrict(r.TaskDoc, &doc); err != nil || len(doc.Tasks) == 0 {
+			t.Fatalf("accepted a TaskDoc that does not decode strictly, or has no task (%v)", err)
+		}
+		if again, err := coredet.Marshal(doc); err != nil || !bytes.Equal(again, r.TaskDoc) {
+			t.Fatalf("accepted a TaskDoc that is not its canonical encoding (%v)", err)
+		}
+		if r.Envelope == nil || r.InteractionID == "" {
+			t.Fatal("accepted a delegation without its signature or interaction id")
+		}
+		c := ss[int(sel)%len(ss)]
+		if resign && doc.Sign(c) == nil {
+			r.Envelope = doc.Envelope
+		}
 		requester, td, tdBytes, err := delegation.VerifyDelegateReqWithKEL(r, c.KEL(), msgTime)
 		if err != nil {
 			return
@@ -147,12 +134,6 @@ func FuzzDelegateReq(f *testing.F) {
 		if seq >= uint64(len(states)) || !ed25519.Verify(states[seq].CurrentKeys[0], pre, td.Envelope.Sig) {
 			t.Fatal("accepted a TaskDoc whose signature is not by the declared key state")
 		}
-		if len(r.KEL) > 0 {
-			body, err := identity.UnmarshalKEL(r.KEL)
-			if err != nil || identity.ExtendsKEL(body, c.KEL()) != nil {
-				t.Fatalf("accepted a body KEL that is not a prefix of the resolved KEL (%v)", err)
-			}
-		}
 	})
 }
 
@@ -160,10 +141,10 @@ func FuzzDelegateReq(f *testing.F) {
 // completion against it.
 func fuzzTask(tb testing.TB) *task { return newTask(tb, identity.SuiteController(), "ix-golden-1") }
 
-func seedResultResp(tb testing.TB, tk *task, c *identity.Controller, bodyKEL []byte) []byte {
+func seedResultResp(tb testing.TB, tk *task, c *identity.Controller, reply *delegation.ReplyMsg) []byte {
 	tb.Helper()
 	rr := tk.completion(tb, c, []byte(`{"ok":true}`), nil)
-	rr.KEL, rr.Metadata = bodyKEL, []byte(`{}`)
+	rr.Metadata, rr.Reply = []byte(`{}`), reply
 	b, err := rr.Marshal()
 	if err != nil {
 		tb.Fatal(err)
@@ -171,21 +152,35 @@ func seedResultResp(tb testing.TB, tk *task, c *identity.Controller, bodyKEL []b
 	return b
 }
 
-// FuzzResultResp decodes a completion, re-signs its receipt with one of two fixed identities when
-// asked, and checks every accepted receipt against what the requester holds.
+// FuzzResultResp decodes a completion by the body rule, checks the shape of every accepted one
+// (status, reply), re-signs its receipt with one of two fixed identities when asked, and checks
+// every accepted receipt against what the requester holds.
 func FuzzResultResp(f *testing.F) {
 	ss := signers(f)
 	suite, rotated := ss[0], ss[1]
 	tk := fuzzTask(f)
-	f.Add(seedResultResp(f, tk, suite, kelBytes(f, suite)), false, byte(0), uint64(fuzzTS))
-	f.Add(seedResultResp(f, tk, rotated, kelBytes(f, suite)), true, byte(1), uint64(fuzzTS))
-	f.Add(seedResultResp(f, tk, rotated, nil), true, byte(1), uint64(0))
+	reply := &delegation.ReplyMsg{Kind: delegation.ChatText, Body: "the answer", MsgID: "m-1",
+		Attachments: []delegation.Attachment{{Name: "a", Size: 1, CID: "c", Data: []byte{1}}}}
+	f.Add(seedResultResp(f, tk, suite, reply), false, byte(0), uint64(fuzzTS))
+	f.Add(seedResultResp(f, tk, rotated, nil), true, byte(1), uint64(fuzzTS))
+	f.Add(seedResultResp(f, tk, rotated, reply), true, byte(1), uint64(0))
 	f.Fuzz(func(t *testing.T, b []byte, resign bool, sel byte, msgTime uint64) {
 		r, err := delegation.UnmarshalResultResp(b)
 		if err != nil {
+			if !errors.Is(err, delegation.ErrBody) {
+				t.Fatalf("a refusal that is not ErrBody: %v", err)
+			}
 			return
 		}
-		roundTrip(t, r, (*delegation.ResultResp).Marshal, delegation.UnmarshalResultResp)
+		if again, err := r.Marshal(); err != nil || !bytes.Equal(again, b) {
+			t.Fatalf("accepted a result that is not its canonical encoding (%v)", err)
+		}
+		if r.Status != delegation.StatusDone && r.Status != delegation.StatusFailed {
+			t.Fatalf("accepted status %q", r.Status)
+		}
+		if r.Reply != nil && (r.Status != delegation.StatusDone || delegation.ValidateReply(r.Reply) != nil) {
+			t.Fatalf("accepted a reply %+v on a %s result", r.Reply, r.Status)
+		}
 		c := ss[int(sel)%len(ss)]
 		if resign {
 			if w, err := evidence.UnmarshalReceiptWire(r.Receipt); err == nil {
@@ -231,19 +226,74 @@ func FuzzResultResp(f *testing.F) {
 	})
 }
 
-func FuzzChatStatusMsg(f *testing.F) {
-	chat, _ := (&delegation.ChatMsg{Kind: delegation.ChatText, Body: "hi", MsgID: "m1", StreamSeq: 3,
-		Attachments: []delegation.Attachment{{Name: "a", Size: 1, CID: "c", Data: []byte{1}}}, Metadata: []byte(`{}`)}).Marshal()
+// FuzzChatMsg decodes a message by the body rule; an accepted message is canonical, of a known
+// kind, carries the preview keys only as a preview frame (CORE-K6), and a preview frame that
+// passes ValidatePreview holds every CUX-P2 property.
+func FuzzChatMsg(f *testing.F) {
+	for _, m := range []*delegation.ChatMsg{
+		{Kind: delegation.ChatText, Body: "hi", MsgID: "m1",
+			Attachments: []delegation.Attachment{{Name: "a", Size: 1, CID: "c", Data: []byte{1}}}, Metadata: []byte(`{}`)},
+		{Kind: delegation.ChatStreamPreview, Body: "partial", StreamSeq: fuzzTS + 1, StreamAtMS: fuzzTS,
+			ReasoningBody: "thinking", ReasoningStreamAtMS: fuzzTS - 1, MsgID: "p1", Omitted: 3, ReasoningOmitted: 4, Answers: "m1"},
+		{Kind: delegation.KindCancel, MsgID: "m2"},
+		{Kind: delegation.ChatEndRequest},
+	} {
+		b, err := m.Marshal()
+		if err != nil {
+			f.Fatal(err)
+		}
+		f.Add(b)
+	}
+	f.Fuzz(func(t *testing.T, b []byte) {
+		m, err := delegation.UnmarshalChatMsg(b)
+		if err != nil {
+			if !errors.Is(err, delegation.ErrBody) {
+				t.Fatalf("a refusal that is not ErrBody: %v", err)
+			}
+			return
+		}
+		if again, err := m.Marshal(); err != nil || !bytes.Equal(again, b) {
+			t.Fatalf("accepted a message that is not its canonical encoding (%v)", err)
+		}
+		switch m.Kind {
+		case delegation.ChatText, delegation.ChatEndRequest, delegation.KindCancel:
+			if m.StreamSeq != 0 || m.StreamAtMS != 0 || m.ReasoningBody != "" || m.ReasoningStreamAtMS != 0 ||
+				m.Omitted != 0 || m.ReasoningOmitted != 0 || m.Answers != "" {
+				t.Fatalf("accepted a %s message with preview keys: %+v", m.Kind, m)
+			}
+			if delegation.ValidatePreview(m) == nil {
+				t.Fatalf("ValidatePreview accepted a %s message", m.Kind)
+			}
+		case delegation.ChatStreamPreview:
+			if delegation.ValidatePreview(m) != nil {
+				return
+			}
+			if len(m.Attachments) > 0 || len(m.Metadata) > 0 || len(m.Body) > delegation.MaxPreviewTail ||
+				len(m.ReasoningBody) > delegation.MaxPreviewTail || !utf8.ValidString(m.Body) || !utf8.ValidString(m.ReasoningBody) ||
+				m.StreamSeq == 0 || m.StreamAtMS == 0 || m.MsgID == "" || m.Answers == "" {
+				t.Fatalf("ValidatePreview accepted %+v", m)
+			}
+		default:
+			t.Fatalf("accepted kind %q", m.Kind)
+		}
+	})
+}
+
+// FuzzStatusMsg decodes a status by the body rule; an accepted status is canonical.
+func FuzzStatusMsg(f *testing.F) {
 	status, _ := (&delegation.StatusMsg{State: delegation.StateWorking, Text: "t", Metadata: []byte(`{}`), At: fuzzTS}).Marshal()
-	f.Add(chat)
 	f.Add(status)
 	f.Fuzz(func(t *testing.T, b []byte) {
-		if m, err := delegation.UnmarshalChatMsg(b); err == nil {
-			roundTrip(t, m, (*delegation.ChatMsg).Marshal, delegation.UnmarshalChatMsg)
+		m, err := delegation.UnmarshalStatusMsg(b)
+		if err != nil {
+			if !errors.Is(err, delegation.ErrBody) {
+				t.Fatalf("a refusal that is not ErrBody: %v", err)
+			}
+			return
 		}
-		if m, err := delegation.UnmarshalStatusMsg(b); err == nil {
-			roundTrip(t, m, (*delegation.StatusMsg).Marshal, delegation.UnmarshalStatusMsg)
-			_ = delegation.ValidStatusState(m.State)
+		if again, err := m.Marshal(); err != nil || !bytes.Equal(again, b) {
+			t.Fatalf("accepted a status that is not its canonical encoding (%v)", err)
 		}
+		_ = delegation.ValidStatusState(m.State)
 	})
 }

@@ -152,35 +152,6 @@ func TestWhatTheCheckNeeds(t *testing.T) {
 	}
 }
 
-// The KEL in the body is never what the receipt is checked against; when present it must be the
-// resolved KEL or a prefix of it.
-func TestTheBodyKELNeverDecides(t *testing.T) {
-	requester, provider, other := incept(t), incept(t), incept(t)
-	tk := newTask(t, requester, "ix-1")
-	marshal := func(kel []identity.SignedEvent) []byte {
-		b, err := identity.MarshalKEL(kel)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return b
-	}
-	rr := tk.completion(t, provider, []byte("x"), nil)
-	rr.KEL = marshal(provider.KEL())
-	if _, err := delegation.VerifyResultForRequest(rr, provider.KEL(), tk.check(provider.AID()), msgTime); err != nil {
-		t.Fatalf("body KEL equal to the resolved one: %v", err)
-	}
-	rr.KEL = marshal(other.KEL())
-	if _, err := delegation.VerifyResultForRequest(rr, provider.KEL(), tk.check(provider.AID()), msgTime); !errors.Is(err, delegation.ErrBodyKELMismatch) ||
-		!errors.Is(err, identity.ErrKELFork) {
-		t.Fatalf("body KEL forks: want ErrBodyKELMismatch wrapping ErrKELFork, got %v", err)
-	}
-	rr.KEL = []byte("not a kel")
-	if _, err := delegation.VerifyResultForRequest(rr, provider.KEL(), tk.check(provider.AID()), msgTime); err == nil ||
-		!strings.Contains(err.Error(), "bad body KEL") {
-		t.Fatalf("undecodable body KEL: %v", err)
-	}
-}
-
 // msgTime and the resolved KEL drive revocation: a receipt signed with a key the provider retired
 // is accepted only for a result that arrived before the retirement.
 func TestMsgTimeDrivesRevocation(t *testing.T) {

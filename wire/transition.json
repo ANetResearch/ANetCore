@@ -3,11 +3,6 @@
   "entries": [
     {"todo": "v030-todo(PAY-9)", "repo": "ANetCore", "kind": "signer", "go": "(*adp.AgentCard).Sign", "note": "ADP cards are removed; adp has no user left after the daemon side goes"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANetCore", "kind": "signer", "go": "(*adp.CardTombstone).Sign", "note": "ADP cards are removed; adp has no user left after the daemon side goes"},
-    {"todo": "v030-todo(UX-2)", "repo": "ANetCore", "kind": "struct", "go": "delegation.DelegateReq", "keys": ["1 TaskDoc []byte", "2 Envelope *aobj.Envelope", "3 KEL []byte", "4 InteractionID string", "5 Attachments []Attachment", "7 ContextID string", "8 Metadata []byte"], "note": "body v3 (retired keys, strict decoding)"},
-    {"todo": "v030-todo(UX-2)", "repo": "ANetCore", "kind": "struct", "go": "delegation.Attachment", "keys": ["1 Name string", "2 Mime string", "3 Size int64", "4 CID string", "5 Data []byte"], "note": "unchanged body object: annotate it with the body v3 work"},
-    {"todo": "v030-todo(UX-2)", "repo": "ANetCore", "kind": "struct", "go": "delegation.ResultResp", "keys": ["1 Status string", "2 Deliverable []byte", "3 Receipt []byte", "4 KEL []byte", "5 Metadata []byte"], "note": "body v3 (retired keys, strict decoding)"},
-    {"todo": "v030-todo(UX-2)", "repo": "ANetCore", "kind": "struct", "go": "delegation.ChatMsg", "keys": ["1 Kind string", "2 Body string", "3 Attachments []Attachment", "4 StreamSeq uint64", "5 StreamAtMS int64", "6 ReasoningBody string", "7 ReasoningStreamAtMS int64", "9 MsgID string", "10 Metadata []byte"], "note": "body v3 (retired keys, strict decoding)"},
-    {"todo": "v030-todo(UX-2)", "repo": "ANetCore", "kind": "struct", "go": "delegation.StatusMsg", "keys": ["1 State string", "2 Text string", "3 Metadata []byte", "4 At uint64"], "note": "unchanged body object: annotate it with the body v3 work"},
     {"todo": "v030-todo(UX-3)", "repo": "ANet", "kind": "string", "value": "anet.final", "note": "anet.final is removed"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANet", "kind": "string", "value": "anet.pricing", "note": "public prices are removed"},
     {"todo": "v030-todo(FS-4)", "repo": "ANet", "kind": "struct", "go": "internal/daemon.encKeyFile", "keys": ["1 V uint64", "2 AID string", "3 LastSeq uint64", "4 Pairs []seal.KeyPair", "5 Signed []byte"], "note": "enc_keys.cbor v2 (EncKeyFile)"},
