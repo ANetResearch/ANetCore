@@ -44,7 +44,7 @@
       "covers": "the inner of a preview frame: no keys 10, 11, 12, 14; key 15 present; outer key 8 = inner ts + 60000",
       "labels": ["L1", "L3", "L39"],
       "objects": ["SealedEnvelope", "Wrap", "SealedInner", "ChatMsg", "RK"],
-      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-sealed-preview-1.json", "todo": "v030-todo(UX-2)"}]
+      "at": [{"repo": "ANetCore", "path": "seal/testdata/vec-sealed-preview-1.json"}]
     },
     {
       "id": "ACCESS-1",
@@ -170,7 +170,7 @@
       "covers": "DelegateReq with keys 3 and 6 retired (present: decoding fails)",
       "labels": [],
       "objects": ["DelegateReq", "Attachment"],
-      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestDELEGATE_3", "todo": "v030-todo(UX-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestDELEGATE_3"}]
     },
     {
       "id": "CHATMSG-3",
@@ -179,7 +179,7 @@
       "covers": "ChatMsg as a preview frame (keys 11-13) and as plain text (keys 4-7 or 11-13 present: decoding fails)",
       "labels": [],
       "objects": ["ChatMsg"],
-      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestCHATMSG_3", "todo": "v030-todo(UX-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestCHATMSG_3"}]
     },
     {
       "id": "RESULT-3",
@@ -188,7 +188,7 @@
       "covers": "ResultResp key 6 reply (other keys in the reply: decoding fails)",
       "labels": [],
       "objects": ["ResultResp", "ReplyMsg"],
-      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestRESULT_3", "todo": "v030-todo(UX-2)"}]
+      "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_v3_test.go", "test": "TestRESULT_3"}]
     },
     {
       "id": "CARD-1",

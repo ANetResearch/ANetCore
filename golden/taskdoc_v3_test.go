@@ -77,8 +77,13 @@ func TestTASKDOC_3(t *testing.T) {
 	if read.Nonce != b.Nonce || hex.EncodeToString(read.RequesterCommit) != hex.EncodeToString(b.RequesterCommit) {
 		t.Fatalf("binding read back as %+v", read)
 	}
-	// The request CID covers the files: another file, another request.
-	other, _ := taskdoc3(t, "bafkreidoesnotmatchanything")
+	// The request CID covers the files: one byte of a file changed, another file CID, another
+	// request (CUX §2.5).
+	changedCID, err := anetcid.SumRaw([]byte("abd"))
+	if err != nil || changedCID == fileCID {
+		t.Fatalf("the CID of a changed file: %s, %v", changedCID, err)
+	}
+	other, _ := taskdoc3(t, changedCID)
 	otherRaw, _ := coredet.Marshal(other)
 	if anetcid.MustSum(otherRaw) == wantRequestCID {
 		t.Fatal("the request CID does not change with a file's CID")

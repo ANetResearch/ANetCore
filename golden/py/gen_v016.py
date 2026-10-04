@@ -1452,6 +1452,119 @@ def gen_sealed_2c():
     return out
 
 
+# --- CUX: the preview frame (SEALED-PREVIEW-1) and the body v3 pins (DELEGATE-3, CHATMSG-3, RESULT-3)
+#
+# A preview frame (core §2.4.2, CORE-K5; CUX §2.3) is an anet.message/1 whose body is a ChatMsg of
+# kind "stream_preview": 1 kind, 2 the tail of the reply (<= 8192 bytes), 4 stream_seq, 5 stream_at_ms,
+# 6 the tail of the reasoning, 7 reasoning_at_ms, 9 msg_id, 11 omitted, 12 reasoning_omitted, 13 answers.
+# It is a one-shot envelope: the outer carries key 8, equal to the inner exp, and the inner exp is
+# ts + 60000 (CUX-E1). It is sealed in two layers, the second to the requester's interaction key, and
+# the inner carries rk (key 15) and none of keys 10, 11, 12, 14. A one-shot envelope yields no token
+# (engine ENG-V6), so the file gives ack_key but no handle or tok.
+
+PREVIEW_VID = "SEALED-PREVIEW-1"
+PREVIEW_LIFETIME = 60 * 1000
+
+
+def preview_frame_map(ts: int) -> dict:
+    """The preview frame of SEALED-PREVIEW-1 (keys to Python values), every key a frame may carry."""
+    return {1: "stream_preview", 2: "A cat sits on a red chair by the wi", 4: ts, 5: ts - 1500,
+            6: "The chair is the brightest thing in the", 7: ts - 1800, 9: "p-" + b16(seed(PREVIEW_VID, "frame-id")[:8]),
+            11: 640, 12: 1280, 13: "m-" + b16(seed(PREVIEW_VID, "answers")[:8])}
+
+
+@vector("SEALED-PREVIEW-1", "ANetCore/seal/testdata/vec-sealed-preview-1.json")
+def gen_sealed_preview_1():
+    vid = PREVIEW_VID
+    p = seal_parties(vid)
+    ix = "ix-" + vid.lower()
+    rix = seal_recipient_ix(vid, p, ix)
+    ts = SEAL_T0
+    frame = preview_frame_map(ts)
+    body = cbor(frame)
+    inner = {
+        1: p["sender"], 2: p["sender_kel"].events[-1][0][2], 3: p["recipient"], 4: "anet.message/1", 5: ix,
+        6: seed(vid, "mid")[:16], 7: ts, 8: ts + PREVIEW_LIFETIME, 9: body, 15: {1: 1, 2: p["rk_pub"]},
+    }
+    two = {"pub": rix["pub"], "role": "ikmE2"}
+    s = seal_build(p, vid, inner, exp=inner[8], layer2=two)
+    out = {
+        "about": "A preview frame (core §2.4.2, CORE-K5; CUX §2.3, CUX-E1): an anet.message/1 whose body is a ChatMsg of "
+                 "kind stream_preview with every key a frame may carry (1, 2, 4-7, 9, 11-13). A one-shot envelope: outer "
+                 "key 8 = inner exp = inner ts + 60000. Sealed in two layers, the second to the recipient's (the "
+                 "requester's) interaction key in the interaction; the inner carries rk (15) and none of keys 10, 11, "
+                 "12, 14, and is signed by the sender's key at key_state_seq 1 over the preimage v2 with 33 = ikid and "
+                 "34 = enc2. Written by gen_v016.py with the ephemeral keys DeriveKeyPair(seed(\"ikmE\")) and "
+                 "DeriveKeyPair(seed(\"ikmE2\")); the Go test opens it, reproduces the preimage, the signature check, "
+                 "env_digest and ack_key, decodes the body as a ChatMsg and checks it with ValidatePreview. A one-shot "
+                 "envelope yields no token, so there is no handle or tok. negatives: envelopes refused by the seal "
+                 "layer, with their reason; body_negatives: frame bodies refused when they decode (decode) or by "
+                 "ValidatePreview (validate).",
+    }
+    out.update(seal_parties_json(vid, p))
+    out["recipient_ix"] = seal_ix_json(rix)
+    out.update({
+        "hpke_info": b16(s["info"]),
+        "ix_info": b16(s["ix_info"]),
+        "frame": {"kind": frame[1], "body": frame[2], "stream_seq": frame[4], "stream_at_ms": frame[5],
+                  "reasoning_body": frame[6], "reasoning_at_ms": frame[7], "msg_id": frame[9], "omitted": frame[11],
+                  "reasoning_omitted": frame[12], "answers": frame[13]},
+        "inner": {
+            "from": inner[1], "key_state_seq": inner[2], "to": inner[3], "type": inner[4], "ix": inner[5],
+            "mid": b16(inner[6]), "ts": inner[7], "exp": inner[8], "body": b16(body),
+            "rk": {"suite": 1, "pub": b16(p["rk_pub"])}, "sig": b16(uncbor(s["fields"][20])),
+        },
+        "inner_cbor": b16(s["inner_bytes"]),
+        "sig_preimage": b16(s["preimage"]),
+        "enc": b16(s["enc"]),
+        "enc2": b16(s["enc2"]),
+        "envelope": b16(s["envelope"]),
+        "env_digest": b16(s["env_digest"]),
+        "ack_key": b16(s["ack_key"]),
+    })
+    late = seal_build(p, vid, inner, exp=inner[8] + 1, layer2=two)
+    out["negatives"] = [
+        {"name": "outer key 8 is not the inner exp", "envelope": b16(late["envelope"]), "reason": "exp-mismatch"},
+        {"name": "one byte of the layer-2 ciphertext changed",
+         "envelope": b16(seal_build(p, vid, inner, exp=inner[8], layer2={**two, "ct2": flip(s["ct2"])})["envelope"]),
+         "reason": "decrypt-failed"},
+    ]
+    att = {1: "a.png", 2: "image/png", 3: 3, 4: cid_raw(b"abc"), 5: b"abc"}
+    out["body_negatives"] = [
+        {"name": "attachments (key 3)", "body": b16(cbor({**frame, 3: [att]})), "refused_by": "validate"},
+        {"name": "metadata (key 10)", "body": b16(cbor({**frame, 10: b"{}"})), "refused_by": "validate"},
+        {"name": "a body of 8193 bytes (key 2)", "body": b16(cbor({**frame, 2: "a" * 8193})), "refused_by": "validate"},
+        {"name": "without answers (key 13)", "body": b16(drop_key(body, 13)), "refused_by": "validate"},
+        {"name": "without stream_at_ms (key 5)", "body": b16(drop_key(body, 5)), "refused_by": "validate"},
+        {"name": "stream_seq 0 (key 4)", "body": b16(cbor({**frame, 4: 0})), "refused_by": "decode"},
+        {"name": "unassigned key 8", "body": b16(add_key(body, 8)), "refused_by": "decode"},
+        {"name": "a text message with key 11", "body": b16(cbor({1: "text", 2: "hi", 11: 1})), "refused_by": "decode"},
+    ]
+    return out
+
+
+def cux_go_pins() -> dict:
+    """The bytes the gen "go" body vectors DELEGATE-3, CHATMSG-3 and RESULT-3 pin in their Go test,
+    computed here independently from core §2.4.2; test_gen_v016.py checks that each value is a
+    literal of golden/a2a_wire_v3_test.go."""
+    meta = b'{"a2a.serviceParameters":{"A2A-Version":"1.0"}}'
+    att = {1: "a.txt", 2: "text/plain", 3: 3, 4: cid_raw(b"abc"), 5: b"abc"}
+    # DELEGATE-3: the golden TaskDoc signed by the conformance identity (its first key).
+    gtd = cbor({1: {1: 1}, 4: [{10: {1: "golden task", 3: "describe the image"}}]})
+    gsig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), gtd)
+    delegate = cbor({1: gtd, 2: envelope(SUITE_AID, 0, gsig), 4: "ix-golden-1", 5: [att], 7: "ctx-golden-1", 8: meta})
+    # CHATMSG-3: a preview frame and a text message, every key each may carry.
+    frame = cbor({1: "stream_preview", 2: "the caption so far", 4: 1767225600123, 5: 1767225600000,
+                  6: "weighing the second approach", 7: 1767225599000, 9: "p-golden-1", 11: 1024, 12: 2048,
+                  13: "m-golden-1"})
+    text = cbor({1: "text", 2: "hello", 3: [att], 9: "m-golden-2", 10: meta})
+    # RESULT-3: the EV2-1 completion with a reply.
+    r = ev2_receipt()
+    reply = {1: "text", 2: "a cat on a red chair", 3: [att], 9: "m-golden-3"}
+    result = cbor({1: "done", 2: r["task"]["deliverable"], 3: r["wire"], 5: meta, 6: reply})
+    return {"golden/a2a_wire_v3_test.go": [b16(delegate), b16(frame), b16(text), b16(cbor(reply)), cid(result)]}
+
+
 # --- SS: access credentials and grants (ACCESS-1, GRANT-1) -------------------------------------
 #
 # A capability (core §2.1) is Cap {1: body, 2: sig}: body = coredet(CapBody {0: "anet.cap/1",
