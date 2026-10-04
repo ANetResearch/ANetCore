@@ -90,6 +90,9 @@ var (
 var (
 	errUnregisteredEventKey  = errors.New("identity: event carries an unregistered key")
 	errUnregisteredSignedKey = errors.New("identity: signed event carries an unregistered key")
+	// errRotWitnessNotAID is a rot whose witness is not an AID (R-3; ValidAID): the empty string,
+	// a short form, a string with U+0000 or anything else a hub could not be.
+	errRotWitnessNotAID = errors.New("identity: rot witness is not a valid AID")
 )
 
 // KeyEvent is one KEL entry. coredet(KeyEvent) is the signature preimage (L17), and of the icp
@@ -396,8 +399,8 @@ func checkRotation(e KeyEvent, prior KeyState) error {
 		return errors.New("identity: rot of a toad-1 identity must name its witness")
 	case len(e.Witnesses) > 1:
 		return errors.New("identity: rot must name exactly one witness")
-	case e.Witnesses[0] == "":
-		return errors.New("identity: rot witness is empty")
+	case !ValidAID(e.Witnesses[0]):
+		return errRotWitnessNotAID
 	case e.Witnesses[0] == prior.AID:
 		return errors.New("identity: rot names its own AID as witness")
 	}

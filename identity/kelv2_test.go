@@ -389,11 +389,24 @@ func negativeCases(t testing.TB) []negCase {
 	add("rot names its own AID as witness", enc(extend(icpB,
 		rotEvent(kb[1], kb[2], agentT0+minute, ToadAgent, b[0].EventID, false), kb[1])),
 		"identity: rot names its own AID as witness")
-	add("rot names an empty witness", enc(extend(icpB, func() KeyEvent {
-		e := rotEvent(kb[1], kb[2], agentT0+minute, ToadAgent, w1, false)
-		e.Witnesses = []string{""}
-		return e
-	}(), kb[1])), "identity: rot witness is empty")
+	// R-3: the witness is an AID (ValidAID), so that hubs compare and users see only AIDs.
+	rawCID, err := anetcid.SumRaw([]byte("a raw block"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, witness string }{
+		{"rot names an empty witness", ""},
+		{"rot witness is not a valid AID: it holds U+0000", w1[:30] + "\x00" + w1[31:]},
+		{"rot witness is not a valid AID: a short form", w1[:20]},
+		{"rot witness is not a valid AID: upper case", strings.ToUpper(w1)},
+		{"rot witness is not a valid AID: a CID of the raw codec", rawCID},
+	} {
+		add(c.name, enc(extend(icpB, func() KeyEvent {
+			e := rotEvent(kb[1], kb[2], agentT0+minute, ToadAgent, w1, false)
+			e.Witnesses = []string{c.witness}
+			return e
+		}(), kb[1])), errRotWitnessNotAID.Error())
+	}
 	add("icp carries witnesses (key 9)", enc([]SignedEvent{signEvent(func() KeyEvent {
 		e := icpEvent(kb[0], kb[1], agentT0, ToadAgent)
 		e.Witnesses = []string{w1}

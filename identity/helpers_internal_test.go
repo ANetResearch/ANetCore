@@ -43,6 +43,10 @@ func testNextKey(c *Controller) (ed25519.PrivateKey, error) {
 // testWitness is the witness an agent's test rotations name.
 var testWitness = SuiteController().AID()
 
+// testOtherHub is an AID no identity has: "b" and the base32 of the CIDv1 dag-cbor sha2-256 of
+// "anet-test/other-hub". A rot may name it as a witness (R-3 wants the syntax of an AID only).
+const testOtherHub = "bafyreicviqatzpagwo22ln4ngnhg4rkj7j74ftwh47czreb6x2jt56uhwq"
+
 func testRotateWith(c *Controller, ts uint64, emergency bool) error {
 	k, err := testNextKey(c)
 	if err != nil {

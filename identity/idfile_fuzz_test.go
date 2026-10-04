@@ -51,7 +51,7 @@ func FuzzRestoreIdentityFile(f *testing.F) {
 	add(a)
 	must(a.Adopt(ev))
 	add(a)
-	_, err = a.BuildRotation(fuzzKeys[6], digest(7), "bafyreiotherhub", true, 3000)
+	_, err = a.BuildRotation(fuzzKeys[6], digest(7), testOtherHub, true, 3000)
 	must(err)
 	must(a.SetWitnessesToPush([]WitnessPush{{HubAID: w, HubURL: "https://w1.example", AckedSeq: 1, NextTry: 4000}}))
 	add(a)

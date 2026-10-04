@@ -37,10 +37,11 @@ var fuzzKeys = func() []ed25519.PrivateKey {
 
 func fuzzPub(i byte) ed25519.PublicKey { return fuzzKeys[i&7].Public().(ed25519.PublicKey) }
 
-// fuzzWitnesses are two witness hub AIDs.
+// fuzzWitnesses are two witness hub AIDs: "b" and the base32 of the CIDv1 dag-cbor sha2-256 of
+// "anet-test/fuzz-witness-a" and "-b" (R-3 wants an AID, ValidAID).
 var fuzzWitnesses = [2]string{
-	"bafyreigfuzzwitnessaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	"bafyreigfuzzwitnessbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	"bafyreiayr7vdpaleqapd3fcfxzjb3f6mgt6tv2fqlkhqlazmyucdltsenq",
+	"bafyreignwvzwhendb4ex5geg5cdcv3fzn2rw4qi7iy7j4q7a6o6layxoaq",
 }
 
 // kelOp is one program step (6 bytes). The first op builds the icp unless its typ has bit 7 set.
