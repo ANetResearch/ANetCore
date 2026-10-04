@@ -2432,7 +2432,6 @@
       {"code": "bad-inner"},
       {"code": "unknown-critical-field"},
       {"code": "to-mismatch"},
-      {"code": "bad-pad"},
       {"code": "kel-too-large"},
       {"code": "bad-kel"},
       {"code": "from-mismatch"},
@@ -2753,7 +2752,8 @@
       {"code": "hub_flag_fixed", "note": "never introduced: hub_flag_removed.fixed"},
       {"code": "recovery_setup_required", "note": "never introduced: an identity without a recovery passphrase is the recovery.state unprotected; not to be reused"},
       {"code": "payment_extension_not_activated", "note": "not registered"},
-      {"code": "receipt.mismatch", "note": "spelled receipt_mismatch"}
+      {"code": "receipt.mismatch", "note": "spelled receipt_mismatch"},
+      {"code": "bad-pad", "note": "seal: the pad check of envelope v1 (inner key 21, retired); the pad is in the Wrap now, where a non-zero byte is bad-wrap"}
     ],
     "shared": ["args_too_large", "bad_envelope", "bad_request", "busy", "caller_busy", "canceled", "capability_not_public", "denied", "file_type_not_accepted", "files_count", "files_too_large", "home_unreachable", "invalid", "invite_removed", "key_state", "mailbox_full", "not_accepting", "pending_full", "probation", "proof_unavailable", "quota_caller_per_day", "quota_caller_per_min", "rate_limited", "receipt_not_reviewable", "recipient_unknown", "redelivery_limited", "requester_commit_mismatch", "review_exists", "review_window_closed", "strangers_busy", "task_ended", "task_not_found", "too_large", "too_large_for_stranger", "wire_too_new", "wire_too_old"]
   },
