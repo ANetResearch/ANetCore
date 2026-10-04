@@ -1147,8 +1147,15 @@ func TestSealInputChecks(t *testing.T) {
 		{"rk pub 31", func(in *SealedInner, _ *SealOpts) { in.RK = &RK{Suite: SuiteX25519, Pub: make([]byte, 31)} }},
 		{"extension not CBOR", func(in *SealedInner, _ *SealOpts) { in.Ext = map[uint64][]byte{64: {0xa1}} }},
 		{"outer exp not the inner exp", func(in *SealedInner, o *SealOpts) { o.Exp = in.Exp - 1 }},
-		// v030-todo(FS-2): a second layer is refused until FS-2 seals it.
-		{"second layer", func(in *SealedInner, o *SealOpts) { o.PeerRK = &RK{Suite: SuiteX25519, Pub: make([]byte, 32)} }},
+		// The peer's interaction key (FS-C10, FS-C11): suite 1, 32 bytes, and a
+		// point a shared secret can be made with (all zero is of small order).
+		{"peer rk suite 2", func(in *SealedInner, o *SealOpts) {
+			o.PeerRK = &RK{Suite: SuiteXWing, Pub: bytes.Repeat([]byte{9}, 32)}
+		}},
+		{"peer rk pub 31", func(in *SealedInner, o *SealOpts) {
+			o.PeerRK = &RK{Suite: SuiteX25519, Pub: bytes.Repeat([]byte{9}, 31)}
+		}},
+		{"peer rk of small order", func(in *SealedInner, o *SealOpts) { o.PeerRK = &RK{Suite: SuiteX25519, Pub: make([]byte, 32)} }},
 		{"seq not the signer's", func(in *SealedInner, _ *SealOpts) { in.KeyStateSeq = 3 }},
 	}
 	for _, tc := range cases {

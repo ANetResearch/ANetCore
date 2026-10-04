@@ -11,8 +11,12 @@
 //   - SealedEnvelope (outer): v = 2, to, suite, kid, enc, ct, the delivery
 //     credential access (key 7) and, for a one-shot envelope, exp (key 8).
 //     The only part a hub sees. ParseOuter is the hub's structural check.
-//   - Wrap (the layer-1 plaintext): the inner, or a second layer's
-//     ciphertext, and a zero pad that puts the Wrap on a Padmé length.
+//   - Wrap (the layer-1 plaintext): the inner, or a second layer's ikid,
+//     enc2 and ciphertext, and a zero pad that puts the Wrap on a Padmé
+//     length.
+//   - RK and IXKey: an interaction key, one per side of an interaction. A
+//     sender announces its public half (rk, inner key 15); the peer seals
+//     the second layer of its messages in the interaction to it.
 //   - SealedInner (inner): sender, key state, recipient, type, interaction,
 //     message id, time window, body, the sender's KEL and witness notice,
 //     its key set, a grant, its interaction key, and the signature.
@@ -40,6 +44,13 @@
 // recipient therefore cannot re-encrypt a message it received and present it
 // to a third party as addressed to that party, nor strip or add a layer.
 // Only the Wrap is padded, so the ciphertext size reveals only a size class.
+//
+// A message inside an interaction whose peer announced an interaction key has
+// a second layer: the inner is sealed with HPKE to that key ("anet-ix/v2",
+// with the recipient AID, suite and ikid in the info), and the Wrap carries
+// the result. The second layer's ikid and enc2 are in the signed preimage, so
+// a layer cannot be stripped, swapped or added without the signature failing.
+// The ack_key is always the layer-1 export.
 //
 // Seal returns the envelope without its credential and the ack_key, the
 // layer-1 export the recipient's delivery token is made under; the caller
@@ -87,5 +98,8 @@
 // valid for its epoch only, so an envelope can be opened only while the
 // recipient still holds the private half of the day it was sealed for. When
 // the holder deletes it is the holder's policy; MaxMessageLifetimeMS bounds
-// how long any envelope sealed to a key can still arrive.
+// how long any envelope sealed to a key can still arrive. A message with a
+// second layer also needs the recipient's interaction key, which the
+// recipient deletes when its part of the interaction ends: from then on Open
+// reports sealed-to-closed-interaction.
 package seal

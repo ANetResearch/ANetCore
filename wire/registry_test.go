@@ -195,7 +195,8 @@ func TestRegistryRetiredItemsArePinned(t *testing.T) {
 	}
 	for _, c := range []string{"signed_status_query", "bad_signature", "access_revoked", "home_unknown", "forwarded",
 		"quota_global_per_min", "max_inflight", "provider_busy", "task_nonce_required", "peer_refused_key_state",
-		"caller_unwitnessed", "prepay_removed", "hub_flag_fixed", "recovery_setup_required", "payment_extension_not_activated"} {
+		"caller_unwitnessed", "prepay_removed", "hub_flag_fixed", "recovery_setup_required", "payment_extension_not_activated",
+		"bad-pad"} {
 		if !retired[c] {
 			t.Errorf("reason %q is retired or never introduced (core §2.15) and must be listed so it is never reused", c)
 		}

@@ -2344,7 +2344,7 @@ Hub (wire 3):
 | `receipt_not_reviewable` | 400 | payment | — |
 | `review_window_closed` | 400 | payment | — |
 
-Seal: `bad-outer`, `bad-version`, `unknown-suite`, `wrong-recipient`, `sealed-to-unknown-key`, `decrypt-failed`, `bad-inner`, `unknown-critical-field`, `to-mismatch`, `bad-pad`, `kel-too-large`, `bad-kel`, `from-mismatch`, `expired`, `from-future`, `bad-lifetime`, `bad-sig`, `bad-key-state`, `revoked-key`, `rotation-grace-expired`, `aid-mismatch`, `bad-keyset`, `no-usable-key`, `invalid-input`, `internal`, `bad-wrap`, `bad-rk`, `rk-mismatch`, `sealed-to-closed-interaction`, `ikey-mismatch`, `exp-mismatch`, `access-invalid`, `witness-missing`, `witness-stale`, `witness-mismatch`, `witness-invalid`, `witness-unknown`, `kel-from-future`.
+Seal: `bad-outer`, `bad-version`, `unknown-suite`, `wrong-recipient`, `sealed-to-unknown-key`, `decrypt-failed`, `bad-inner`, `unknown-critical-field`, `to-mismatch`, `kel-too-large`, `bad-kel`, `from-mismatch`, `expired`, `from-future`, `bad-lifetime`, `bad-sig`, `bad-key-state`, `revoked-key`, `rotation-grace-expired`, `aid-mismatch`, `bad-keyset`, `no-usable-key`, `invalid-input`, `internal`, `bad-wrap`, `bad-rk`, `rk-mismatch`, `sealed-to-closed-interaction`, `ikey-mismatch`, `exp-mismatch`, `access-invalid`, `witness-missing`, `witness-stale`, `witness-mismatch`, `witness-invalid`, `witness-unknown`, `kel-from-future`.
 
 Delivery note: `not_accepting`, `denied`, `capability_not_public`, `pending_full`, `busy`, `caller_busy`, `quota_caller_per_min`, `quota_caller_per_day`, `args_too_large`, `files_count`, `files_too_large`, `file_type_not_accepted`, `bad_request`, `key_state`, `canceled`, `task_not_found`, `task_ended`, `invalid`.
 
@@ -2374,6 +2374,7 @@ Retired or never introduced (never to be reused):
 - `recovery_setup_required`: never introduced: an identity without a recovery passphrase is the recovery.state unprotected; not to be reused
 - `payment_extension_not_activated`: not registered
 - `receipt.mismatch`: spelled receipt_mismatch
+- `bad-pad`: seal: the pad check of envelope v1 (inner key 21, retired); the pad is in the Wrap now, where a non-zero byte is bad-wrap
 
 ## Layout: dack (80 bytes)
 

@@ -968,13 +968,16 @@ def write(ws: Workspace, ids: list[str], generators: dict[str, Generator] | None
 # registered under the id of the index row it produces.
 # ---------------------------------------------------------------------------------------------
 
-# --- seal v2 (CORE-2): SEALED-2A, SEALED-2C ----------------------------------------------------
+# --- seal v2 (CORE-2, FS-2): SEALED-2A, SEALED-2B, SEALED-2C ---------------------------------
 #
 # Outer SealedEnvelope v2 (core §2.1): 1 v = 2, 2 to, 3 suite, 4 kid, 5 enc, 6 ct, 7 access, 8 exp
 # (one-shot envelopes only). Layer 1 is HPKE base mode, suite 1, info coredet({1: "anet-seal/v2",
 # 2: to, 3: suite, 4: kid}) (L1), empty aad. Its plaintext is Wrap (core §2.2): 3 body, 21 pad, the
 # pad of zero bytes sized so len(coredet(Wrap)) is a Padmé length (the next one when the CBOR header
-# of the pad makes the first unreachable); 1 ikid and 2 enc2 only with a second layer (FS-2). The
+# of the pad makes the first unreachable); 1 ikid and 2 enc2 only with a second layer. The second
+# layer (FS §2.5) is HPKE base mode, suite 1, to the recipient's interaction key, info
+# coredet({1: "anet-ix/v2", 2: to, 3: suite, 4: ikid}) (L2) with ikid = KID(1, pub) (L15), empty aad;
+# its plaintext is the inner, not padded, and Wrap key 3 holds its ciphertext. The
 # inner SealedInner v2 (core §2.3) is signed by the sender's current identity key over the preimage
 # of core §3.3 (L3): the inner fields as sent except 20, key 9 replaced by the SHA-256 of the body,
 # plus 0 the label, 30 enc, 31 kid, 32 suite, 33 ikid and 34 enc2 (CBOR null for a single layer).
@@ -985,6 +988,7 @@ def write(ws: Workspace, ids: list[str], generators: dict[str, Generator] | None
 # the KELs come from the KEL section's KelLog below.
 
 SEAL_INFO_LABEL = "anet-seal/v2"
+SEAL_IX_LABEL = "anet-ix/v2"
 SEAL_SIG_LABEL = "anet-relay-sig/v2"
 SEAL_T0 = 1760000600000          # inner ts of the vectors (unix ms)
 SEAL_MINUTE = 60 * 1000
@@ -1009,6 +1013,12 @@ def seal_kid(suite: int, pub: bytes) -> bytes:
 def seal_info(to: str, kid: bytes) -> bytes:
     """The layer-1 HPKE info (L1) for suite 1."""
     return cbor({1: SEAL_INFO_LABEL, 2: to, 3: 1, 4: kid})
+
+
+def seal_ix_info(to: str, ikid: bytes) -> bytes:
+    """The layer-2 HPKE info (L2) for suite 1: to is the recipient AID, ikid the kid of its
+    interaction key."""
+    return cbor({1: SEAL_IX_LABEL, 2: to, 3: 1, 4: ikid})
 
 
 def seal_wrap(body: bytes, extra: dict | None = None) -> tuple[bytes, int]:
@@ -1109,33 +1119,79 @@ def seal_inner(p: dict, vid: str, typ: str = "anet.message/1") -> dict:
 
 def seal_build(p: dict, vid: str, inner: dict, *, role: str = "ikmE", sign_fields: dict | None = None,
                sig: bytes | None = None, wrap_extra: dict | None = None, wrap: bytes | None = None,
-               outer_v: int = 2, outer_extra: dict | None = None, access=None, exp=None) -> dict:
-    """Seals inner (keys to Python values) as a single-layer v2 envelope and returns every
-    intermediate value. The signature is over the preimage of sign_fields (default: inner) unless
-    sig is given; wrap replaces the padded Wrap bytes; the outer takes v, extra keys, access
-    (default kind 0) and exp (key 8) as given."""
+               outer_v: int = 2, outer_extra: dict | None = None, access=None, exp=None,
+               layer2: dict | None = None) -> dict:
+    """Seals inner (keys to Python values) as a v2 envelope and returns every intermediate value. The
+    signature is over the preimage of sign_fields (default: inner) unless sig is given; wrap replaces
+    the padded Wrap bytes; the outer takes v, extra keys, access (default kind 0, or a function of
+    env_digest that returns it) and exp (key 8) as given.
+
+    layer2 adds a second layer (FS §2.5): a dict with "pub", the recipient's interaction key, and
+    "role", the seed role of the layer-2 ephemeral key; optionally "sign", the second layer the
+    signature is made for ("as-sent" by default; "none" signs as a single layer; a seed role signs
+    for the enc2 of that role), and "ct2", bytes that replace the layer-2 ciphertext. The layer-1
+    ephemeral key depends on role alone, so two builds with one role share enc and ack_key."""
     to, kid = p["recipient"], p["recipient_kid"]
     info = seal_info(to, kid)
     enc, ctx = SUITE1.setup_base_s(p["recipient_pub"], info, seed(vid, role))
     ack_key = ctx.export(b"anet-dack/v1", 32)
+    ikid = enc2 = ctx2 = info2 = sign_ikid = sign_enc2 = None
+    if layer2 is not None:
+        ikid = seal_kid(1, layer2["pub"])
+        info2 = seal_ix_info(to, ikid)
+        enc2, ctx2 = SUITE1.setup_base_s(layer2["pub"], info2, seed(vid, layer2["role"]))
+        how = layer2.get("sign", "as-sent")
+        if how == "as-sent":
+            sign_ikid, sign_enc2 = ikid, enc2
+        elif how != "none":
+            sign_ikid, sign_enc2 = ikid, SUITE1.setup_base_s(layer2["pub"], info2, seed(vid, how))[0]
     fields = {k: Raw(cbor(v)) for k, v in inner.items()}
     signed = {k: Raw(cbor(v)) for k, v in (sign_fields if sign_fields is not None else inner).items()}
-    pre = seal_preimage(signed, enc, kid, 1)
+    pre = seal_preimage(signed, enc, kid, 1, sign_ikid, sign_enc2)
     fields[20] = Raw(cbor(sig if sig is not None else ed25519_sign(p["sender_seed"], pre)))
     inner_bytes = cbor(fields)
-    pad_len = None
+    pad_len = ct2 = None
     if wrap is None:
-        wrap, pad_len = seal_wrap(inner_bytes, wrap_extra)
+        if layer2 is None:
+            wrap, pad_len = seal_wrap(inner_bytes, wrap_extra)
+        else:
+            ct2 = layer2["ct2"] if "ct2" in layer2 else ctx2.seal(b"", inner_bytes)
+            wrap, pad_len = seal_wrap(ct2, {1: ikid, 2: enc2, **(wrap_extra or {})})
     ct = ctx.seal(b"", wrap)
     outer = {1: outer_v, 2: to, 3: 1, 4: kid, 5: enc, 6: ct}
     if exp is not None:
         outer[8] = exp
     outer.update(outer_extra or {})
     sealed = cbor(outer)  # what Seal returns: no access yet
+    env_digest = seal_env_digest(outer)
+    if callable(access):
+        access = access(env_digest)
     outer[7] = {1: 0} if access is None else access
     return {"info": info, "enc": enc, "ack_key": ack_key, "fields": fields, "preimage": pre,
             "inner_bytes": inner_bytes, "wrap": wrap, "pad_len": pad_len, "sealed": sealed,
-            "access": cbor(outer[7]), "envelope": cbor(outer), "env_digest": seal_env_digest(outer)}
+            "access": cbor(outer[7]), "envelope": cbor(outer), "env_digest": env_digest,
+            "ikid": ikid, "enc2": enc2, "ct2": ct2, "ix_info": info2}
+
+
+def seal_open_preimage(s: dict, inner_bytes: bytes | None = None, ikid=None, enc2=None) -> bytes:
+    """The preimage a receiver builds for the envelope of build s (core §3.3): the fields of the
+    inner it opened (default: the build's), the build's enc and kid, and the second layer it
+    opened (default: none)."""
+    fields = uncbor(inner_bytes if inner_bytes is not None else s["inner_bytes"])
+    raw = {k: Raw(cbor(v)) for k, v in fields.items()}
+    return seal_preimage(raw, s["enc"], uncbor(s["sealed"])[4], 1, ikid, enc2)
+
+
+def seal_recipient_ix(vid: str, p: dict, ix: str) -> dict:
+    """The recipient's interaction key in interaction ix with the sender, from seed(vid,
+    "recipient-ix"), as the vectors write it."""
+    sk, pub = SUITE1.derive_key_pair(seed(vid, "recipient-ix"))
+    return {"ix": ix, "peer": p["sender"], "seed_role": "recipient-ix", "sk": sk, "pub": pub, "kid": seal_kid(1, pub)}
+
+
+def seal_ix_json(k: dict) -> dict:
+    return {"ix": k["ix"], "peer": k["peer"], "seed_role": k["seed_role"], "sk": b16(k["sk"]),
+            "pub": b16(k["pub"]), "kid": b16(k["kid"])}
 
 
 def seal_parties_json(vid: str, p: dict) -> dict:
@@ -1198,12 +1254,110 @@ def gen_sealed_2a():
     return out
 
 
+@vector("SEALED-2B", "ANetCore/seal/testdata/vec-sealed-2b.json")
+def gen_sealed_2b():
+    vid = "SEALED-2B"
+    p = seal_parties(vid)
+    ix = "ix-" + vid.lower()
+    rix = seal_recipient_ix(vid, p, ix)
+    # The access is a capability the recipient issued (kind 1): a CapBody signed by its mailbox
+    # key (L6) and the holder's proof over env_digest (L5).
+    mbox = seed(vid, "recipient-mbox")
+    holder = seed(vid, "access-holder")
+    cap_id = seed(vid, "access-cap-id")[:16]
+    cap_body = cbor({0: "anet.cap/1", 1: p["recipient"], 2: 1, 3: cap_id, 4: 1, 5: SEAL_T0 + 30 * SEAL_DAY,
+                     6: ed25519_public(holder)})
+    cap_sig = ed25519_sign(mbox, cap_body)
+    proofs = {}
+
+    def access(env_digest):
+        proofs[env_digest] = ed25519_sign(holder, b"anet-access/v2\x00" + cap_id + env_digest)
+        return {1: 1, 2: {1: cap_body, 2: cap_sig}, 3: proofs[env_digest]}
+
+    inner = {
+        1: p["sender"], 2: p["sender_kel"].events[-1][0][2], 3: p["recipient"], 4: "anet.message/1", 5: ix,
+        6: seed(vid, "mid")[:16], 7: SEAL_T0, 8: SEAL_T0 + SEAL_MINUTE,
+        9: ("anet seal v2 golden vector %s" % vid).encode("utf-8"),
+        15: {1: 1, 2: p["rk_pub"]}, 64: "inner extension",
+    }
+    outer_ext = {64: "outer extension"}
+    two = {"pub": rix["pub"], "role": "ikmE2"}
+    s = seal_build(p, vid, inner, outer_extra=outer_ext, access=access, exp=inner[8], layer2=two)
+    one = seal_build(p, vid, inner, outer_extra=outer_ext, access=access, exp=inner[8])
+    if s["enc"] != one["enc"] or s["ack_key"] != one["ack_key"]:
+        raise GoldenError("SEALED-2B: the single-layer build does not share the layer-1 context")
+    out = {
+        "about": "A two-layer v2 envelope (core §2.1-§2.3, §3.2 L2, §3.3; FS §2.5): layer 1 to the recipient's "
+                 "epoch key, layer 2 to its interaction key in the interaction (ikid = KID(1, pub), info "
+                 "{1: \"anet-ix/v2\", 2: to, 3: 1, 4: ikid}); Wrap {1 ikid, 2 enc2, 3 layer-2 ciphertext, 21 pad} on "
+                 "a Padmé length; the inner, unpadded, signed over the preimage v2 with 33 = ikid and 34 = enc2. "
+                 "The outer carries a capability access (kind 1: CapBody signed by the recipient's mailbox key, "
+                 "holder proof over env_digest), key 8 equal to the inner exp and the extension key 64; the "
+                 "inner carries rk and the extension key 64 and none of keys 10, 11, 12, 14 (the seal layer "
+                 "does not tie keys to a type; the daemon does). Written by gen_v016.py with the ephemeral keys "
+                 "DeriveKeyPair(seed(\"ikmE\")) for layer 1 and DeriveKeyPair(seed(\"ikmE2\")) for layer 2; the Go "
+                 "test derives both recipient keys from their seeds and opens the bytes. single_layer is the "
+                 "same message sealed as one layer under the same layer-1 ephemeral key: its ack_key is the "
+                 "same (FS-C14). The body is opaque to the seal layer.",
+    }
+    out.update(seal_parties_json(vid, p))
+    out["recipient_ix"] = seal_ix_json(rix)
+    out["recipient_mbox"] = {"epoch": 1, "seed_role": "recipient-mbox", "pub": b16(ed25519_public(mbox))}
+    out.update({
+        "hpke_info": b16(s["info"]),
+        "ix_info": b16(s["ix_info"]),
+        "inner": {
+            "from": inner[1], "key_state_seq": inner[2], "to": inner[3], "type": inner[4], "ix": inner[5],
+            "mid": b16(inner[6]), "ts": inner[7], "exp": inner[8], "body": b16(inner[9]),
+            "rk": {"suite": 1, "pub": b16(p["rk_pub"])}, "ext": {"64": b16(cbor(inner[64]))},
+            "sig": b16(uncbor(s["fields"][20])),
+        },
+        "inner_cbor": b16(s["inner_bytes"]),
+        "sig_preimage": b16(s["preimage"]),
+        "enc2": b16(s["enc2"]),
+        "ct2": b16(s["ct2"]),
+        "wrap": b16(s["wrap"]),
+        "pad_len": s["pad_len"],
+        "enc": b16(s["enc"]),
+        "outer_ext": {"64": b16(cbor(outer_ext[64]))},
+        "sealed": b16(s["sealed"]),
+        "access": b16(s["access"]),
+        "access_parts": {"cap_body": b16(cap_body), "cap_sig": b16(cap_sig), "cap_id": b16(cap_id),
+                         "holder_pub": b16(ed25519_public(holder)), "proof": b16(proofs[s["env_digest"]])},
+        "envelope": b16(s["envelope"]),
+        "env_digest": b16(s["env_digest"]),
+        "ack_key": b16(s["ack_key"]),
+    })
+    out.update(seal_dack_values(s["ack_key"]))
+    out["single_layer"] = {"envelope": b16(one["envelope"]), "sig_preimage": b16(one["preimage"]),
+                           "ack_key": b16(one["ack_key"])}
+    # CORE-G4: one changed byte, one dropped required key, one added unregistered key, each of the
+    # second layer and each refused after layer 1 opened.
+    ct2 = s["ct2"]
+    kw = {"outer_extra": outer_ext, "access": access, "exp": inner[8]}
+    out["negatives"] = [
+        {"name": "one byte of the layer-2 ciphertext changed",
+         "envelope": b16(seal_build(p, vid, inner, layer2={**two, "ct2": flip(ct2)}, **kw)["envelope"]),
+         "reason": "decrypt-failed"},
+        {"name": "Wrap key 2 (enc2) dropped",
+         "envelope": b16(seal_build(p, vid, inner, wrap=seal_wrap(ct2, {1: s["ikid"]})[0], **kw)["envelope"]),
+         "reason": "bad-wrap"},
+        {"name": "unregistered Wrap key 4 added",
+         "envelope": b16(seal_build(p, vid, inner, wrap=seal_wrap(ct2, {1: s["ikid"], 2: s["enc2"], 4: b"x"})[0],
+                                    **kw)["envelope"]),
+         "reason": "bad-wrap"},
+    ]
+    return out
+
+
 @vector("SEALED-2C", "ANetCore/seal/testdata/vec-sealed-2c.json")
 def gen_sealed_2c():
     """Negatives: each case changes one thing of a valid envelope (the case "ok") and names the seal
     reason it must fail with and the step: "parse" (ParseOuter, before layer 1: AckKeyOf false),
     "open" (Open after layer 1: AckKeyOf true) or "sig" (Open succeeds; the signature does not
-    verify). The second-layer cases (stripped layer, replaced enc2) are FS-2's to add."""
+    verify). The second-layer cases (FS §7.1) seal to the recipient's interaction key in the
+    interaction of the base inner; the three that change the layering keep the layer-1 ephemeral
+    key of "ok, two layers", so the second layer is the only difference the signature sees."""
     vid = "SEALED-2C"
     p = seal_parties(vid)
     base = seal_inner(p, vid)
@@ -1253,14 +1407,47 @@ def gen_sealed_2c():
     for key, name in ((5, "ix"), (1, "from")):
         nul = {**base, key: "a\u0000b" if key == 5 else base[1] + "\u0000"}
         case("inner %s with U+0000" % name, "open", "bad-inner", seal_build(p, vid, nul, role="ikmE/nul-" + name))
+    # The second layer (FS §2.5, §7.1; CORE-L6, SI-31).
+    rix = seal_recipient_ix(vid, p, base[5])
+    two = {"pub": rix["pub"], "role": "ikmE2/two"}
+    ok2 = seal_build(p, vid, base, role="ikmE/two", layer2=two)
+    case("ok, two layers", "sig", "", ok2, sig_preimage=b16(seal_open_preimage(ok2, ikid=ok2["ikid"], enc2=ok2["enc2"])))
+    st = seal_build(p, vid, base, role="ikmE/two", wrap=seal_wrap(ok2["inner_bytes"])[0])
+    case("second layer stripped", "sig", "bad-sig", st, sig_preimage=b16(seal_open_preimage(st, ok2["inner_bytes"])))
+    rp = seal_build(p, vid, base, role="ikmE/two", layer2={**two, "role": "ikmE2/other", "sign": "ikmE2/two"})
+    if rp["inner_bytes"] != ok2["inner_bytes"]:
+        raise GoldenError("SEALED-2C: enc2 replaced must keep the signed inner")
+    case("enc2 replaced", "sig", "bad-sig", rp, sig_preimage=b16(seal_open_preimage(rp, ikid=rp["ikid"], enc2=rp["enc2"])))
+    mv = seal_build(p, vid, base, role="ikmE/two", layer2={**two, "role": "ikmE2/moved", "sign": "none"})
+    case("one layer moved under a second", "sig", "bad-sig", mv,
+         sig_preimage=b16(seal_open_preimage(mv, ikid=mv["ikid"], enc2=mv["enc2"])))
+    closed = {"pub": SUITE1.derive_key_pair(seed(vid, "closed-ix"))[1], "role": "ikmE2/closed"}
+    case("second layer to a key the recipient no longer holds", "open", "sealed-to-closed-interaction",
+         seal_build(p, vid, base, role="ikmE/closed", layer2=closed))
+    ct2 = seal_build(p, vid, base, role="ikmE/ct2", layer2={**two, "role": "ikmE2/ct2"})["ct2"]
+    case("one byte of the layer-2 ciphertext changed", "open", "decrypt-failed",
+         seal_build(p, vid, base, role="ikmE/ct2", layer2={**two, "role": "ikmE2/ct2", "ct2": flip(ct2)}))
+    case("second layer under the key of another interaction", "open", "ikey-mismatch",
+         seal_build(p, vid, {**base, 5: base[5] + "-other"}, role="ikmE/other-ix", layer2={**two, "role": "ikmE2/other-ix"}))
+    case("second layer under the key of another peer", "open", "ikey-mismatch",
+         seal_build(p, vid, {**base, 1: aid_for(vid, "other-sender")}, role="ikmE/other-peer",
+                    layer2={**two, "role": "ikmE2/other-peer"}))
+    case("rk of suite 2", "open", "bad-rk", seal_build(p, vid, {**base, 15: {1: 2, 2: p["rk_pub"]}}, role="ikmE/rk-2"))
     out = {
         "about": "Negatives of the seal v2 layer (core §5.2 SEALED-2C), each a whole envelope built like SEALED-2A "
                  "with one change, with the seal reason it fails with and the step: parse = ParseOuter refuses "
                  "it (no ack_key), open = Open refuses it after layer 1 (AckKeyOf true), sig = Open accepts it "
                  "and the signature does not verify under the sender's key. Inner keys 0 and 30 are added after "
-                 "signing; every other envelope is signed as it is sent. The second-layer negatives are FS-2's.",
+                 "signing; every other envelope is signed as it is sent. The second-layer cases seal to "
+                 "recipient_ix, the recipient's interaction key in the base interaction with the sender (seed "
+                 "role recipient-ix): stripping the second layer, sealing it again with another enc2, and moving "
+                 "a single-layer message under it keep the layer-1 ephemeral key of \"ok, two layers\", so only "
+                 "the second-layer keys of the preimage differ and the signature fails; a key the recipient no "
+                 "longer holds, a changed layer-2 byte, a key of another interaction or peer, and an rk of "
+                 "suite 2 fail in Open.",
     }
     out.update(seal_parties_json(vid, p))
+    out["recipient_ix"] = seal_ix_json(rix)
     out["cases"] = cases
     return out
 
@@ -2038,6 +2225,194 @@ def gen_kel_2b():
          "kel": b16(w1.wire())},
         {"name": "W2", "aid": a.aid, "labels": [], "kel": b16(a.wire())},
     ])
+
+
+# --- KEL: the recovery seed and the recovery file (KEL-3): RECOVERY-1 -----------------------------
+#
+# L19: seed(aid, seq) = HKDF-SHA256(ikm = RS, salt = "anet-kel-next/v1", info = UTF-8(aid) || 0x00 ||
+# u64be(seq), L = 32); the key is the Ed25519 key of that seed and next_digest = SHA-256(its public
+# key), the digest of KeyEvent key 6. The AID must not hold U+0000 (CORE-E9).
+# RecoveryBlob (core §2.6): 0 "anet.recovery/1", 1 aid, 2 kdf, 3 "xchacha20poly1305", 4 nonce (24),
+# 5 hub (written even when empty), 6 commits [seq, next_digest], 7 ct. kdf is {1: "argon2id", 2: 3,
+# 3: 65536, 4: 4, 5: salt (16)} or {1: "local"}. L20: ct = XChaCha20-Poly1305(key, nonce, RS,
+# aad = coredet(the blob without key 7)), key = argon2id(NFC(passphrase), salt, t = 3, m = 64 MiB,
+# p = 4, 32) or the 32-byte local recovery key. The text file (KEL §2.4): "anet-recovery v1", "AID
+# <aid>", "hub <url>" (left out when there is none), "commits <seq> <hex>", a blank line, then the
+# standard base64 of the blob in lines of 64 characters. The caller's note lines are not part of
+# the vector.
+
+RECOVERY_TYPE = "anet.recovery/1"
+RECOVERY_HEADER = "anet-recovery v1"
+RECOVERY_NEXT_LABEL = b"anet-kel-next/v1"
+RECOVERY_AEAD = "xchacha20poly1305"
+RECOVERY_ARGON2 = (3, 65536, 4)  # t, m in KiB, p
+RECOVERY_VID = "RECOVERY-1"
+RECOVERY_PASSPHRASE = "anet recovery vector passphrase v1"
+RECOVERY_HUB = "https://hub.example"
+RECOVERY_ABOUT = (
+    "Recovery seed and recovery file (L19, L20). aid is the KEL-2B agent; rs = SHA-256 of rs_label. "
+    "next_keys: seed = HKDF-SHA256(ikm = rs, salt = \"anet-kel-next/v1\", info = UTF-8(aid) || 0x00 || u64be(seq), L = 32), "
+    "pub its Ed25519 public key, next_digest = SHA-256(pub). "
+    "passphrase_file: salt is the first 16 and nonce the first 24 bytes of SHA-256 of their labels; "
+    "key = argon2id(NFC(passphrase), salt, t = 3, m = 65536 KiB, p = 4, 32); aad = coredet(RecoveryBlob without key 7); "
+    "blob = coredet(RecoveryBlob) with ct = XChaCha20-Poly1305(key, nonce, rs, aad); text is the file as written, "
+    "before the caller's note lines. local_file: the same seed under kdf {1: \"local\"}, key = local_key = SHA-256 of its label. "
+    "Each negative is a file opened with the interface and secret given, and the error class it must give; "
+    "each derive negative is refused by next-key derivation.")
+
+
+def recovery_seed(rs: bytes, aid: str, seq: int) -> bytes:
+    """L19: the seed of the key the event at seq reveals."""
+    if not aid:
+        raise GoldenError("next-key derivation: empty AID")
+    _no_nul(aid)
+    return hkdf(rs, RECOVERY_NEXT_LABEL, aid.encode("utf-8") + b"\x00" + struct.pack(">Q", seq), 32)
+
+
+def recovery_next_digest(rs: bytes, aid: str, seq: int) -> bytes:
+    return sha256(ed25519_public(recovery_seed(rs, aid, seq)))
+
+
+def recovery_kdf_argon2id(salt: bytes) -> dict:
+    t, m, p = RECOVERY_ARGON2
+    return {1: "argon2id", 2: t, 3: m, 4: p, 5: salt}
+
+
+def recovery_blob(aid: str, kdf: dict, nonce: bytes, hub: str, seq: int, digest: bytes, ct=None) -> dict:
+    m = {0: RECOVERY_TYPE, 1: aid, 2: kdf, 3: RECOVERY_AEAD, 4: nonce, 5: hub, 6: [seq, digest]}
+    if ct is not None:
+        m[7] = ct
+    return m
+
+
+def recovery_seal(rs: bytes, aid: str, hub: str, seq: int, digest: bytes, kdf: dict, key: bytes, nonce: bytes):
+    """(aad, blob bytes) of rs sealed under key; the commitment is taken as given."""
+    aad = cbor(recovery_blob(aid, kdf, nonce, hub, seq, digest))
+    ct = xchacha20poly1305_seal(key, nonce, rs, aad)
+    return aad, cbor(recovery_blob(aid, kdf, nonce, hub, seq, digest, ct))
+
+
+def recovery_text(aid: str, hub: str, seq: int, digest: bytes, blob: bytes) -> str:
+    lines = [RECOVERY_HEADER, "AID " + aid]
+    if hub:
+        lines.append("hub " + hub)
+    lines += ["commits %d %s" % (seq, b16(digest)), ""]
+    enc = base64.b64encode(blob).decode("ascii")
+    lines += [enc[i:i + 64] for i in range(0, len(enc), 64)]
+    return "\n".join(lines) + "\n"
+
+
+def _replace_once(s: str, old: str, new: str) -> str:
+    if s.count(old) != 1:
+        raise GoldenError("RECOVERY-1: %r occurs %d times" % (old, s.count(old)))
+    return s.replace(old, new)
+
+
+@vector("RECOVERY-1", "ANetCore/identity/testdata/vec-recovery-1.json")
+def gen_recovery_1():
+    vid = RECOVERY_VID
+    label = lambda role: "anet-golden/v016/%s/%s" % (vid, role)  # noqa: E731
+    aid = kel_2b().aid
+    rs = seed(vid, "rs")
+    next_keys = []
+    for seq in (2, 3, 4):
+        s = recovery_seed(rs, aid, seq)
+        pub = ed25519_public(s)
+        next_keys.append({"seq": seq, "seed": b16(s), "pub": b16(pub), "next_digest": b16(sha256(pub))})
+    d2, d3 = recovery_next_digest(rs, aid, 2), recovery_next_digest(rs, aid, 3)
+    commits = {"seq": 2, "next_digest": b16(d2)}
+
+    salt, nonce = seed(vid, "salt")[:16], seed(vid, "nonce")[:24]
+    t, m, p = RECOVERY_ARGON2
+    key = argon2id(nfc(RECOVERY_PASSPHRASE).encode("utf-8"), salt, t, m, p, 32)
+    kdf = recovery_kdf_argon2id(salt)
+    p_aad, p_blob = recovery_seal(rs, aid, RECOVERY_HUB, 2, d2, kdf, key, nonce)
+    p_text = recovery_text(aid, RECOVERY_HUB, 2, d2, p_blob)
+
+    lk = seed(vid, "local-key")
+    l_nonce = seed(vid, "local-nonce")[:24]
+    l_aad, l_blob = recovery_seal(rs, aid, RECOVERY_HUB, 2, d2, {1: "local"}, lk, l_nonce)
+    l_text = recovery_text(aid, RECOVERY_HUB, 2, d2, l_blob)
+
+    # sanity: both blocks open with their own key, and only with it
+    if xchacha20poly1305_open(key, nonce, uncbor(p_blob)[7], p_aad) != rs or \
+            xchacha20poly1305_open(lk, l_nonce, uncbor(l_blob)[7], l_aad) != rs:
+        raise GoldenError("RECOVERY-1: a block does not open")
+
+    def again(blob: bytes, digest: bytes = d2) -> str:
+        """The passphrase file's header over another block."""
+        return recovery_text(aid, RECOVERY_HUB, 2, digest, blob)
+
+    def neg_pass(name, text, cls, passphrase=RECOVERY_PASSPHRASE):
+        return {"name": name, "open": "passphrase", "passphrase": passphrase, "text": text, "error": cls}
+
+    def neg_local(name, text, k, cls):
+        return {"name": name, "open": "local", "local_key": b16(k), "text": text, "error": cls}
+
+    commits_seq = b"\x82\x02\x58\x20"
+    if p_blob.count(commits_seq) != 1:
+        raise GoldenError("RECOVERY-1: the commits array is not found once in the block")
+    t4 = uncbor(p_blob)
+    t4[2][2] = 4
+    _, wrong_commits = recovery_seal(rs, aid, RECOVERY_HUB, 2, d3, kdf, key, nonce)
+    relabelled = uncbor(p_blob)
+    relabelled[2] = {1: "local"}
+    negatives = [
+        neg_pass("wrong passphrase", p_text, "recovery-passphrase", "anet recovery vector passphrase v2"),
+        neg_pass("AID in the header changed", _replace_once(p_text, "AID %s\n" % aid, "AID %s\n" % kel_2a().aid),
+                 "recovery-wrong-identity"),
+        neg_pass("commits seq in the header changed", _replace_once(p_text, "commits 2 ", "commits 3 "),
+                 "recovery-wrong-identity"),
+        neg_pass("commits digest in the header changed", _replace_once(p_text, b16(d2), b16(d3)), "recovery-wrong-identity"),
+        neg_pass("hub in the header changed",
+                 _replace_once(p_text, "hub %s\n" % RECOVERY_HUB, "hub https://other.example\n"), "recovery-wrong-identity"),
+        neg_pass("one byte of the ciphertext changed", again(flip(p_blob)), "recovery-passphrase"),
+        neg_pass("key 6 dropped from the block", again(drop_key(p_blob, 6)), "recovery-format"),
+        neg_pass("unregistered key 8 added to the block", again(add_key(p_blob, 8)), "recovery-format"),
+        neg_pass("the block not in canonical form (commits seq in two bytes)",
+                 again(p_blob.replace(commits_seq, b"\x82\x18\x02\x58\x20")), "recovery-format"),
+        neg_pass("argon2id t changed to 4", again(cbor(t4)), "recovery-format"),
+        neg_pass("commits not derived from the sealed seed", again(wrong_commits, d3), "recovery-format"),
+        neg_pass("the local file opened with the passphrase interface", l_text, "recovery-unprotected"),
+        neg_local("the passphrase file opened with the local-key interface", p_text, lk, "recovery-format"),
+        neg_local("the passphrase file opened with the local-key interface and its own argon2id key", p_text, key,
+                  "recovery-format"),
+        neg_local("the passphrase block relabelled local, opened with its own argon2id key", again(cbor(relabelled)), key,
+                  "recovery-format"),
+        neg_local("wrong local key", l_text, seed(vid, "wrong-local-key"), "recovery-format"),
+        neg_local("one byte of the local ciphertext changed", recovery_text(aid, RECOVERY_HUB, 2, d2, flip(l_blob)), lk,
+                  "recovery-format"),
+    ]
+    derive_negatives = [
+        {"name": "AID holding U+0000", "aid": aid[:8] + "\x00" + aid[8:], "seq": 2, "error": "next-key-input"},
+        {"name": "empty AID", "aid": "", "seq": 2, "error": "next-key-input"},
+    ]
+    for n in derive_negatives:
+        try:
+            recovery_seed(rs, n["aid"], n["seq"])
+        except GoldenError:
+            continue
+        raise GoldenError("RECOVERY-1: %s was derived" % n["name"])
+    return {
+        "id": vid,
+        "about": RECOVERY_ABOUT,
+        "aid": aid,
+        "rs_label": label("rs"),
+        "rs": b16(rs),
+        "next_keys": next_keys,
+        "passphrase_file": {
+            "passphrase": RECOVERY_PASSPHRASE, "salt_label": label("salt"), "salt": b16(salt),
+            "nonce_label": label("nonce"), "nonce": b16(nonce), "hub": RECOVERY_HUB, "commits": commits,
+            "key": b16(key), "aad": b16(p_aad), "blob": b16(p_blob), "text": p_text,
+        },
+        "local_file": {
+            "local_key_label": label("local-key"), "local_key": b16(lk), "nonce_label": label("local-nonce"),
+            "nonce": b16(l_nonce), "hub": RECOVERY_HUB, "commits": commits, "aad": b16(l_aad), "blob": b16(l_blob),
+            "text": l_text,
+        },
+        "negatives": negatives,
+        "derive_negatives": derive_negatives,
+    }
 
 
 # --- SS: relayauth (RELAYAUTH-3 pins), the first-contact session (SESSION-1), the directory box (DIR-1)

@@ -14,6 +14,8 @@ package seal
 //     and VerifyInnerKeys run on arbitrary field values under a good signature;
 //   - FuzzEncKeySet feeds SignedEncKeySet bytes, optionally re-signing the set;
 //   - FuzzPadme checks Padmé and the Wrap padding arithmetic.
+//
+// The second layer's targets, FuzzRKDecode and FuzzOpenLayer2, are in fuzz_layer2_test.go.
 
 import (
 	"bytes"
@@ -413,8 +415,8 @@ func FuzzOpenInner(f *testing.F) {
 func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 	t.Helper()
 	in := &o.Inner
-	if in.To != fx.self || o.Outer.To != fx.self || o.Layers != 1 || o.IKID != nil {
-		t.Fatalf("opened a message to %q (outer %q), %d layers", in.To, o.Outer.To, o.Layers)
+	if in.To != fx.self || o.Outer.To != fx.self || o.Layers < 1 || o.Layers > 2 || (o.Layers == 1) != (o.IKID == nil) {
+		t.Fatalf("opened a message to %q (outer %q), %d layers, ikid %x", in.To, o.Outer.To, o.Layers, o.IKID)
 	}
 	if o.Access == nil || o.Access != o.Outer.Access || o.RK != in.RK || !bytes.Equal(o.Grant, in.Grant) ||
 		len(o.Notices) != len(in.Notices) || (o.Notices == nil) != (in.Notices == nil) {
@@ -467,8 +469,17 @@ func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 	if b, err := rawBytes(pm, keyBody); err != nil || !bytes.Equal(b, digest[:]) {
 		t.Fatalf("preimage key 9 is not the body digest (%v)", err)
 	}
-	if !bytes.Equal(pm[preKeyIKID], cborNull) || !bytes.Equal(pm[preKeyEnc2], cborNull) {
+	if o.Layers == 1 && (!bytes.Equal(pm[preKeyIKID], cborNull) || !bytes.Equal(pm[preKeyEnc2], cborNull)) {
 		t.Fatal("a single layer's preimage has a second layer")
+	}
+	if o.Layers == 2 {
+		ikid, err := rawBytes(pm, preKeyIKID)
+		if err != nil || !bytes.Equal(ikid, o.IKID) {
+			t.Fatalf("preimage key 33 %x, ikid %x (%v)", ikid, o.IKID, err)
+		}
+		if e2, err := rawBytes(pm, preKeyEnc2); err != nil || len(e2) != params(SuiteX25519).encLen {
+			t.Fatalf("preimage key 34 is not an enc2 (%v)", err)
+		}
 	}
 
 	for _, now := range []uint64{0, in.TS, in.Exp, math.MaxUint64} {
