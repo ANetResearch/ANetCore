@@ -414,6 +414,14 @@ func TestValidatePreview(t *testing.T) {
 			t.Errorf("%s: want ErrBody, got %v", name, err)
 		}
 	}
+	// The kind decides, not the keys: a message of another kind that carries every key a frame
+	// needs, and nothing a frame may not carry, is still not a preview frame. Senders build frames
+	// in memory and check them here, so the kind check must hold without the decoder's CORE-K6.
+	for _, k := range []string{ChatText, ChatEndRequest, KindCancel} {
+		if err := ValidatePreview(full(func(m *ChatMsg) { m.Kind = k })); !errors.Is(err, ErrBody) {
+			t.Errorf("a %s message with every preview key: want ErrBody, got %v", k, err)
+		}
+	}
 	// Key 4 present with 0 is not a stream_seq either: as bytes it is not canonical, and decoded it
 	// is the frame without key 4.
 	zero := setTopKey(t, mustEnc(t, previewFrame()), 4, uint64(0))
