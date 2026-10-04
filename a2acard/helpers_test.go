@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // t0 is 2026-01-01T00:00:00Z in unix milliseconds; the "now" of most tests.
@@ -77,6 +78,24 @@ func iface(card map[string]any, i int) map[string]any {
 	return card["supportedInterfaces"].([]any)[i].(map[string]any)
 }
 
+// privateKeyOf is the private key c signs with, read from its identity file: the JWS tests below
+// sign with raw keys, which an identity.Signer does not hand out (KEL C-23).
+func privateKeyOf(c *identity.Controller) ed25519.PrivateKey {
+	b, err := c.Export()
+	if err != nil {
+		panic(err)
+	}
+	f, err := identity.ParseIdentityFile(b)
+	if err != nil {
+		panic(err)
+	}
+	seed := f.Cur
+	if f.Pending != nil && f.Pending.Event != nil {
+		seed = f.Pending.Revealed
+	}
+	return ed25519.NewKeyFromSeed(seed)
+}
+
 func marshal(t *testing.T, v any) []byte {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -90,7 +109,7 @@ func marshal(t *testing.T, v any) []byte {
 // publish form.
 func signCard(t *testing.T, card map[string]any, c *identity.Controller) []byte {
 	t.Helper()
-	out, err := SignWithController(marshal(t, card), c, jku(c.AID()))
+	out, err := SignWithSnapshot(marshal(t, card), c, jku(c.AID()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +121,7 @@ func signCard(t *testing.T, card map[string]any, c *identity.Controller) []byte 
 // build cards that only Verify's own rules reject.
 func signLoose(t *testing.T, card map[string]any, c *identity.Controller) []byte {
 	t.Helper()
-	out, err := sign(marshal(t, card), c.CurrentPrivateKey(), KID(c.AID(), c.CurrentSeq()), jku(c.AID()), false)
+	out, err := sign(marshal(t, card), privateKeyOf(c), KID(c.AID(), c.CurrentSeq()), jku(c.AID()), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +139,7 @@ func signRaw(t *testing.T, card map[string]any, c *identity.Controller) []byte {
 	}
 	hdr := marshal(t, map[string]string{"alg": AlgEdDSA, "kid": KID(c.AID(), c.CurrentSeq()), "typ": TypJOSE})
 	protected := b64.EncodeToString(hdr)
-	sig := b64.EncodeToString(ed25519.Sign(c.CurrentPrivateKey(), signingInput(protected, payload)))
+	sig := b64.EncodeToString(ed25519.Sign(privateKeyOf(c), signingInput(protected, payload)))
 	return edit(t, cj, func(m map[string]any) {
 		m["signatures"] = []any{map[string]any{"protected": protected, "signature": sig}}
 	})
@@ -176,7 +195,7 @@ func (r *resolver) resolve(aid string) ([]identity.SignedEvent, error) {
 
 func incept(t *testing.T) *identity.Controller {
 	t.Helper()
-	c, err := identity.Incept()
+	c, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}

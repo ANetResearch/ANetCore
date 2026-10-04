@@ -13,6 +13,7 @@ import (
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // day is the completed_day of the test receipts: 2026-01-01.
@@ -25,7 +26,7 @@ func seed32(label string) []byte {
 
 func incept(t testing.TB) *identity.Controller {
 	t.Helper()
-	c, err := identity.Incept()
+	c, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +133,7 @@ func TestAReceiptSignedWithARetiredKeyIsRefusedFromItsRetirement(t *testing.T) {
 	p := incept(t)
 	w := signReceipt(t, p, testBody(t, ""))
 	rotateAt := uint64(day)*evidence.DayMS + 3_600_000 // one hour into the receipt's day
-	if err := p.Rotate(rotateAt); err != nil {
+	if err := identitytest.Rotate(p, rotateAt); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := w.Verify(p.KEL(), rotateAt-1); err != nil {

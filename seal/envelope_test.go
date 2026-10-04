@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 	"github.com/fxamacker/cbor/v2"
 )
 
@@ -126,7 +127,7 @@ func TestSealIsRandomized(t *testing.T) {
 func TestSignedInnerFieldMutations(t *testing.T) {
 	a, b := newParty(t), newParty(t)
 	// A second key state, so a changed key_state_seq still resolves to a key.
-	if err := a.c.Rotate(t0 - dayMS); err != nil {
+	if err := identitytest.Rotate(a.c, t0-dayMS); err != nil {
 		t.Fatal(err)
 	}
 	a.resign(t, t0)
@@ -139,7 +140,7 @@ func TestSignedInnerFieldMutations(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := cp.Rotate(t0 + 1); err != nil {
+		if err := identitytest.Rotate(cp, t0+1); err != nil {
 			t.Fatal(err)
 		}
 		k, err := identity.MarshalKEL(cp.KEL())
@@ -1022,7 +1023,7 @@ func TestRotationGrace(t *testing.T) {
 			a.resign(t, t0)
 		}
 		env := mustSeal(t, innerFrom(t, a, b, ts), &b.kp.Public, a.c.Sign)
-		if err := a.c.Rotate(rotTS); err != nil {
+		if err := identitytest.Rotate(a.c, rotTS); err != nil {
 			t.Fatal(err)
 		}
 		return mustOpen(t, env, b), a.c.KEL()
@@ -1058,7 +1059,7 @@ func TestRotationGrace(t *testing.T) {
 	})
 	t.Run("new key after rotation", func(t *testing.T) {
 		a := newParty(t)
-		if err := a.c.Rotate(rot); err != nil {
+		if err := identitytest.Rotate(a.c, rot); err != nil {
 			t.Fatal(err)
 		}
 		a.resign(t, rot)
@@ -1071,7 +1072,7 @@ func TestRotationGrace(t *testing.T) {
 		// icp -> rot -> rot, message signed at seq 1. The retirement is read
 		// from the rot at seq 2.
 		rotEarly := func(c *identity.Controller) {
-			if err := c.Rotate(t0 - dayMS); err != nil {
+			if err := identitytest.Rotate(c, t0-dayMS); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -1086,7 +1087,7 @@ func TestRotationGrace(t *testing.T) {
 	})
 	t.Run("deactivated", func(t *testing.T) {
 		a := newParty(t)
-		if err := a.c.Deactivate(rot); err != nil {
+		if err := identitytest.Deactivate(a.c, rot); err != nil {
 			t.Fatal(err)
 		}
 		// Signed at the dip state itself: no key is in force.

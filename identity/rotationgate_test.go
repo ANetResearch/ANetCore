@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // An object signed by a key that was later rotated away is honored only if it can be established to
@@ -14,19 +15,19 @@ func TestRotationGate(t *testing.T) {
 	obj := []byte("an object")
 
 	// (1) A rotation without a time, or not after the previous event, is not built.
-	c, _ := identity.Incept()
-	if err := c.Rotate(0); err == nil {
+	c, _ := identitytest.Hub()
+	if err := identitytest.Rotate(c, 0); err == nil {
 		t.Fatal("a rotation at ts 0 was built")
 	}
-	if err := c.Rotate(c.KEL()[0].Event.Timestamp); err == nil {
+	if err := identitytest.Rotate(c, c.KEL()[0].Event.Timestamp); err == nil {
 		t.Fatal("a rotation at the icp's ts was built")
 	}
 
 	// (2) The grace window: honored before the rotation's ts, rejected at/after it and when the
 	// object carries no time.
-	c2, _ := identity.Incept()
+	c2, _ := identitytest.Hub()
 	s0, q0 := c2.Sign(obj)
-	if err := c2.Rotate(5000); err != nil {
+	if err := identitytest.Rotate(c2, 5000); err != nil {
 		t.Fatal(err)
 	}
 	if err := identity.VerifyObject(c2.KEL(), c2.AID(), q0, 4000, obj, s0); err != nil {

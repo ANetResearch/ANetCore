@@ -236,14 +236,14 @@ func (a *Authorization) ID() (string, error) {
 // Sign attaches the payer's signature. The signer becomes the payer:
 // authorising a payment from somebody else's balance is not a thing a
 // signature can express.
-func (a *Authorization) Sign(c *identity.Controller) error {
-	a.Payer = c.AID()
+func (a *Authorization) Sign(s identity.Signer) error {
+	a.Payer = s.AID()
 	pre, err := a.CanonicalPreimage()
 	if err != nil {
 		return err
 	}
-	sig, seq := c.Sign(pre)
-	a.Envelope = &aobj.Envelope{SignerAID: c.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
+	sig, seq := s.Sign(pre)
+	a.Envelope = &aobj.Envelope{SignerAID: s.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
 	return nil
 }
 
@@ -364,13 +364,13 @@ func (r *Receipt) canonical() receiptPreimage {
 func (r *Receipt) CanonicalPreimage() ([]byte, error) { return coredet.Marshal(r.canonical()) }
 
 // Sign attaches the settling hub's signature.
-func (r *Receipt) Sign(c *identity.Controller) error {
+func (r *Receipt) Sign(s identity.Signer) error {
 	pre, err := r.CanonicalPreimage()
 	if err != nil {
 		return err
 	}
-	sig, seq := c.Sign(pre)
-	r.Envelope = &aobj.Envelope{SignerAID: c.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
+	sig, seq := s.Sign(pre)
+	r.Envelope = &aobj.Envelope{SignerAID: s.AID(), KeyStateSeq: seq, Alg: aobj.AlgEdDSA, Sig: sig}
 	return nil
 }
 

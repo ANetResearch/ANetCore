@@ -400,7 +400,7 @@
       "owner": "CORE",
       "covers": "carried: A2A card signatures as the a2a-python SDK computes them",
       "labels": [],
-      "objects": [],
+      "objects": ["A2ACardJWS"],
       "at": [{"repo": "ANetCore", "path": "a2acard/testdata/python-vectors.json"}]
     }
   ],

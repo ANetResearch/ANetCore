@@ -200,7 +200,7 @@ func (c *AgentCard) preimageObject() (map[string]any, error) {
 	// Decoded without UseNumber: every number reaches jcsWrite as a float64, as RFC 8785 has
 	// it, so an integer above 2^53 (seq, issued_at, a price in extensions) is bound only to
 	// float64 precision and neighbouring values share one pre-image and one signature. The
-	// json.Number path in jcs.go serves RawMessage fields only (ANet docs/notes/0033 §5).
+	// json.Number path in jcs.go serves RawMessage fields only (ANet an internal note §5).
 	var obj map[string]any
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, &Error{Code: MALFORMED_CARD, Detail: "card not a JSON object: " + err.Error()}
@@ -320,15 +320,15 @@ func decodeDetachedJWS(preimage []byte, jws string) (signingInput, rawSig []byte
 
 // ---- Sign (§2.6 + §5.1 self-publish default) ----
 
-// Sign signs the card with controller ctrl under the adp-card profile (§2.6): it sets the
-// envelope {signer_aid=ctrl.AID(), key_state_seq=ctrl.CurrentSeq(), alg=EdDSA, sig=detached JWS
-// over Preimage()}. For self-publish, subject_did defaults to the signer when unset (§5.1 step 5).
+// Sign signs the card as ctrl under the adp-card profile (§2.6): it sets the envelope
+// {signer_aid=ctrl.AID(), key_state_seq, alg=EdDSA, sig=detached JWS over Preimage()}. For
+// self-publish, subject_did defaults to the signer when unset (§5.1 step 5).
 //
-// It reaches the controller's current key via identity.Controller.Sign(objPreimage), feeding it
-// the JWS signing input (BASE64URL(header)"."BASE64URL(preimage)) so the controller's private key
-// signs exactly the detached-JWS bytes a verifier recomputes. The controller also returns the
-// key_state_seq a verifier MUST select (anti-downgrade), which becomes the envelope's seq.
-func (c *AgentCard) Sign(ctrl *identity.Controller) error {
+// It reaches the identity's current key via identity.Signer.Sign(objPreimage), feeding it the JWS
+// signing input (BASE64URL(header)"."BASE64URL(preimage)) so the private key signs exactly the
+// detached-JWS bytes a verifier recomputes. The signer also returns the key_state_seq a verifier
+// MUST select (anti-downgrade), which becomes the envelope's seq.
+func (c *AgentCard) Sign(ctrl identity.Signer) error {
 	if c.SubjectDID == "" {
 		c.SubjectDID = ctrl.AID() // self-publish default (§5.1 step 5)
 	}
@@ -408,9 +408,9 @@ func (t *CardTombstone) Preimage() ([]byte, error) {
 	return jcsMarshal(obj)
 }
 
-// Sign signs the tombstone with controller ctrl (§5.4): self-signed by the subject. subject_did
-// defaults to the signer when unset; the §5.4 gate enforces signer==subject on admission.
-func (t *CardTombstone) Sign(ctrl *identity.Controller) error {
+// Sign signs the tombstone as ctrl (§5.4): self-signed by the subject. subject_did defaults to the
+// signer when unset; the §5.4 gate enforces signer==subject on admission.
+func (t *CardTombstone) Sign(ctrl identity.Signer) error {
 	if t.SubjectDID == "" {
 		t.SubjectDID = ctrl.AID()
 	}

@@ -190,6 +190,9 @@ func TestNegativesFollowTheKeyspace(t *testing.T) {
 	if _, err := wire.Negatives(r, "InnerSigPreimage", inner); err == nil {
 		t.Fatal("a derived object has no negatives")
 	}
+	if _, err := wire.Negatives(r, "A2ACardJWS", empty); err == nil {
+		t.Fatal("an external object (not a CBOR map) has no negatives")
+	}
 	if _, err := wire.Negatives(r, "NoSuchObject", inner); err == nil {
 		t.Fatal("unknown object accepted")
 	}

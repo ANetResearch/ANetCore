@@ -75,6 +75,11 @@ func TestRegistryKeyEntries(t *testing.T) {
 	for _, o := range r.Objects {
 		switch o.Keyspace {
 		case wire.KeyspaceCritical, wire.KeyspaceClosed, wire.KeyspaceDerived:
+		case wire.KeyspaceExternal:
+			// CORE-S1: only a D-class signing input that is not a CBOR map, and so has no keys
+			if o.Class != "D" || len(o.Keys) != 0 {
+				t.Errorf("%s: an external object is a D-class object without keys", o.Name)
+			}
 		default:
 			t.Errorf("%s: keyspace %q", o.Name, o.Keyspace)
 		}
@@ -542,6 +547,36 @@ func TestRegistrySignersAndScanRules(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// CORE-S1 (revision 4): the A2A card JWS signing input is the D-class object A2ACardJWS, without
+// keys, and a2acard.SignWithSnapshot is registered as signing it. The identity signs through the
+// identity.Signer interface (KEL C-24), and no method that hands out the private key is listed.
+func TestRegistryA2ACardJWS(t *testing.T) {
+	r := reg(t)
+	o := r.Object("A2ACardJWS")
+	if o == nil || o.Class != "D" || o.Keyspace != wire.KeyspaceExternal || len(o.Keys) != 0 {
+		t.Fatalf("A2ACardJWS: %+v", o)
+	}
+	var signs string
+	for _, c := range r.Signers.Calls {
+		if c.Repo == "ANetCore" && c.Func == "a2acard.SignWithSnapshot" {
+			signs = c.Signs
+		}
+	}
+	if signs != "A2ACardJWS" {
+		t.Fatalf("a2acard.SignWithSnapshot signs %q", signs)
+	}
+	var signer bool
+	for _, m := range r.Signers.Methods {
+		if strings.Contains(m, "CurrentPrivateKey") || strings.Contains(m, "identity.Controller") {
+			t.Errorf("signers.methods lists %s: the identity signs through identity.Signer only", m)
+		}
+		signer = signer || m == "(github.com/ANetResearch/ANetCore/identity.Signer).Sign"
+	}
+	if !signer {
+		t.Error("signers.methods does not list identity.Signer's Sign")
 	}
 }
 

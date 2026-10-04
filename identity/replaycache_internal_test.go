@@ -16,7 +16,7 @@ func withReplayCache(t *testing.T, c *ReplayCache) {
 func testKELs(t *testing.T) map[string][]SignedEvent {
 	t.Helper()
 	mk := func(steps ...func(c *Controller, ts uint64) error) []SignedEvent {
-		c, err := Incept()
+		c, err := testIncept()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -27,8 +27,8 @@ func testKELs(t *testing.T) map[string][]SignedEvent {
 		}
 		return c.KEL()
 	}
-	rot := func(c *Controller, ts uint64) error { return c.Rotate(ts) }
-	dip := func(c *Controller, ts uint64) error { return c.Deactivate(ts) }
+	rot := func(c *Controller, ts uint64) error { return testRotate(c, ts) }
+	dip := func(c *Controller, ts uint64) error { return testDeactivate(c, ts) }
 	many := make([]func(c *Controller, ts uint64) error, 40)
 	for i := range many {
 		many[i] = rot
@@ -70,11 +70,11 @@ func TestAReplayCacheAnswersAsReplay(t *testing.T) {
 // answered with the other's states.
 func TestAReplayCacheIsNotFooledByAKELThatDiffers(t *testing.T) {
 	withReplayCache(t, NewReplayCache(1<<20))
-	c, err := Incept()
+	c, err := testIncept()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rotate(2000); err != nil {
+	if err := testRotate(c, 2000); err != nil {
 		t.Fatal(err)
 	}
 	genuine := c.KEL()
@@ -137,12 +137,12 @@ func TestAReplayCacheIsBounded(t *testing.T) {
 	withReplayCache(t, c)
 	var three [][]SignedEvent
 	for i := 0; i < 3; i++ {
-		k, err := Incept()
+		k, err := testIncept()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for j := 0; j < 40; j++ {
-			if err := k.Rotate(uint64(j + 2)); err != nil {
+			if err := testRotate(k, uint64(j+2)); err != nil {
 				t.Fatal(err)
 			}
 		}

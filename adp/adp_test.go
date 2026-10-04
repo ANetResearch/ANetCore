@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 func sha256Of(s string) []byte { d := sha256.Sum256([]byte(s)); return d[:] }
@@ -40,7 +41,7 @@ func newCard(subjectDID string) *AgentCard {
 // signedCard returns a fresh controller and a card self-signed by it (subject==signer).
 func signedCard(t *testing.T) (*identity.Controller, *AgentCard) {
 	t.Helper()
-	c, err := identity.Incept()
+	c, err := identitytest.Hub()
 	if err != nil {
 		t.Fatalf("incept: %v", err)
 	}
@@ -258,7 +259,7 @@ func TestReject_UnsupportedSchemaMajor_UNSUPPORTED_SCHEMA_MAJOR(t *testing.T) {
 func TestReject_KeyStateSeqMismatch_KEY_STATE_DOWNGRADE(t *testing.T) {
 	c := mustIncept(t)
 	// Rotate so the current key_state_seq is 1, then sign a card under the current key.
-	if err := c.Rotate(2); err != nil {
+	if err := identitytest.Rotate(c, 2); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 	card := newCard(c.AID())
@@ -305,7 +306,7 @@ func TestAdmit_PreRotationCard_GraceAdmits(t *testing.T) {
 	}
 	// Rotate the controller LATER (rotation timestamp T0 + 1h, in unix-millis).
 	rotMillis := uint64(t0.Add(time.Hour).UnixMilli())
-	if err := c.Rotate(rotMillis); err != nil {
+	if err := identitytest.Rotate(c, rotMillis); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 	// The card was issued BEFORE the rotation → grace → ADMIT against the rotated KEL.
@@ -335,7 +336,7 @@ func TestReject_PostRotationSeq0Card_REVOKED_KEY(t *testing.T) {
 	if card.Envelope.KeyStateSeq != 0 {
 		t.Fatalf("expected seq 0 signature, got %d", card.Envelope.KeyStateSeq)
 	}
-	if err := c.Rotate(rotMillis); err != nil {
+	if err := identitytest.Rotate(c, rotMillis); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
 	_, err := AdmitCard(card, afterRot.Add(time.Minute), 0, c.KEL(), SupportedMajors(1), nil)
@@ -799,7 +800,7 @@ func TestGV9_CrossMinor_AdditiveAccept(t *testing.T) {
 
 func mustIncept(t *testing.T) *identity.Controller {
 	t.Helper()
-	c, err := identity.Incept()
+	c, err := identitytest.Hub()
 	if err != nil {
 		t.Fatalf("incept: %v", err)
 	}

@@ -40,6 +40,9 @@ func Negatives(r *Registry, name string, valid []byte) ([]Negative, error) {
 	if o.Keyspace == KeyspaceDerived {
 		return nil, fmt.Errorf("wire: %s is built, never decoded: it has no negative encodings", name)
 	}
+	if o.Keyspace == KeyspaceExternal {
+		return nil, fmt.Errorf("wire: %s is not a CBOR map: it has no negative encodings", name)
+	}
 	base, err := decodeIntMap(valid)
 	if err != nil {
 		return nil, fmt.Errorf("wire: %s: valid encoding: %w", name, err)

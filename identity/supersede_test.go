@@ -68,11 +68,11 @@ func TestReplaySupersededRotRot(t *testing.T) {
 	const t0 = SuiteInceptionTS
 	c := SuiteController()
 	o0 := signNow(c, "seq 0")
-	if err := c.Rotate(t0 + 5000); err != nil {
+	if err := testRotate(c, t0+5000); err != nil {
 		t.Fatal(err)
 	}
 	o1 := signNow(c, "seq 1")
-	if err := c.Rotate(t0 + 9000); err != nil {
+	if err := testRotate(c, t0+9000); err != nil {
 		t.Fatal(err)
 	}
 	o2 := signNow(c, "seq 2")
@@ -98,11 +98,11 @@ func TestReplaySupersededRotDip(t *testing.T) {
 	const t0 = SuiteInceptionTS
 	c := SuiteController()
 	o0 := signNow(c, "seq 0")
-	if err := c.Rotate(t0 + 1000); err != nil {
+	if err := testRotate(c, t0+1000); err != nil {
 		t.Fatal(err)
 	}
 	o1 := signNow(c, "seq 1")
-	if err := c.Deactivate(t0 + 8000); err != nil {
+	if err := testDeactivate(c, t0+8000); err != nil {
 		t.Fatal(err)
 	}
 	// An object claiming the dip's own seq: the dip state holds no key, so it is refused before
