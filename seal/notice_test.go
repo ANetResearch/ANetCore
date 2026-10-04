@@ -177,6 +177,12 @@ func TestCheckNotice(t *testing.T) {
 		// The KEL given must be the one the message carries (KEL D-21).
 		wantReason(t, CheckNotice(&o.Inner, s.a.c.KEL(), s.hubs, t0), ReasonInvalidInput)
 		wantReason(t, CheckNotice(&o.Inner, nil, s.hubs, t0), ReasonInvalidInput)
+		// A KEL as long as the carried one is not it either: another agent's, event for event.
+		other := newNoticeScene(t).a.c.KEL()
+		if len(other) != len(o.KEL) {
+			t.Fatalf("setup: %d events, the carried KEL has %d", len(other), len(o.KEL))
+		}
+		wantReason(t, CheckNotice(&o.Inner, other, s.hubs, t0), ReasonInvalidInput)
 		// Two notices: Open never gives this, CheckNotice refuses it anyway.
 		two := o.Inner
 		two.Notices = [][]byte{o.Notices[0], o.Notices[0]}

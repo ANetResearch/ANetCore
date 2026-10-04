@@ -32,7 +32,11 @@ const (
 	ksnObservedAt = hubT0 + 400000
 	ksnArrival    = ksnObservedAt + minute
 	ksnHour       = 60 * minute
-	ksnAbout      = "Witness notices (L18): NoticeBody {0 t, 1 aid, 2 seq, 3 head, 4 observed_at, 5 witness}, " +
+	// ksnEarlyObservedAt is a time the KEL-2A hub still signed with k0: before its planned rot 1
+	// (hubT0 + 1 min), which retires key state 0 with the one-hour grace.
+	ksnEarlyObservedAt = hubT0 + minute/2
+	ksnPlannedRetired  = hubT0 + minute
+	ksnAbout           = "Witness notices (L18): NoticeBody {0 t, 1 aid, 2 seq, 3 head, 4 observed_at, 5 witness}, " +
 		"NoticeWire {1 body = coredet(NoticeBody), 2 env = aobj envelope {1 signer_aid, 2 key_state_seq, 3 alg = -8, 4 sig}}, " +
 		"the signature Ed25519 over the body bytes. The valid notice is the KEL-2A hub's (W2) for the tip of the KEL-2B agent's " +
 		"KEL up to its rot 2 (seq 2, which names W2), signed with KEL-2A k2 at key state 2. Each case gives the notice, the KEL " +
@@ -238,6 +242,10 @@ func ksnVectorFile(t testing.TB) []byte {
 		hubs(aAID, "A4"), hubDipTS, notice, "")
 	add("ok: an older prefix of the KEL, with a notice from the witness that prefix names", "B2", hubs(aAID, "A3", w1AID, "W1"),
 		ksnArrival, ksnSigned(t, ksnMarshal(t, ksnBodyMap(bAID, 1, tip1, ksnObservedAt, w1AID)), w1AID, 0, w1Key), "")
+	// A notice the witness signed with k0 before its planned rot 1 retired key state 0.
+	early := ksnSigned(t, ksnMarshal(t, ksnBodyMap(bAID, 2, tip, ksnEarlyObservedAt, aAID)), aAID, 0, ka[0])
+	add("ok: the witness's key state was retired by its planned rot 1, and the arrival is exactly 1 h after it", "B3", held,
+		ksnPlannedRetired+ksnHour, early, "")
 
 	// Step 1: decoding.
 	add("a text string, not a NoticeWire", "B3", held, ksnArrival, ksnMarshal(t, "a notice"), "witness-invalid")
@@ -299,6 +307,8 @@ func ksnVectorFile(t testing.TB) []byte {
 	add("signed at a key state of the witness retired before observed_at", "B3", held, ksnArrival,
 		ksnSigned(t, body, aAID, 1, ka[1]), "witness-invalid")
 	add("the witness's key state was retired by its dip 1 ms before the arrival", "B3", hubs(aAID, "A4"), hubDipTS+1, notice, "witness-invalid")
+	add("the witness's key state was retired by its planned rot 1, 1 h and 1 ms before the arrival", "B3", held,
+		ksnPlannedRetired+ksnHour+1, early, "witness-invalid")
 
 	// Step 6: freshness.
 	add("observed 6 h and 1 ms before the arrival", "B3", held, ksnObservedAt+6*ksnHour+1, notice, "witness-stale")

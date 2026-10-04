@@ -96,8 +96,14 @@ func TestRotWitnessMustBeAnAID(t *testing.T) {
 	icp := []SignedEvent{signEvent(icpEvent(kb[0], kb[1], agentT0, ToadAgent), kb[0])}
 	for _, w := range []string{"", "bafyreiotherhub", testWitness + "\x00", strings.ToUpper(testWitness)} {
 		a := SuiteAgentController()
+		// Refused up front, with a sentence that names the string, and nothing is pending.
 		if _, err := a.BuildWitnessDesignation(w, testNewNext(), SuiteInceptionTS+1); err == nil {
 			t.Errorf("a designation of %q was built", w)
+		} else if !strings.Contains(err.Error(), "is not an AID") {
+			t.Errorf("a designation of %q: %v", w, err)
+		}
+		if len(a.KEL()) != 1 {
+			t.Errorf("a refused designation of %q left an event pending", w)
 		}
 		rot := rotEvent(kb[1], kb[2], agentT0+minute, ToadAgent, testWitness, false)
 		rot.Witnesses = []string{w}

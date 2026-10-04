@@ -2671,6 +2671,9 @@ KSN_VID = "KSN-1"
 KSN_TYPE = "anet.ksn/1"
 KSN_OBSERVED_AT = KEL_HUB_T0 + 400000  # after the KEL-2B agent's rot 2, before the KEL-2A hub's dip
 KSN_ARRIVAL = KSN_OBSERVED_AT + KEL_MINUTE
+# a time the KEL-2A hub still signed with k0: before its planned rot 1, which retires key state 0 with the 1 h grace
+KSN_EARLY_OBSERVED_AT = KEL_HUB_T0 + KEL_MINUTE // 2
+KSN_PLANNED_RETIRED = KEL_HUB_T0 + KEL_MINUTE
 KSN_HOUR = 60 * KEL_MINUTE
 KSN_MAX_AGE = 6 * KSN_HOUR
 KSN_SKEW = 5 * KEL_MINUTE
@@ -2885,6 +2888,10 @@ def gen_ksn_1():
     add("ok: an older prefix of the KEL, with a notice from the witness that prefix names", "B2",
         hubs(a_aid, "A3", w1_aid, "W1"), KSN_ARRIVAL,
         signed(cbor(body_map(b_aid, 1, tip1, KSN_OBSERVED_AT, w1_aid)), w1_aid, 0, w1_key), "")
+    # A notice the witness signed with k0 before its planned rot 1 retired key state 0.
+    early = signed(cbor(body_map(b_aid, 2, tip, KSN_EARLY_OBSERVED_AT, a_aid)), a_aid, 0, ka[0])
+    add("ok: the witness's key state was retired by its planned rot 1, and the arrival is exactly 1 h after it", "B3",
+        held, KSN_PLANNED_RETIRED + KSN_HOUR, early, "")
 
     # Step 1: decoding.
     add("a text string, not a NoticeWire", "B3", held, KSN_ARRIVAL, cbor("a notice"), "witness-invalid")
@@ -2942,6 +2949,8 @@ def gen_ksn_1():
         signed(body, a_aid, 1, ka[1]), "witness-invalid")
     add("the witness's key state was retired by its dip 1 ms before the arrival", "B3", hubs(a_aid, "A4"),
         KEL_HUB_DIP_TS + 1, notice, "witness-invalid")
+    add("the witness's key state was retired by its planned rot 1, 1 h and 1 ms before the arrival", "B3", held,
+        KSN_PLANNED_RETIRED + KSN_HOUR + 1, early, "witness-invalid")
 
     # Step 6: freshness.
     add("observed 6 h and 1 ms before the arrival", "B3", held, KSN_OBSERVED_AT + 6 * KSN_HOUR + 1, notice, "witness-stale")

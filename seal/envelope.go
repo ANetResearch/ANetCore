@@ -1202,7 +1202,7 @@ func sameEvents(a, b []identity.SignedEvent) bool {
 // VerifyInnerSig is receive step 7 (KEL C-54, D-22). kel is the sender's KEL as this node holds
 // it after step 6 merged what the message carried; preimage is Opened.Preimage; arrival is when
 // the envelope reached this node's hub, as KEL D-20 derives it from the hub's accepted_at, or now
-// for a direct delivery (unix ms).
+// for a direct delivery (unix ms); 0 is refused (invalid-input).
 //
 //  1. kel replays (bad-kel) to inner.From (from-mismatch), and holds the declared
 //     key_state_seq (bad-key-state).
@@ -1226,6 +1226,11 @@ func VerifyInnerSig(inner *SealedInner, preimage []byte, kel []identity.SignedEv
 	}
 	if len(inner.Sig) != SigLen {
 		return fail(ReasonBadInner, "sig is %d bytes, want %d", len(inner.Sig), SigLen)
+	}
+	if arrival == 0 {
+		// 0 is no time: taken for one, it lies before every retirement, so a key a planned
+		// rotation retired would stay usable for good.
+		return fail(ReasonInvalidInput, "arrival is 0")
 	}
 	states, err := identity.Replay(kel)
 	if err != nil {

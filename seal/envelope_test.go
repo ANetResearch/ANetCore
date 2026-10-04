@@ -1139,6 +1139,14 @@ func TestVerifyInnerSigInputs(t *testing.T) {
 	in = o.Inner
 	in.TS = 0
 	wantReason(t, VerifyInnerSig(&in, o.Preimage, a.c.KEL(), t0), ReasonBadInner)
+	// An arrival of 0 is no time either: a caller that has none gets a refusal, not a key a
+	// planned rotation retired accepted for good.
+	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), 0), ReasonInvalidInput)
+	if err := identitytest.Rotate(a.c, t0+minuteMS); err != nil {
+		t.Fatal(err)
+	}
+	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), 0), ReasonInvalidInput)
+	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), t0+minuteMS+identity.RotationGrace+1), ReasonGraceExpired)
 }
 
 // Seal refuses an inner its receiver would refuse for structural reasons,

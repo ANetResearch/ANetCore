@@ -315,18 +315,32 @@ func FuzzVerifyNotice(f *testing.F) {
 		pre, merr := coredet.Marshal(body)
 		back, werr := coredet.Marshal(NoticeWire{Body: pre, Env: env})
 		tip := subject[2]
+		seq := env.KeyStateSeq
 		switch {
 		case merr != nil || werr != nil || !bytes.Equal(back, b):
 			t.Fatal("accepted a notice that is not in CoreDet form")
 		case body.AID != subject[0].EventID || body.Seq != 2 || body.Head != tip.EventID || body.Witness != hub.aid || env.SignerAID != hub.aid:
 			t.Fatalf("accepted a notice about another tip or from another witness: %+v %+v", body, env)
-		case env.KeyStateSeq != 2 || !ed25519.Verify(pubOf(hub.key), pre, env.Sig):
-			t.Fatalf("accepted a notice the witness did not sign at its key state 2: %+v", env)
+		case seq >= uint64(len(wkel)) || wkel[seq].Event.Type == Deactivation ||
+			!ed25519.Verify(ed25519.PublicKey(wkel[seq].Event.Keys[0]), pre, env.Sig):
+			t.Fatalf("accepted a notice the witness did not sign with the key of the key state it names: %+v", env)
 		case body.ObservedAt > arrival && body.ObservedAt-arrival > EventClockWindow,
 			arrival > body.ObservedAt && arrival-body.ObservedAt > NoticeMaxAge:
 			t.Fatalf("accepted a stale notice: observed %d, arrival %d", body.ObservedAt, arrival)
-		case retired && arrival > hubDipTS:
-			t.Fatalf("accepted a notice under a key state the dip retired, arriving at %d", arrival)
+		}
+		// A key state the next event retired signs only before that event, and stays usable until
+		// the event's time plus the grace: one hour after a planned rot, none after an emergency
+		// rot or a dip.
+		if seq+1 < uint64(len(wkel)) {
+			next := wkel[seq+1].Event
+			grace := RotationGrace
+			if next.Type == Deactivation || next.Emergency {
+				grace = 0
+			}
+			if body.ObservedAt >= next.Timestamp || arrival > next.Timestamp+grace {
+				t.Fatalf("accepted a notice under key state %d, retired at %d: observed %d, arrival %d",
+					seq, next.Timestamp, body.ObservedAt, arrival)
+			}
 		}
 	})
 }
