@@ -20,12 +20,9 @@ import (
 // version (CORE-V2).
 const EnvelopeVersion = 2
 
-// HPKELabel is the value of layer-1 HPKE info key 1 (core §3.2 L1).
+// HPKELabel is the value of layer-1 HPKE info key 1 (core §3.2 L1). The
+// layer-2 label is IXLabel.
 const HPKELabel = "anet-seal/v2"
-
-// IXLabel is the value of layer-2 HPKE info key 1 (core §3.2 L2). The second
-// layer is FS-2's.
-const IXLabel = "anet-ix/v2"
 
 // DAckExporterContext is the HPKE exporter context of the ack_key (core §3.2
 // L11): ack_key = Export(layer-1 context, "anet-dack/v1", 32).
@@ -170,46 +167,6 @@ type SealedEnvelope struct {
 // Marshal returns the CoreDet encoding of e. With Access nil the result is
 // what Seal returns: an envelope still without its credential.
 func (e *SealedEnvelope) Marshal() ([]byte, error) { return coredet.Marshal(*e) }
-
-// RK is an interaction public key (inner key 15, core §2.3): the key the
-// sender wants the second layer of later messages in the interaction sealed
-// to (FS §2.6). In 0.3.0 Suite is 1 and Pub 32 bytes.
-//
-//anet:wire RK
-type RK struct {
-	Suite Suite  `cbor:"1,keyasint"`
-	Pub   []byte `cbor:"2,keyasint"`
-}
-
-// KID is the key id of r (L15), the ikid of a second layer sealed to it.
-func (r *RK) KID() []byte { return KID(r.Suite, r.Pub) }
-
-// check is the rule of FS-C11: suite 1 and a public key of its length.
-func (r *RK) check() error {
-	if r.Suite != SuiteX25519 {
-		return fmt.Errorf("rk suite %d, want %d", r.Suite, SuiteX25519)
-	}
-	if len(r.Pub) != params(r.Suite).pubLen {
-		return fmt.Errorf("rk pub is %d bytes, want %d", len(r.Pub), params(r.Suite).pubLen)
-	}
-	return nil
-}
-
-// IXKey is one of this node's interaction keys (FS §2.8): the private half of
-// an rk it announced in an interaction with a peer.
-type IXKey struct {
-	IX, PeerAID  string
-	Suite        Suite
-	Pub, Private []byte
-}
-
-// IXKeyLookup finds this node's interaction key by ikid. It returns (nil,
-// nil) when there is none (the interaction is closed for this node) and a
-// non-nil error when the store cannot be read; Open passes that error through
-// so the caller retries rather than drops (ENG-V8).
-type IXKeyLookup interface {
-	IXKey(ikid []byte) (*IXKey, error)
-}
 
 // SealedInner is the plaintext a sender signs (core §2.3).
 //
@@ -513,8 +470,9 @@ func ParseKEL(b []byte) ([]identity.SignedEvent, error) {
 
 // SealOpts are the options of Seal (core §4.4).
 type SealOpts struct {
-	// PeerRK is the peer's interaction key: non-nil seals a second layer
-	// to it (FS-2), nil seals one layer.
+	// PeerRK is the interaction key the recipient announced in this
+	// interaction (its rk): non-nil seals a second layer to it, nil seals one
+	// layer (FS-X5).
 	PeerRK *RK
 	// Exp is outer key 8: 0 leaves the key out (every queued message);
 	// otherwise it must equal the inner exp (a one-shot envelope, core G11).
@@ -532,6 +490,13 @@ type SealOpts struct {
 // against what sign returns, because the seq is inside the signed preimage
 // and a rotation between the two calls would otherwise produce a signature
 // that no receiver accepts.
+//
+// With o.PeerRK set, Seal adds a second layer sealed to the recipient's
+// interaction key (FS-C17): it sets up both HPKE sender contexts first, so
+// the signature covers enc, ikid and enc2; then it encrypts the inner under
+// the layer-2 context (info IXInfo, not padded), puts ikid, enc2 and that
+// ciphertext in the Wrap, pads the Wrap and encrypts it under layer 1. The
+// ack_key is the layer-1 export either way (FS-C14).
 //
 // The signature covers the layer-1 enc, so Seal signs after the HPKE sender
 // context exists. The result is randomized: sealing the same inner twice
@@ -556,10 +521,6 @@ func seal(inner *SealedInner, recipient *EncKey, sign SignFunc, o SealOpts, hook
 	var ack, key AckKey
 	if inner == nil || recipient == nil || sign == nil {
 		return nil, ack, fail(ReasonInvalidInput, "nil inner, recipient or signer")
-	}
-	if o.PeerRK != nil {
-		// v030-todo(FS-2): the second layer (FS-C10, FS-C17).
-		return nil, ack, fail(ReasonInvalidInput, "a second layer (SealOpts.PeerRK) is not implemented in this build")
 	}
 	if err := inner.checkForSeal(o); err != nil {
 		return nil, ack, err
@@ -588,11 +549,23 @@ func seal(inner *SealedInner, recipient *EncKey, sign SignFunc, o SealOpts, hook
 		return nil, ack, failWrap(ReasonInternalError, err, "export ack_key")
 	}
 	copy(key[:], exported)
+	// The second layer's sender context, before anything is signed: its enc2
+	// is in the preimage (FS-C17).
+	var two *layer2Sender
+	if o.PeerRK != nil {
+		if two, err = newLayer2Sender(inner.To, o.PeerRK); err != nil {
+			return nil, ack, err
+		}
+	}
 	fields, err := inner.fieldMap()
 	if err != nil {
 		return nil, ack, failWrap(ReasonInvalidInput, err, "encode inner")
 	}
-	pre, err := sigPreimage(fields, enc, recipient.KID, recipient.Suite, nil, nil)
+	var ikid, enc2 []byte
+	if two != nil {
+		ikid, enc2 = two.ikid, two.enc2
+	}
+	pre, err := sigPreimage(fields, enc, recipient.KID, recipient.Suite, ikid, enc2)
 	if err != nil {
 		return nil, ack, failWrap(ReasonInvalidInput, err, "signature preimage")
 	}
@@ -613,11 +586,19 @@ func seal(inner *SealedInner, recipient *EncKey, sign SignFunc, o SealOpts, hook
 	if err != nil {
 		return nil, ack, failWrap(ReasonInternalError, err, "encode inner")
 	}
-	wrap := fieldMap{}
-	if wrap[wrapKeyBody], err = encodeField(innerBytes); err != nil {
+	w := wrapFields{body: innerBytes}
+	if two != nil {
+		// The inner is the layer-2 plaintext as it is, without padding: only
+		// the Wrap is padded (FS-C9, FS-C10).
+		if w.body, err = two.sender.Seal(nil, innerBytes); err != nil {
+			return nil, ack, failWrap(ReasonInternalError, err, "hpke seal, second layer")
+		}
+		w.ikid, w.enc2 = ikid, enc2
+	}
+	wrap, want, err := w.paddedMap()
+	if err != nil {
 		return nil, ack, failWrap(ReasonInternalError, err, "encode wrap")
 	}
-	want := applyPad(wrap)
 	if hooks != nil && hooks.wrap != nil {
 		hooks.wrap(wrap)
 	}
@@ -802,10 +783,12 @@ type Opened struct {
 	// AckKey is the layer-1 export the delivery token of this envelope is
 	// made under (DLV-C-2).
 	AckKey AckKey
-	// Layers is 1, or 2 when the Wrap carried a second layer.
+	// Layers is 1, or 2 when the Wrap carried a second layer and it opened
+	// under this node's interaction key.
 	Layers int
 	// IKID is Wrap key 1, the kid of this node's interaction key the second
-	// layer was sealed to; nil for one layer.
+	// layer was sealed to; nil for one layer. The inner's (ix, from) is that
+	// key's (ix, peer).
 	IKID []byte
 	// Access is outer key 7 as ParseOuter decoded it (Outer.Access). Its
 	// structure is checked; the credential is not (VerifyAccess, SS-1).
@@ -829,17 +812,22 @@ type Opened struct {
 //     (decrypt-failed). From here on every error carries the ack_key
 //     (AckKeyOf); none before does.
 //     3a. Decode the Wrap (bad-wrap). With a second layer: look ikid up in
-//     ix (nil ix or no key: sealed-to-closed-interaction; a lookup error is
-//     returned as it is, with the ack_key and no seal reason), then open
-//     the second layer.
+//     ix (nil ix, no key, or a key that is not the one of ikid:
+//     sealed-to-closed-interaction; a lookup error is returned as it is,
+//     with the ack_key and no seal reason), then open the second layer
+//     under the key, info IXInfo(to, suite, ikid) (decrypt-failed).
 //  4. Decode the inner strictly: no key 0-63 outside the v2 set
 //     (unknown-critical-field); every key of its type and size, key 11
 //     exactly with key 10, at most MaxNoticeBytes per notice, no U+0000 in
-//     from, to or ix (bad-inner); a well-formed rk (bad-rk); inner to ==
-//     outer to (to-mismatch); outer key 8, when present, == inner exp
-//     (exp-mismatch); with a second layer, the interaction key's (ix, peer)
-//     == the inner (ix, from) (ikey-mismatch); the KEL under its caps
-//     (kel-too-large, bad-kel); then the preimage.
+//     from, to or ix (bad-inner); a well-formed rk (bad-rk). Then, with a
+//     second layer, the interaction key's (ix, peer) == the inner (ix,
+//     from) (ikey-mismatch); inner to == outer to (to-mismatch); outer key
+//     8, when present, == inner exp (exp-mismatch); the KEL under its caps
+//     (kel-too-large, bad-kel); then the preimage, with the second layer's
+//     ikid and enc2 (CBOR null for one layer).
+//
+// The ack_key comes from layer 1 whether or not there is a second layer
+// (FS-C14). Opened.Layers and Opened.IKID say which it was.
 //
 // It does not check time (CheckTime), resolve the sender's KEL, check the
 // witness notice, verify the signature (VerifyInnerSig) or enforce which
@@ -895,8 +883,9 @@ func Open(envelope []byte, selfAID string, ring KeyRing, ix IXKeyLookup) (*Opene
 	if err != nil {
 		return nil, withAck(ack, err)
 	}
+	innerPT, layers := w.body, 1
+	var key *IXKey
 	if w.ikid != nil {
-		var key *IXKey
 		if ix != nil {
 			if key, err = ix.IXKey(w.ikid); err != nil {
 				return nil, withAck(ack, err)
@@ -905,15 +894,26 @@ func Open(envelope []byte, selfAID string, ring KeyRing, ix IXKeyLookup) (*Opene
 		if key == nil {
 			return nil, withAck(ack, fail(ReasonSealedToClosedInteraction, "ikid %x", w.ikid))
 		}
-		// v030-todo(FS-2): open the second layer under key (L2), then
-		// require inner (ix, from) == (key.IX, key.PeerAID).
-		return nil, withAck(ack, fail(ReasonDecrypt, "a second layer is not implemented in this build"))
+		if err := key.answers(w.ikid); err != nil {
+			return nil, withAck(ack, failWrap(ReasonSealedToClosedInteraction, err, "ikid %x", w.ikid))
+		}
+		if innerPT, err = openLayer2(outer.To, key, w); err != nil {
+			return nil, withAck(ack, err)
+		}
+		layers = 2
 	}
 
 	// Step 4.
-	fields, inner, err := decodeInner(w.body)
+	fields, inner, err := decodeInner(innerPT)
 	if err != nil {
 		return nil, withAck(ack, err)
+	}
+	// The interaction key that opened the second layer belongs to one
+	// interaction with one peer; a message of another interaction or from
+	// another sender is not taken under it (FS-C13).
+	if key != nil && (inner.IX != key.IX || inner.From != key.PeerAID) {
+		return nil, withAck(ack, fail(ReasonIKeyMismatch, "inner (ix %q, from %s); interaction key of (ix %q, peer %s)",
+			inner.IX, inner.From, key.IX, key.PeerAID))
 	}
 	if inner.To != outer.To {
 		return nil, withAck(ack, fail(ReasonToMismatch, "inner to %s, outer to %s", inner.To, outer.To))
@@ -927,12 +927,12 @@ func Open(envelope []byte, selfAID string, ring KeyRing, ix IXKeyLookup) (*Opene
 			return nil, withAck(ack, err)
 		}
 	}
-	pre, err := sigPreimage(fields, outer.Enc, outer.KID, outer.Suite, nil, nil)
+	pre, err := sigPreimage(fields, outer.Enc, outer.KID, outer.Suite, w.ikid, w.enc2)
 	if err != nil {
 		return nil, withAck(ack, failWrap(ReasonBadInner, err, "signature preimage"))
 	}
 	return &Opened{
-		Outer: *outer, Inner: *inner, KEL: kel, Preimage: pre, AckKey: ack, Layers: 1,
+		Outer: *outer, Inner: *inner, KEL: kel, Preimage: pre, AckKey: ack, Layers: layers, IKID: w.ikid,
 		Access: outer.Access, RK: inner.RK, Notices: inner.Notices, Grant: inner.Grant,
 	}, nil
 }
@@ -941,6 +941,29 @@ func Open(envelope []byte, selfAID string, ring KeyRing, ix IXKeyLookup) (*Opene
 type wrapFields struct {
 	ikid, enc2 []byte // both nil for one layer
 	body       []byte
+}
+
+// paddedMap returns the Wrap of w as a field map with its zero pad (FS-C9),
+// and the length its encoding has: a Padmé length. decodeWrap of the encoded
+// map gives w back (P-8).
+func (w *wrapFields) paddedMap() (fieldMap, int, error) {
+	if (w.ikid == nil) != (w.enc2 == nil) {
+		return nil, 0, errors.New("ikid and enc2 go together")
+	}
+	m := fieldMap{}
+	var err error
+	if m[wrapKeyBody], err = encodeField(w.body); err != nil {
+		return nil, 0, err
+	}
+	if w.ikid != nil {
+		if m[wrapKeyIKID], err = encodeField(w.ikid); err != nil {
+			return nil, 0, err
+		}
+		if m[wrapKeyEnc2], err = encodeField(w.enc2); err != nil {
+			return nil, 0, err
+		}
+	}
+	return m, applyPad(m), nil
 }
 
 // decodeWrap is the Wrap decode of FS-C8: a map; no key 0, 4-20 or 22-63
@@ -1102,35 +1125,6 @@ func rawNotices(raw cbor.RawMessage) ([][]byte, error) {
 		out[i] = n
 	}
 	return out, nil
-}
-
-// decodeRK decodes inner key 15 (FS-C11): exactly {1: suite, 2: pub}, suite 1
-// and a 32-byte pub.
-func decodeRK(raw cbor.RawMessage) (*RK, error) {
-	m, err := decodeFields(raw)
-	if err != nil {
-		return nil, fmt.Errorf("rk: %w", err)
-	}
-	for k := range m {
-		if k < 1 || k > 2 {
-			return nil, fmt.Errorf("rk has key %d", k)
-		}
-	}
-	suite, err := rawUint(m, 1)
-	if err != nil {
-		return nil, fmt.Errorf("rk suite: %w", err)
-	}
-	if suite > 0xff {
-		return nil, fmt.Errorf("rk suite %d", suite)
-	}
-	r := &RK{Suite: Suite(suite)}
-	if r.Pub, err = rawBytes(m, 2); err != nil {
-		return nil, fmt.Errorf("rk pub: %w", err)
-	}
-	if err := r.check(); err != nil {
-		return nil, err
-	}
-	return r, nil
 }
 
 // CheckTime is receive step 5: now <= exp, ts <= now + ClockSkewMS, and
