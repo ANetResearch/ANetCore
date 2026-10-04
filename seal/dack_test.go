@@ -396,6 +396,10 @@ func badNoteReasons() []string {
 	return []string{
 		"Busy", "BUSY", "1busy", "_busy", "busy-x", "busy x", "busy ", " busy", "busy.x", "busy/x",
 		"busy\x00", "bus\u00ff", "büsy", strings.Repeat("a", MaxNoteReasonLen+1), "a\tb", "a\nb",
+		// Upper case, and the bytes between 'Z' and 'a', after a valid first letter.
+		"bUsy", "busY", "a[", "a^", "a`", "a{",
+		// One byte that is not a letter.
+		"_", "1", "A",
 	}
 }
 
@@ -518,6 +522,10 @@ func TestVerifyDAck(t *testing.T) {
 		{"L covers a NUL", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 60, 5, []byte("busy"))), broken},
 		{"an upper-case reason", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 60, 4, []byte("Busy"))), broken},
 		{"a reason that starts with a digit", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 60, 5, []byte("1busy"))), broken},
+		{"an upper-case letter after the first", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 60, 4, []byte("bUsy"))), broken},
+		{"a one-byte reason that is not a letter", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 60, 1, []byte("_"))), broken},
+		{"a one-byte reason", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 60, 1, []byte("b"))),
+			res{1, OutcomeRefused, Note{"b", 60}, true, true}},
 		{"retry_after over 86 400", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 1<<32-1, 4, []byte("busy"))),
 			res{1, OutcomeRefused, Note{NoteBusy, MaxRetryAfterS}, true, true}},
 		{"a well-formed code outside core §2.15.2 is kept", []AckKey{k1, k2}, resealNote(t, k2, OutcomeRefused, busy[:], rawNotePT(1, 0, 13, []byte("over_capacity"))),
@@ -678,6 +686,71 @@ func TestDAckImports(t *testing.T) {
 		default:
 			t.Errorf("dack.go imports %q: only crypto/*, encoding/binary and errors (DLV-C-5)", p)
 		}
+	}
+}
+
+// DLV-W-4: VerifyDAck compares tokens in constant time. Timing is not something a unit test can
+// measure, so the source is read instead: the token is compared with subtle.ConstantTimeCompare
+// (or hmac.Equal), VerifyDAck calls nothing else that could compare it, and every == or != in it
+// has a length or an integer literal on one side. A comparison of the token with == on strings or
+// arrays, or byte by byte, returns at the first difference and fails here.
+func TestVerifyDAckComparesInConstantTime(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "dack.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fd *ast.FuncDecl
+	for _, d := range f.Decls {
+		if x, ok := d.(*ast.FuncDecl); ok && x.Recv == nil && x.Name.Name == "VerifyDAck" {
+			fd = x
+		}
+	}
+	if fd == nil {
+		t.Fatal("no VerifyDAck in dack.go")
+	}
+	isLenOrInt := func(e ast.Expr) bool {
+		switch x := e.(type) {
+		case *ast.BasicLit:
+			return x.Kind == token.INT
+		case *ast.CallExpr:
+			id, ok := x.Fun.(*ast.Ident)
+			return ok && id.Name == "len"
+		}
+		return false
+	}
+	// The key's own methods: they derive, they do not compare the dack's token.
+	methods := []string{"isZero", "token", "openNote"}
+	constantTime := 0
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.CallExpr:
+			switch fn := x.Fun.(type) {
+			case *ast.Ident:
+				if fn.Name != "len" {
+					t.Errorf("VerifyDAck calls %s: the token is compared only in constant time (DLV-W-4)", fn.Name)
+				}
+			case *ast.SelectorExpr:
+				pkg, _ := fn.X.(*ast.Ident)
+				switch {
+				case pkg != nil && pkg.Name == "subtle" && fn.Sel.Name == "ConstantTimeCompare",
+					pkg != nil && pkg.Name == "hmac" && fn.Sel.Name == "Equal":
+					constantTime++
+				case slices.Contains(methods, fn.Sel.Name):
+				default:
+					t.Errorf("VerifyDAck calls .%s: the token is compared only in constant time (DLV-W-4)", fn.Sel.Name)
+				}
+			default:
+				t.Errorf("VerifyDAck makes a call through %T", fn)
+			}
+		case *ast.BinaryExpr:
+			if (x.Op == token.EQL || x.Op == token.NEQ) && !isLenOrInt(x.X) && !isLenOrInt(x.Y) {
+				t.Errorf("VerifyDAck compares with %s two values that are not a length or a literal (DLV-W-4)", x.Op)
+			}
+		}
+		return true
+	})
+	if constantTime == 0 {
+		t.Error("VerifyDAck does not compare the token with subtle.ConstantTimeCompare or hmac.Equal (DLV-W-4)")
 	}
 }
 

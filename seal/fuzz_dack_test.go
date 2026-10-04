@@ -144,6 +144,9 @@ func FuzzNoteOpen(f *testing.F) {
 	f.Add(rawNotePT(2, 0, 0, nil), uint8(1), false)
 	f.Add(rawNotePT(1, 0, 4, []byte("busy\x01")), uint8(2), false)
 	f.Add(rawNotePT(1, 0, 4, []byte("Busy")), uint8(2), false)
+	f.Add(rawNotePT(1, 0, 4, []byte("bUsy")), uint8(2), false)
+	f.Add(rawNotePT(1, 0, 1, []byte("_")), uint8(2), false)
+	f.Add(rawNotePT(1, 0, 1, []byte("b")), uint8(2), false)
 	f.Add(make([]byte, NoteLen), uint8(1), true)
 	f.Fuzz(func(t *testing.T, in []byte, ob uint8, raw bool) {
 		o := Outcome(ob%2 + 1)
