@@ -29,8 +29,9 @@ var smallOrderY = [...][ed25519.PublicKeySize]byte{
 // honest one is, never is: its scalar is a multiple of 8 in [2^254, 2^255), which is never a
 // multiple of the (odd, prime) group order, so the key is a point of that prime order.
 //
-// The test is a fixed list (the libsodium check, with the sign bit ignored), not a point
-// multiplication: it needs no decoding of the point and gives the same answer.
+// The test is a fixed list of encodings, compared with the sign bit ignored, rather than a
+// multiplication of the point by the cofactor: it needs no decoding of the point and gives the
+// same answer.
 func smallOrder(pub []byte) bool {
 	if len(pub) != ed25519.PublicKeySize {
 		return false
