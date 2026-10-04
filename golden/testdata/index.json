@@ -300,8 +300,8 @@
       "labels": ["L41", "L42", "L43"],
       "objects": ["OrgGenesis", "OrgCredBody", "SignedCredential", "CogUnitBody", "CogUnitWire", "HLC", "aobj.Envelope"],
       "at": [
-        {"repo": "ANet", "path": "module/org/testdata/vec-org-1.json", "todo": "v030-todo(CORE-5)"},
-        {"repo": "ANet", "path": "module/blackboard/testdata/vec-cogunit-1.json", "todo": "v030-todo(CORE-5)"}
+        {"repo": "ANet", "path": "module/org/testdata/vec-org-1.json"},
+        {"repo": "ANet", "path": "module/blackboard/testdata/vec-cogunit-1.json"}
       ]
     },
     {

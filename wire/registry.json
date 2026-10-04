@@ -2833,6 +2833,8 @@
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).sealWithOpts", "signs": "InnerSigPreimage"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).setupKeyRing", "signs": "EncKeySet"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).maintainKeyRing", "signs": "EncKeySet"},
+      {"repo": "ANet", "func": "(*module/org.Credential).Sign", "signs": "OrgCredBody"},
+      {"repo": "ANet", "func": "(*module/blackboard.CogUnit).Sign", "signs": "CogUnitBody"},
       {"repo": "ANet", "func": "(*module/x402.Module).Authorize", "signs": "PaymentAuthorization"},
       {"repo": "ANet", "func": "(*module/x402.Module).WitnessHub", "signs": "AELHeadAttestation"},
       {"repo": "ANet", "func": "(*module/x402.Module).signedGet", "signs": "L22"},
