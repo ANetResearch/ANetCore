@@ -165,6 +165,11 @@ func checkP2PAddr(a string) error {
 	return nil
 }
 
+// ValidP2PAddr reports whether a may be a Grant's p2p (key 5, core §2.3), so
+// that an issuer can leave out an address the grant could not carry instead
+// of failing to write the grant.
+func ValidP2PAddr(a string) bool { return checkP2PAddr(a) == nil }
+
 // UnmarshalGrant decodes a Grant strictly (step 1 of CheckGrant): a failure
 // is access-invalid with Detail "decode". It does not check the capability.
 func UnmarshalGrant(b []byte) (*Grant, error) {

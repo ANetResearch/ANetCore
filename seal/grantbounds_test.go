@@ -58,6 +58,9 @@ func TestGrantHomeAndP2PBounds(t *testing.T) {
 			}
 			g := &Grant{Cap: Cap{Body: b, Sig: ed25519.Sign(s.signer, b)}, HolderSeed: s.seed, Home: c.home, P2P: c.p2p}
 			_, merr := g.Marshal()
+			if c.p2p != nil && c.home == testHomeAID && ValidP2PAddr(*c.p2p) != c.ok {
+				t.Fatalf("ValidP2PAddr(%q) = %v", *c.p2p, !c.ok)
+			}
 			if c.ok {
 				wantStep(t, cerr, "")
 				if uerr != nil || merr != nil {
