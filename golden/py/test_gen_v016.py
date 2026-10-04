@@ -439,6 +439,31 @@ class SealV2(unittest.TestCase):
         self.assertTrue(g.ed25519_verify(bytes.fromhex(v["sender"]["pub"]), bytes.fromhex(v["sig_preimage"]),
                                          bytes.fromhex(v["inner"]["sig"])))
 
+    def test_sealed_2b_opens_in_python(self):
+        """Both layers of SEALED-2B open on the independent side: layer 1 with the epoch key, layer 2
+        with the interaction key under the anet-ix/v2 info; the single-layer envelope of the same
+        layer-1 ephemeral key has the same ack_key; the signature is over the preimage with ikid and
+        enc2, not over the single-layer one."""
+        v = g.gen_sealed_2b()
+        env = g.uncbor(bytes.fromhex(v["envelope"]))
+        ctx = g.SUITE1.setup_base_r(env[5], bytes.fromhex(v["recipient"]["sk"]), bytes.fromhex(v["hpke_info"]))
+        wrap = g.uncbor(ctx.open(b"", env[6]))
+        self.assertEqual(ctx.export(b"anet-dack/v1", 32).hex(), v["ack_key"])
+        self.assertEqual(sorted(wrap), [1, 2, 3, 21])
+        self.assertEqual(wrap[1].hex(), v["recipient_ix"]["kid"])
+        self.assertEqual(g.seal_ix_info(v["recipient"]["aid"], wrap[1]).hex(), v["ix_info"])
+        ctx2 = g.SUITE1.setup_base_r(wrap[2], bytes.fromhex(v["recipient_ix"]["sk"]), bytes.fromhex(v["ix_info"]))
+        inner = ctx2.open(b"", wrap[3])
+        self.assertEqual(inner.hex(), v["inner_cbor"])
+        one = g.uncbor(bytes.fromhex(v["single_layer"]["envelope"]))
+        ctx1 = g.SUITE1.setup_base_r(one[5], bytes.fromhex(v["recipient"]["sk"]), bytes.fromhex(v["hpke_info"]))
+        self.assertEqual(ctx1.export(b"anet-dack/v1", 32).hex(), v["ack_key"])
+        pub, sig = bytes.fromhex(v["sender"]["pub"]), bytes.fromhex(v["inner"]["sig"])
+        self.assertTrue(g.ed25519_verify(pub, bytes.fromhex(v["sig_preimage"]), sig))
+        self.assertFalse(g.ed25519_verify(pub, bytes.fromhex(v["single_layer"]["sig_preimage"]), sig))
+        self.assertEqual(env[8], v["inner"]["exp"])
+        self.assertEqual(env[7][1], 1)
+
 
 class AccessAndGrant(unittest.TestCase):
     """The reference checks behind ACCESS-1 and GRANT-1: each refuses at the step it names, and

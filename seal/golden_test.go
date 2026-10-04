@@ -6,6 +6,7 @@ package seal
 // and reproduces every value that does not depend on that key (CORE-G2).
 //
 //	SEALED-2A  seal/testdata/vec-sealed-2a.json  one valid single-layer envelope
+//	SEALED-2B  seal/testdata/vec-sealed-2b.json  one valid two-layer envelope (sealed2b_test.go)
 //	SEALED-2C  seal/testdata/vec-sealed-2c.json  negatives, each with its seal reason
 
 import (
@@ -328,7 +329,8 @@ func TestSEALED_2A(t *testing.T) {
 
 type vecSealed2C struct {
 	vecParties
-	Cases []struct {
+	RecipientIX vecIX `json:"recipient_ix"`
+	Cases       []struct {
 		Name        string   `json:"name"`
 		Stage       string   `json:"stage"`
 		Reason      string   `json:"reason"`
@@ -345,12 +347,15 @@ func TestSEALED_2C(t *testing.T) {
 	readVector(t, fileSealed2C, &v)
 	kp, senderPub := v.keys(t, "SEALED-2C")
 	ring := StaticKeyRing{kp}
+	// The recipient holds its interaction key in the base interaction (the second-layer cases).
+	ixKey := v.RecipientIX.key(t, "SEALED-2C", v.Sender.AID)
+	look := ixKeys{ixKey}
 	seen := map[string]bool{}
 	for _, c := range v.Cases {
 		seen[c.Reason] = true
 		t.Run(c.Name, func(t *testing.T) {
 			_, perr := ParseOuter(c.Envelope)
-			o, err := Open(c.Envelope, v.Recipient.AID, ring, nil)
+			o, err := Open(c.Envelope, v.Recipient.AID, ring, look)
 			switch c.Stage {
 			case "parse":
 				wantOpenFails(t, perr, c.Reason, false)
@@ -367,8 +372,18 @@ func TestSEALED_2C(t *testing.T) {
 				if !bytes.Equal(o.Preimage, c.SigPreimage) {
 					t.Fatal("preimage differs from the file")
 				}
-				fields := decryptFields(t, c.Envelope, kp)
-				if !bytes.Equal(designPreimage(t, fields, o.Outer.Enc, o.Outer.KID, 1, nil, nil), c.SigPreimage) {
+				var fields fieldMap
+				var ikid, enc2 []byte
+				if o.Layers == 2 {
+					w, inner := openBoth(t, c.Envelope, kp, ixKey)
+					ikid, enc2 = w.ikid, w.enc2
+					if fields, err = decodeFields(inner); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					fields = decryptFields(t, c.Envelope, kp)
+				}
+				if !bytes.Equal(designPreimage(t, fields, o.Outer.Enc, o.Outer.KID, 1, ikid, enc2), c.SigPreimage) {
 					t.Fatal("the file's preimage does not follow core §3.3")
 				}
 				ok := ed25519.Verify(senderPub, o.Preimage, o.Inner.Sig)
@@ -388,17 +403,43 @@ func TestSEALED_2C(t *testing.T) {
 		})
 	}
 	for _, r := range []string{"", ReasonBadVersion, ReasonUnknownField, ReasonAccessInvalid, ReasonBadWrap,
-		ReasonExpMismatch, ReasonBadInner, ReasonBadKEL, ReasonBadSig} {
+		ReasonExpMismatch, ReasonBadInner, ReasonBadKEL, ReasonBadSig, ReasonSealedToClosedInteraction,
+		ReasonDecrypt, ReasonIKeyMismatch, ReasonBadRK} {
 		if !seen[r] {
 			t.Errorf("no case with reason %q", r)
 		}
 	}
+	// The second layer's cases (FS §7.1): stripped, sealed again and added each keep the layer-1
+	// header of "ok, two layers", so the signature fails on the layering alone (CORE-L6, SI-31).
+	t.Run("layering", func(t *testing.T) {
+		byName := map[string][]byte{}
+		for _, c := range v.Cases {
+			byName[c.Name] = c.Envelope
+		}
+		okEnv := byName["ok, two layers"]
+		if okEnv == nil {
+			t.Fatal("no two-layer case")
+		}
+		ok, err := Open(okEnv, v.Recipient.AID, ring, look)
+		if err != nil || ok.Layers != 2 {
+			t.Fatalf("ok, two layers: %v", err)
+		}
+		for name, layers := range map[string]int{"second layer stripped": 1, "enc2 replaced": 2, "one layer moved under a second": 2} {
+			o, err := Open(byName[name], v.Recipient.AID, ring, look)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if o.Layers != layers || !bytes.Equal(o.Outer.Enc, ok.Outer.Enc) {
+				t.Fatalf("%s: %d layers, same layer-1 enc %v", name, o.Layers, bytes.Equal(o.Outer.Enc, ok.Outer.Enc))
+			}
+		}
+	})
 	t.Run("bad-sig under the KEL", func(t *testing.T) {
 		for _, c := range v.Cases {
 			if c.Stage != "sig" {
 				continue
 			}
-			o, err := Open(c.Envelope, v.Recipient.AID, ring, nil)
+			o, err := Open(c.Envelope, v.Recipient.AID, ring, look)
 			if err != nil {
 				t.Fatal(err)
 			}
