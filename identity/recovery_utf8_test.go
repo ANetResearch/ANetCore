@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ANetResearch/ANetCore/coredet"
 )
 
 // KEL C-34: a passphrase must be valid UTF-8. Bytes typed in a terminal that does not use UTF-8
@@ -115,6 +117,24 @@ func TestRecoveryHeaderAIDMustBeValid(t *testing.T) {
 		other := []byte(recReplace(t, string(file), "AID "+aid+"\n", "AID "+kel2A()[0].EventID+"\n"))
 		if _, err := ParseRecoveryFile(other); !errors.Is(err, ErrRecoveryWrongIdentity) {
 			t.Errorf("another valid AID in the header: %v, want ErrRecoveryWrongIdentity", err)
+		}
+	}
+	// The block is the authority: a block whose AID is not an AID is not a recovery file, even
+	// under a header that names a valid AID (not a mismatch between the two).
+	for _, file := range [][]byte{pt, lt} {
+		f, err := parseRecovery(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := f.blob
+		b.AID = spare
+		raw, err := coredet.Marshal(&b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := []byte(recReplace(t, string(renderRecovery(&b, raw)), "AID "+spare+"\n", "AID "+aid+"\n"))
+		if _, err := ParseRecoveryFile(text); !errors.Is(err, ErrRecoveryFormat) {
+			t.Errorf("a block naming %s under a valid header: %v, want ErrRecoveryFormat", spare, err)
 		}
 	}
 	for name, bad := range invalid {
