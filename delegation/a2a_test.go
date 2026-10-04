@@ -41,10 +41,13 @@ func TestNewFieldKeysAreAssignedAndOptional(t *testing.T) {
 	}{
 		{"ChatMsg.Metadata", &ChatMsg{Kind: "x", Metadata: []byte(`{}`)}, []uint64{1, 10}},
 		{"ChatMsg without metadata", &ChatMsg{Kind: "x"}, []uint64{1}},
-		{"DelegateReq.ContextID", &DelegateReq{ContextID: "ctx"}, []uint64{1, 2, 3, 4, 7}},
-		{"DelegateReq.Metadata", &DelegateReq{Metadata: []byte(`{}`)}, []uint64{1, 2, 3, 4, 8}},
-		{"DelegateReq without new fields", &DelegateReq{}, []uint64{1, 2, 3, 4}},
+		// Keys 3 (the body KEL) and 6 (the prepayment) are retired: no field encodes to them.
+		{"DelegateReq.ContextID", &DelegateReq{ContextID: "ctx"}, []uint64{1, 2, 4, 7}},
+		{"DelegateReq.Metadata", &DelegateReq{Metadata: []byte(`{}`)}, []uint64{1, 2, 4, 8}},
+		{"DelegateReq without new fields", &DelegateReq{}, []uint64{1, 2, 4}},
 		{"ResultResp.Metadata", &ResultResp{Status: StatusDone, Metadata: []byte(`{}`)}, []uint64{1, 5}},
+		// Key 4 (the body KEL) is retired; key 6 is the reply.
+		{"ResultResp.Reply", &ResultResp{Status: StatusDone, Reply: &ReplyMsg{Kind: ChatText, MsgID: "m"}}, []uint64{1, 6}},
 		{"ResultResp without metadata", &ResultResp{Status: StatusDone}, []uint64{1}},
 		{"StatusMsg full", &StatusMsg{State: StateWorking, Text: "t", Metadata: []byte(`{}`), At: 1}, []uint64{1, 2, 3, 4}},
 		// One optional field at a time, so two fields that swap keys are caught here and not only
@@ -73,7 +76,12 @@ func TestNewFieldsRoundTrip(t *testing.T) {
 		t.Errorf("ChatMsg round trip: %+v, %v", cback, err)
 	}
 
-	dr := &DelegateReq{TaskDoc: []byte{0xa0}, InteractionID: "ix", ContextID: "ctx-1", Metadata: meta}
+	alice, err := identitytest.Hub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dr := signedReq(t, alice, "x")
+	dr.ContextID, dr.Metadata = "ctx-1", meta
 	b, err = dr.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -133,15 +141,6 @@ func TestStatusStatesAndCancelKindArePinned(t *testing.T) {
 	}
 }
 
-func marshalKEL(t *testing.T, kel []identity.SignedEvent) []byte {
-	t.Helper()
-	b, err := identity.MarshalKEL(kel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
 func TestVerifyDelegateReqWithKEL(t *testing.T) {
 	alice, err := identitytest.Hub()
 	if err != nil {
@@ -151,10 +150,10 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := signedReq(t, alice, "move the camera") // body KEL = alice's KEL at signing time
+	req := signedReq(t, alice, "move the camera")
 	aliceAtSigning := append([]identity.SignedEvent(nil), alice.KEL()...)
 
-	t.Run("body KEL equal to the resolved KEL", func(t *testing.T) {
+	t.Run("the resolved KEL at signing time", func(t *testing.T) {
 		aid, doc, docBytes, err := VerifyDelegateReqWithKEL(req, aliceAtSigning, 1767225600000)
 		if err != nil {
 			t.Fatalf("a genuine delegation must verify: %v", err)
@@ -164,70 +163,25 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 		}
 	})
 
-	t.Run("no body KEL", func(t *testing.T) {
-		r := *req
-		r.KEL = nil
-		if _, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1767225600000); err != nil {
-			t.Fatalf("an absent body KEL must be accepted: %v", err)
-		}
-	})
-
-	t.Run("body KEL is a prefix of the resolved KEL", func(t *testing.T) {
+	t.Run("a resolved KEL that extends the signing one", func(t *testing.T) {
 		a2, _ := identitytest.Hub()
 		r := signedReq(t, a2, "x")
 		if err := identitytest.Rotate(a2, 1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, _, err := VerifyDelegateReqWithKEL(r, a2.KEL(), 1767225600000); err != nil {
-			t.Fatalf("a body KEL that the resolved KEL extends must be accepted: %v", err)
+			t.Fatalf("a signature by a key the resolved KEL still lists at the message time must verify: %v", err)
 		}
 	})
 
-	t.Run("body KEL forks from the resolved KEL", func(t *testing.T) {
-		r := *req
-		r.KEL = marshalKEL(t, mallory.KEL())
-		_, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1767225600000)
-		if !errors.Is(err, ErrBodyKELMismatch) || !errors.Is(err, identity.ErrKELFork) {
-			t.Fatalf("want ErrBodyKELMismatch wrapping ErrKELFork, got %v", err)
-		}
-	})
-
-	t.Run("body KEL runs ahead of the resolved KEL", func(t *testing.T) {
-		a3, _ := identitytest.Hub()
-		r := signedReq(t, a3, "x")
-		stale := append([]identity.SignedEvent(nil), a3.KEL()...)
-		if err := identitytest.Rotate(a3, 1767225601000); err != nil {
-			t.Fatal(err)
-		}
-		r.KEL = marshalKEL(t, a3.KEL())
-		_, _, _, err := VerifyDelegateReqWithKEL(r, stale, 1767225600000)
-		if !errors.Is(err, ErrBodyKELMismatch) || !errors.Is(err, identity.ErrKELRollback) {
-			t.Fatalf("want ErrBodyKELMismatch wrapping ErrKELRollback, got %v", err)
-		}
-	})
-
-	t.Run("undecodable body KEL", func(t *testing.T) {
-		r := *req
-		r.KEL = []byte("not a kel")
-		if _, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1); err == nil ||
-			!strings.Contains(err.Error(), "bad body KEL") {
-			t.Fatalf("want bad body KEL, got %v", err)
-		}
-	})
-
-	// The case C4d is about. Mallory signs a TaskDoc as himself and ships his own KEL in the body;
-	// the envelope came from Alice, so the receiver resolved Alice's KEL. The body KEL decides
-	// nothing: with it the request is a mismatch, without it the signature does not verify
-	// against Alice's key history.
+	// The case C4d is about. Mallory signs a TaskDoc as himself; the envelope came from Alice, so
+	// the receiver resolved Alice's KEL, and the signature does not verify against it. There is no
+	// KEL in the body any more for him to offer instead.
 	t.Run("TaskDoc signed by someone other than the resolved sender", func(t *testing.T) {
 		forged := signedReq(t, mallory, "wipe the recordings")
-		if _, _, _, err := VerifyDelegateReqWithKEL(forged, aliceAtSigning, 1767225600000); !errors.Is(err, ErrBodyKELMismatch) {
-			t.Errorf("with Mallory's body KEL: want ErrBodyKELMismatch, got %v", err)
-		}
-		forged.KEL = nil
 		aid, _, _, err := VerifyDelegateReqWithKEL(forged, aliceAtSigning, 1767225600000)
 		if err == nil || !strings.Contains(err.Error(), "signature invalid") {
-			t.Errorf("without a body KEL: want signature invalid, got aid %q err %v", aid, err)
+			t.Errorf("want signature invalid, got aid %q err %v", aid, err)
 		}
 		if aid != "" {
 			t.Errorf("a refused delegation must name nobody, got %s", aid)
@@ -252,17 +206,32 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 			t.Errorf("want missing interaction id, got %v", err)
 		}
 	})
+
+	// A DelegateReq built in memory is held to the decoder's TaskDoc rule: a key no TaskDoc
+	// object assigns, or a second encoding of the same TaskDoc, is refused before the signature
+	// is looked at.
+	t.Run("the TaskDoc rule of the decoder", func(t *testing.T) {
+		for name, edit := range map[string]func([]byte) []byte{
+			"unassigned key": func(b []byte) []byte { return addTopKey(t, b, 5) },
+			"not canonical":  func(b []byte) []byte { return nonCanonical(t, b) },
+		} {
+			r := *req
+			r.TaskDoc = edit(req.TaskDoc)
+			if _, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1767225600000); !errors.Is(err, ErrBody) {
+				t.Errorf("%s: want ErrBody, got %v", name, err)
+			}
+		}
+	})
 }
 
 // msgTime, not the verifier's clock, drives the revocation gate, and the gate is evaluated on the
-// resolved KEL, not on the shorter KEL the body carried. Bob signs at seq 0 and later rotates at
-// t=5000; his message still carries the pre-rotation KEL.
+// resolved KEL. Bob signs at seq 0 and later rotates at t=5000.
 func TestVerifyDelegateReqWithKELUsesMsgTimeAndResolvedKEL(t *testing.T) {
 	bob, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := signedReq(t, bob, "x") // body KEL = [icp]
+	req := signedReq(t, bob, "x") // signed at key state 0
 	if err := identitytest.Rotate(bob, 5000); err != nil {
 		t.Fatal(err)
 	}
