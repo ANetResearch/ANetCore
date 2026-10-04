@@ -125,7 +125,7 @@
       "covers": "next-key seeds and keys at seq 2, 3, 4; a RecoveryBlob under a fixed passphrase, salt and nonce (wrong passphrase, changed AID header); a RecoveryBlob of kdf local under a fixed local key and nonce (each mode opened as the other, wrong local key)",
       "labels": ["L19", "L20"],
       "objects": ["RecoveryBlob", "RecoveryKDF"],
-      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-recovery-1.json", "todo": "v030-todo(KEL-3)"}]
+      "at": [{"repo": "ANetCore", "path": "identity/testdata/vec-recovery-1.json"}]
     },
     {
       "id": "KSN-1",

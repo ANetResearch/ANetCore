@@ -1,0 +1,192 @@
+{
+  "id": "RECOVERY-1",
+  "about": "Recovery seed and recovery file (L19, L20). aid is the KEL-2B agent; rs = SHA-256 of rs_label. next_keys: seed = HKDF-SHA256(ikm = rs, salt = \"anet-kel-next/v1\", info = UTF-8(aid) || 0x00 || u64be(seq), L = 32), pub its Ed25519 public key, next_digest = SHA-256(pub). passphrase_file: salt is the first 16 and nonce the first 24 bytes of SHA-256 of their labels; key = argon2id(NFC(passphrase), salt, t = 3, m = 65536 KiB, p = 4, 32); aad = coredet(RecoveryBlob without key 7); blob = coredet(RecoveryBlob) with ct = XChaCha20-Poly1305(key, nonce, rs, aad); text is the file as written, before the caller's note lines. local_file: the same seed under kdf {1: \"local\"}, key = local_key = SHA-256 of its label. Each negative is a file opened with the interface and secret given, and the error class it must give; each derive negative is refused by next-key derivation.",
+  "aid": "bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re",
+  "rs_label": "anet-golden/v016/RECOVERY-1/rs",
+  "rs": "946e7148bde63b6df7deed431e828c662432815163c94525cd7fa93ff97fa5ed",
+  "next_keys": [
+    {
+      "seq": 2,
+      "seed": "7a2a25ad41d21e8ebf4ac6f8ee7f2f15fe157bfbfa6cca6428ae2a41077b2549",
+      "pub": "380c81c1c1bc150c5145c636ecc336d0848ceed77493b856c72261e4151ba1dc",
+      "next_digest": "f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda"
+    },
+    {
+      "seq": 3,
+      "seed": "b0a15f876764d9a1ab207ba735d8057ec59962dc51ef7164e332c2594e0295bf",
+      "pub": "f99d74b5c473283e66a41d2b38e5b37b6c7da6a1a7f0fb296e125b8f3b703ce8",
+      "next_digest": "32ca6ebec0d244e5057998a4565e397746aa4ff49be60f77551541af919f31ff"
+    },
+    {
+      "seq": 4,
+      "seed": "a53984ea84428d2dd9f5cba390324150d21ece5572a9adcef961865eaff4a2fe",
+      "pub": "082f4e72ff6079bf9ff844336c3d112f3dc27ae41517436eba5af4b36e90d119",
+      "next_digest": "7fe2df1156744e19eb457b96e43312a2b9f0216b347c41f6ef1b08e6b130ca7b"
+    }
+  ],
+  "passphrase_file": {
+    "passphrase": "anet recovery vector passphrase v1",
+    "salt_label": "anet-golden/v016/RECOVERY-1/salt",
+    "salt": "650dec542a91ae398bb7e607aaff3f5e",
+    "nonce_label": "anet-golden/v016/RECOVERY-1/nonce",
+    "nonce": "da7ae814ddd85cfe741fb68c02420c323f6127f5c376d9da",
+    "hub": "https://hub.example",
+    "commits": {
+      "seq": 2,
+      "next_digest": "f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda"
+    },
+    "key": "1768213346b18ea840df10e7b98f3d22f6feb2f0650b04c300e4c996e325b1e1",
+    "aad": "a7006f616e65742e7265636f766572792f3101783b626166797265696375676b7966773263787967326c6275636c646334746d776968793377797064676775707365727a61767372377365626932726502a501686172676f6e3269640203031a0001000004040550650dec542a91ae398bb7e607aaff3f5e0371786368616368613230706f6c7931333035045818da7ae814ddd85cfe741fb68c02420c323f6127f5c376d9da057368747470733a2f2f6875622e6578616d706c650682025820f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda",
+    "blob": "a8006f616e65742e7265636f766572792f3101783b626166797265696375676b7966773263787967326c6275636c646334746d776968793377797064676775707365727a61767372377365626932726502a501686172676f6e3269640203031a0001000004040550650dec542a91ae398bb7e607aaff3f5e0371786368616368613230706f6c7931333035045818da7ae814ddd85cfe741fb68c02420c323f6127f5c376d9da057368747470733a2f2f6875622e6578616d706c650682025820f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda075830d3a67ae3207b729da64f4a29b0eef5f6642a88e6402e897aa57872507c27a4770cbeb100a1e119b7d9ececc2807f204c",
+    "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n"
+  },
+  "local_file": {
+    "local_key_label": "anet-golden/v016/RECOVERY-1/local-key",
+    "local_key": "6bdadde628c13c60c37ee9c0b5da4557aa2a1911b0011cfc090168416e410d78",
+    "nonce_label": "anet-golden/v016/RECOVERY-1/local-nonce",
+    "nonce": "c3cdfbad95ff011ee146bff7d2de4f1abdce1ff0ad031ed6",
+    "hub": "https://hub.example",
+    "commits": {
+      "seq": 2,
+      "next_digest": "f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda"
+    },
+    "aad": "a7006f616e65742e7265636f766572792f3101783b626166797265696375676b7966773263787967326c6275636c646334746d776968793377797064676775707365727a61767372377365626932726502a101656c6f63616c0371786368616368613230706f6c7931333035045818c3cdfbad95ff011ee146bff7d2de4f1abdce1ff0ad031ed6057368747470733a2f2f6875622e6578616d706c650682025820f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda",
+    "blob": "a8006f616e65742e7265636f766572792f3101783b626166797265696375676b7966773263787967326c6275636c646334746d776968793377797064676775707365727a61767372377365626932726502a101656c6f63616c0371786368616368613230706f6c7931333035045818c3cdfbad95ff011ee146bff7d2de4f1abdce1ff0ad031ed6057368747470733a2f2f6875622e6578616d706c650682025820f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda075830e6121ee0405d34cb83eb49a995acc29ba9302b3ad3bd66f25364ce97a296d998ebee1fa1b515fa19eba9f5fc8de22063",
+    "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCoQFlbG9jYWwDcXhjaGFj\naGEyMHBvbHkxMzA1BFgYw837rZX/AR7hRr/30t5PGr3OH/CtAx7WBXNodHRwczov\nL2h1Yi5leGFtcGxlBoICWCD2AOn1iGVOt5tSkTEEfYo4nxWLoGmnrFZkgFFX6P+M\n2gdYMOYSHuBAXTTLg+tJqZWswpupMCs6071m8lNkzpeiltmY6+4fobUV+hnrqfX8\njeIgYw==\n"
+  },
+  "negatives": [
+    {
+      "name": "wrong passphrase",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v2",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-passphrase"
+    },
+    {
+      "name": "AID in the header changed",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreiaal7k2ike6wvs46k4ga2s7klovc2hdfrn7xqsnp6quc4jzcr2pse\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-wrong-identity"
+    },
+    {
+      "name": "commits seq in the header changed",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 3 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-wrong-identity"
+    },
+    {
+      "name": "commits digest in the header changed",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 32ca6ebec0d244e5057998a4565e397746aa4ff49be60f77551541af919f31ff\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-wrong-identity"
+    },
+    {
+      "name": "hub in the header changed",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://other.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-wrong-identity"
+    },
+    {
+      "name": "one byte of the ciphertext changed",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IE0=\n",
+      "error": "recovery-passphrase"
+    },
+    {
+      "name": "key 6 dropped from the block",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\npwBvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQdYMNOm\neuMge3Kdpk9KKbDu9fZkKojmQC6JeqV4clB8J6R3DL6xAKHhGbfZ7OzCgH8gTA==\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "unregistered key 8 added to the block",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqQBvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEwI9g==\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "the block not in canonical form (commits seq in two bytes)",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCGAJY\nIPYA6fWIZU63m1KRMQR9ijifFYugaaesVmSAUVfo/4zaB1gw06Z64yB7cp2mT0op\nsO719mQqiOZALol6pXhyUHwnpHcMvrEAoeEZt9ns7MKAfyBM\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "argon2id t changed to 4",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCBAMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "commits not derived from the sealed seed",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 32ca6ebec0d244e5057998a4565e397746aa4ff49be60f77551541af919f31ff\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\nMspuvsDSROUFeZikVl45d0aqT/Sb5g93VRVBr5GfMf8HWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekd57yAmLl9tNiWOmNlju7B0Y=\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "the local file opened with the passphrase interface",
+      "open": "passphrase",
+      "passphrase": "anet recovery vector passphrase v1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCoQFlbG9jYWwDcXhjaGFj\naGEyMHBvbHkxMzA1BFgYw837rZX/AR7hRr/30t5PGr3OH/CtAx7WBXNodHRwczov\nL2h1Yi5leGFtcGxlBoICWCD2AOn1iGVOt5tSkTEEfYo4nxWLoGmnrFZkgFFX6P+M\n2gdYMOYSHuBAXTTLg+tJqZWswpupMCs6071m8lNkzpeiltmY6+4fobUV+hnrqfX8\njeIgYw==\n",
+      "error": "recovery-unprotected"
+    },
+    {
+      "name": "the passphrase file opened with the local-key interface",
+      "open": "local",
+      "local_key": "6bdadde628c13c60c37ee9c0b5da4557aa2a1911b0011cfc090168416e410d78",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "the passphrase file opened with the local-key interface and its own argon2id key",
+      "open": "local",
+      "local_key": "1768213346b18ea840df10e7b98f3d22f6feb2f0650b04c300e4c996e325b1e1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCpQFoYXJnb24yaWQCAwMa\nAAEAAAQEBVBlDexUKpGuOYu35geq/z9eA3F4Y2hhY2hhMjBwb2x5MTMwNQRYGNp6\n6BTd2Fz+dB+2jAJCDDI/YSf1w3bZ2gVzaHR0cHM6Ly9odWIuZXhhbXBsZQaCAlgg\n9gDp9YhlTrebUpExBH2KOJ8Vi6Bpp6xWZIBRV+j/jNoHWDDTpnrjIHtynaZPSimw\n7vX2ZCqI5kAuiXqleHJQfCekdwy+sQCh4Rm32ezswoB/IEw=\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "the passphrase block relabelled local, opened with its own argon2id key",
+      "open": "local",
+      "local_key": "1768213346b18ea840df10e7b98f3d22f6feb2f0650b04c300e4c996e325b1e1",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCoQFlbG9jYWwDcXhjaGFj\naGEyMHBvbHkxMzA1BFgY2nroFN3YXP50H7aMAkIMMj9hJ/XDdtnaBXNodHRwczov\nL2h1Yi5leGFtcGxlBoICWCD2AOn1iGVOt5tSkTEEfYo4nxWLoGmnrFZkgFFX6P+M\n2gdYMNOmeuMge3Kdpk9KKbDu9fZkKojmQC6JeqV4clB8J6R3DL6xAKHhGbfZ7OzC\ngH8gTA==\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "wrong local key",
+      "open": "local",
+      "local_key": "99b11c9b00d964578a23ff9efcd2975e1b2c67bed36509c86eb24a9b31e9b0a5",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCoQFlbG9jYWwDcXhjaGFj\naGEyMHBvbHkxMzA1BFgYw837rZX/AR7hRr/30t5PGr3OH/CtAx7WBXNodHRwczov\nL2h1Yi5leGFtcGxlBoICWCD2AOn1iGVOt5tSkTEEfYo4nxWLoGmnrFZkgFFX6P+M\n2gdYMOYSHuBAXTTLg+tJqZWswpupMCs6071m8lNkzpeiltmY6+4fobUV+hnrqfX8\njeIgYw==\n",
+      "error": "recovery-format"
+    },
+    {
+      "name": "one byte of the local ciphertext changed",
+      "open": "local",
+      "local_key": "6bdadde628c13c60c37ee9c0b5da4557aa2a1911b0011cfc090168416e410d78",
+      "text": "anet-recovery v1\nAID bafyreicugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re\nhub https://hub.example\ncommits 2 f600e9f588654eb79b529131047d8a389f158ba069a7ac5664805157e8ff8cda\n\nqABvYW5ldC5yZWNvdmVyeS8xAXg7YmFmeXJlaWN1Z2t5ZncyY3h5ZzJsYnVjbGRj\nNHRtd2loeTN3eXBkZ2d1cHNlcnphdnNyN3NlYmkycmUCoQFlbG9jYWwDcXhjaGFj\naGEyMHBvbHkxMzA1BFgYw837rZX/AR7hRr/30t5PGr3OH/CtAx7WBXNodHRwczov\nL2h1Yi5leGFtcGxlBoICWCD2AOn1iGVOt5tSkTEEfYo4nxWLoGmnrFZkgFFX6P+M\n2gdYMOYSHuBAXTTLg+tJqZWswpupMCs6071m8lNkzpeiltmY6+4fobUV+hnrqfX8\njeIgYg==\n",
+      "error": "recovery-format"
+    }
+  ],
+  "derive_negatives": [
+    {
+      "name": "AID holding U+0000",
+      "aid": "bafyreic\u0000ugkyfw2cxyg2lbucldc4tmwihy3wypdggupserzavsr7sebi2re",
+      "seq": 2,
+      "error": "next-key-input"
+    },
+    {
+      "name": "empty AID",
+      "aid": "",
+      "seq": 2,
+      "error": "next-key-input"
+    }
+  ]
+}
