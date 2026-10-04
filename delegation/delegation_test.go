@@ -10,14 +10,12 @@ import (
 	"github.com/ANetResearch/ANetCore/tsir"
 )
 
-// VerifyDelegateReq is where a stranger becomes an accountable peer.
+// VerifyDelegateReqWithKEL is where a stranger becomes an accountable peer.
 //
 // Everything downstream trusts the AID it returns: the interaction is
 // recorded against it, the receipt names it, the KEL cache remembers it,
-// and a shared blackboard later merges contributions on its authority. It
-// had no tests of its own — it was exercised only through daemon tests
-// that feed it well-formed input, which is the shape that tests a verifier
-// least. A verifier is defined by what it refuses.
+// and a shared blackboard later merges contributions on its authority. A
+// verifier is defined by what it refuses.
 
 func signedReq(t *testing.T, c *identity.Controller, goal string) *DelegateReq {
 	t.Helper()
@@ -32,11 +30,7 @@ func signedReq(t *testing.T, c *identity.Controller, goal string) *DelegateReq {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kel, err := identity.MarshalKEL(c.KEL())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &DelegateReq{TaskDoc: raw, Envelope: doc.Envelope, KEL: kel, InteractionID: "ix-1"}
+	return &DelegateReq{TaskDoc: raw, Envelope: doc.Envelope, InteractionID: "ix-1"}
 }
 
 func TestAGenuineDelegationVerifies(t *testing.T) {
@@ -46,7 +40,7 @@ func TestAGenuineDelegationVerifies(t *testing.T) {
 	}
 	req := signedReq(t, alice, "move the camera")
 
-	aid, doc, docBytes, err := VerifyDelegateReq(req)
+	aid, doc, docBytes, err := VerifyDelegateReqWithKEL(req, alice.KEL(), 1767225600000)
 	if err != nil {
 		t.Fatalf("a genuine delegation must verify: %v", err)
 	}
@@ -64,7 +58,9 @@ func TestAGenuineDelegationVerifies(t *testing.T) {
 }
 
 // Each of these is a way to claim to be someone else. The names describe
-// the attack, because a table of "bad input" is a table nobody reads.
+// the attack, because a table of "bad input" is a table nobody reads. The
+// KEL is the one the receiver resolved for the sender of the envelope:
+// Alice's.
 func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
 	alice, err := identity.Incept()
 	if err != nil {
@@ -81,26 +77,26 @@ func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
 		want   string
 	}{
 		{
-			// The obvious one: keep Alice's signed TaskDoc, swap in your own
-			// key history. If the KEL were taken on faith, anyone could
-			// replay a delegation they intercepted as their own.
-			attack: "substitute the sender's key history",
-			mutate: func(r *DelegateReq) {
-				kel, _ := identity.MarshalKEL(mallory.KEL())
-				r.KEL = kel
-			},
-			want: "signature invalid",
-		},
-		{
 			// Sign it yourself, then claim to be Alice. The envelope's
 			// SignerAID is what the daemon records as accountable, so it
 			// must be bound to the key that actually signed.
 			attack: "sign as yourself but claim another AID",
 			mutate: func(r *DelegateReq) {
 				forged := signedReq(t, mallory, "move the camera")
-				r.TaskDoc, r.KEL = forged.TaskDoc, forged.KEL
+				r.TaskDoc = forged.TaskDoc
 				r.Envelope = forged.Envelope
 				r.Envelope.SignerAID = alice.AID()
+			},
+			want: "signature invalid",
+		},
+		{
+			// Sign it yourself and say so: the receiver resolved Alice's
+			// key history for the envelope, so Mallory's signature is not
+			// hers.
+			attack: "sign as yourself inside another's envelope",
+			mutate: func(r *DelegateReq) {
+				forged := signedReq(t, mallory, "wipe the recordings")
+				r.TaskDoc, r.Envelope = forged.TaskDoc, forged.Envelope
 			},
 			want: "signature invalid",
 		},
@@ -135,17 +131,12 @@ func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
 			// read past the end of the slice.
 			attack: "send a TaskDoc with no tasks",
 			mutate: func(r *DelegateReq) {
-				empty := &tsir.TaskDoc{Version: tsir.VersionPair{Major: 1}}
+				empty := &tsir.TaskDoc{Version: tsir.VersionPair{Major: 1}, Tasks: []tsir.Task{}}
 				_ = empty.Sign(alice)
 				raw, _ := coredet.Marshal(*empty)
 				r.TaskDoc, r.Envelope = raw, empty.Envelope
 			},
 			want: "task-less",
-		},
-		{
-			attack: "send a malformed key history",
-			mutate: func(r *DelegateReq) { r.KEL = []byte("not a kel") },
-			want:   "bad KEL",
 		},
 	}
 
@@ -153,7 +144,7 @@ func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
 		t.Run(tc.attack, func(t *testing.T) {
 			req := signedReq(t, alice, "move the camera")
 			tc.mutate(req)
-			aid, _, _, err := VerifyDelegateReq(req)
+			aid, _, _, err := VerifyDelegateReqWithKEL(req, alice.KEL(), 1767225600000)
 			if err == nil {
 				t.Fatalf("accepted a delegation that %s, as %s", tc.attack, aid)
 			}
@@ -168,7 +159,11 @@ func TestVerifyRefusesEveryWayOfLyingAboutWhoSent(t *testing.T) {
 }
 
 func TestVerifyRefusesNil(t *testing.T) {
-	if _, _, _, err := VerifyDelegateReq(nil); err == nil {
+	alice, err := identity.Incept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := VerifyDelegateReqWithKEL(nil, alice.KEL(), 1); err == nil {
 		t.Error("nil must be refused, not dereferenced")
 	}
 }
@@ -193,14 +188,15 @@ func TestWireTypesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := VerifyDelegateReq(back); err != nil {
+	if _, _, _, err := VerifyDelegateReqWithKEL(back, alice.KEL(), 1767225600000); err != nil {
 		t.Fatalf("a delegation must still verify after the wire: %v", err)
 	}
 	if len(back.Attachments) != 1 || string(back.Attachments[0].Data) != "\x01\x02\x03" {
 		t.Errorf("attachment bytes lost: %+v", back.Attachments)
 	}
 
-	res := &ResultResp{Status: StatusDone, Deliverable: []byte(`{"ok":true}`), Receipt: []byte{9, 9}}
+	res := &ResultResp{Status: StatusDone, Deliverable: []byte(`{"ok":true}`), Receipt: []byte{9, 9},
+		Reply: &ReplyMsg{Kind: ChatText, Body: "done", MsgID: "m-9"}}
 	rb, err := res.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +205,7 @@ func TestWireTypesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(rback.Deliverable) != `{"ok":true}` || string(rback.Receipt) != "\x09\x09" {
+	if !reflect.DeepEqual(rback, res) {
 		t.Errorf("result lost on the wire: %+v", rback)
 	}
 
@@ -229,17 +225,18 @@ func TestWireTypesRoundTrip(t *testing.T) {
 
 // The divergence this package exists to end.
 //
-// A hub-sent stream preview must reach the daemon whole. Before the two
-// copies were merged the daemon's ChatMsg stopped at key 3, so keys 4-7
-// simply were not there on arrival — CBOR keyasint drops an unknown key
-// without a word — and the message itself was discarded on an unrecognised
-// kind. The hub streamed; the far side showed nothing until the reply was
-// finished; no log said why.
+// A preview frame must reach the far side whole. Before the two copies
+// were merged the daemon's ChatMsg stopped at key 3, so keys 4-7 simply
+// were not there on arrival — a lax CBOR decoder drops an unknown key
+// without a word — and the message itself was discarded on an
+// unrecognised kind. Every field of a frame, keys 11-13 included, must
+// survive the wire.
 func TestAStreamingReplySurvivesTheWire(t *testing.T) {
 	sent := &ChatMsg{
 		Kind: ChatStreamPreview, Body: "partial answer so far",
-		StreamSeq: 7, StreamAtMS: 1767225600000,
+		StreamSeq: 1767225600001, StreamAtMS: 1767225600000,
 		ReasoningBody: "considering the second approach", ReasoningStreamAtMS: 1767225599000,
+		MsgID: "p-1", Omitted: 12, ReasoningOmitted: 40, Answers: "m-1",
 	}
 	b, err := sent.Marshal()
 	if err != nil {
@@ -250,13 +247,15 @@ func TestAStreamingReplySurvivesTheWire(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, sent) {
-		t.Errorf("a streaming preview was altered on the wire:\n got %+v\nwant %+v", *got, *sent)
+		t.Errorf("a preview frame was altered on the wire:\n got %+v\nwant %+v", *got, *sent)
+	}
+	if err := ValidatePreview(got); err != nil {
+		t.Errorf("a well-formed preview frame is refused: %v", err)
 	}
 }
 
 // The keys are the contract. Two implementations agree by agreeing on
-// these numbers, so moving one renames a field for everyone at once —
-// silently, because an unknown key decodes as an absent one.
+// these numbers, so moving one renames a field for everyone at once.
 func TestChatMsgKeysArePinned(t *testing.T) {
 	// Encoded alone, each field must land on its documented key.
 	for _, tc := range []struct {
@@ -265,11 +264,16 @@ func TestChatMsgKeysArePinned(t *testing.T) {
 	}{
 		{1, ChatMsg{Kind: "x"}},
 		{2, ChatMsg{Kind: "x", Body: "b"}},
+		{3, ChatMsg{Kind: "x", Attachments: []Attachment{{Name: "a", Size: 1, CID: "c"}}}},
 		{4, ChatMsg{Kind: "x", StreamSeq: 9}},
 		{5, ChatMsg{Kind: "x", StreamAtMS: 9}},
 		{6, ChatMsg{Kind: "x", ReasoningBody: "r"}},
 		{7, ChatMsg{Kind: "x", ReasoningStreamAtMS: 9}},
 		{9, ChatMsg{Kind: "x", MsgID: "m-1"}},
+		{10, ChatMsg{Kind: "x", Metadata: []byte(`{}`)}},
+		{11, ChatMsg{Kind: "x", Omitted: 9}},
+		{12, ChatMsg{Kind: "x", ReasoningOmitted: 9}},
+		{13, ChatMsg{Kind: "x", Answers: "m-0"}},
 	} {
 		b, err := tc.msg.Marshal()
 		if err != nil {
@@ -279,8 +283,8 @@ func TestChatMsgKeysArePinned(t *testing.T) {
 		if err := coredet.Unmarshal(b, &raw); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := raw[tc.key]; !ok {
-			t.Errorf("key %d missing for %+v — encoded keys %v", tc.key, tc.msg, keysOf(raw))
+		if _, ok := raw[tc.key]; !ok || (tc.key != 1 && len(raw) != 2) {
+			t.Errorf("key %d missing or not alone for %+v — encoded keys %v", tc.key, tc.msg, keysOf(raw))
 		}
 	}
 }
@@ -293,13 +297,11 @@ func keysOf(m map[uint64]any) []uint64 {
 	return out
 }
 
-// A signature proves less than it looks like it proves.
-//
 // A message id must survive the wire, and must be absent when unset.
 //
-// Absent matters as much as present: an older sender does not mint one,
-// and a receiver that saw an empty string as an id would treat every such
-// message as the same message and drop all but the first.
+// Absent matters as much as present: a receiver that saw an empty string
+// as an id would treat every such message as the same message and drop
+// all but the first.
 func TestAMessageIDSurvivesAndStaysOptional(t *testing.T) {
 	with := &ChatMsg{Kind: ChatText, Body: "on my way", MsgID: "01J8ZQ"}
 	b, err := with.Marshal()
@@ -324,7 +326,7 @@ func TestAMessageIDSurvivesAndStaysOptional(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, present := raw[9]; present {
-		t.Error("an unset message id must not occupy key 9 — an older sender mints none")
+		t.Error("an unset message id must not occupy key 9")
 	}
 	back, err := UnmarshalChatMsg(b)
 	if err != nil {

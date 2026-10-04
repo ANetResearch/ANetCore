@@ -415,7 +415,15 @@
     ]},
     {"id": "VEC_RELAYAUTH_1", "why": "the v1 relayauth preimage is removed", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RELAYAUTH_1"}]},
     {"id": "VEC_KEL_SUPERSEDE_1", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_1"}]},
-    {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2"}]}
+    {"id": "VEC_KEL_SUPERSEDE_2", "why": "KEL v1 is not accepted", "at": [{"repo": "ANetCore", "path": "golden/supersede_test.go", "test": "TestVEC_KEL_SUPERSEDE_2"}]},
+    {"id": "VEC_CHATMSG_1", "why": "body v3: CHATMSG-3 replaces it (preview keys only in a preview frame)", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_CHATMSG_1"}]},
+    {"id": "VEC_CHATMSG_2", "why": "body v3: CHATMSG-3 replaces it (a text message with keys 4-7 is refused)", "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_test.go", "test": "TestVEC_CHATMSG_2"}]},
+    {"id": "VEC_RESULT_1", "why": "body v3: RESULT-3 replaces it", "at": [{"repo": "ANetCore", "path": "golden/wire_test.go", "test": "TestVEC_RESULT_1"}]},
+    {"id": "VEC_RESULT_2", "why": "body v3: RESULT-3 replaces it (key 4 is retired) and takes over its request binding", "at": [
+      {"repo": "ANetCore", "path": "golden/a2a_wire_test.go", "test": "TestVEC_RESULT_2"},
+      {"repo": "ANetCore", "path": "golden/result_request_test.go", "test": "TestVEC_RESULT_2_RequestBinding"}
+    ]},
+    {"id": "VEC_DELEGATE_2", "why": "body v3: DELEGATE-3 replaces it (key 3 is retired)", "at": [{"repo": "ANetCore", "path": "golden/a2a_wire_test.go", "test": "TestVEC_DELEGATE_2"}]}
   ],
   "uncovered": [
     {"object": "IdentityFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},

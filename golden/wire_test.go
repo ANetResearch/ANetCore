@@ -21,7 +21,6 @@ import (
 
 	"github.com/ANetResearch/ANetCore/ael"
 	"github.com/ANetResearch/ANetCore/anetcid"
-	"github.com/ANetResearch/ANetCore/delegation"
 	"github.com/ANetResearch/ANetCore/identity"
 	"github.com/ANetResearch/ANetCore/payment"
 )
@@ -50,46 +49,6 @@ func TestVEC_SUITE_IDENTITY_1(t *testing.T) {
 	// signed by an identity that does not replay proves nothing.
 	if _, err := identity.Replay(c.KEL()); err != nil {
 		t.Fatalf("the conformance identity does not replay: %v", err)
-	}
-}
-
-// VEC-CHATMSG-1: every field of the message type that drifted.
-//
-// All seven keys populated on purpose. The drift was keys 4-7 existing on
-// one side and not the other, which is exactly the shape a vector over a
-// partially-filled object would have missed.
-func TestVEC_CHATMSG_1(t *testing.T) {
-	msg := &delegation.ChatMsg{
-		Kind: delegation.ChatStreamPreview, Body: "partial",
-		StreamSeq: 7, StreamAtMS: 1767225600000,
-		ReasoningBody: "thinking", ReasoningStreamAtMS: 1767225599000,
-	}
-	b, err := msg.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const wantWire = "a6016e73747265616d5f7072657669657702677061727469616c0407051b0000019b76daa80006687468696e6b696e67071b0000019b76daa418"
-	if got := hex.EncodeToString(b); got != wantWire {
-		t.Fatalf("chat message wire\n got  %s\n want %s\n"+
-			"An implementation that disagrees here drops fields silently.", got, wantWire)
-	}
-}
-
-// VEC-RESULT-1: the completion payload carrying deliverable and receipt. The receipt is the
-// evidence v2 receipt of the golden vector EV2-1 (goldenReceiptV2).
-func TestVEC_RESULT_1(t *testing.T) {
-	ev := goldenReceiptV2(t)
-	rr := &delegation.ResultResp{
-		Status: delegation.StatusDone, Deliverable: ev.Deliverable, Receipt: ev.Wire,
-	}
-	b, err := rr.Marshal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// golden/py/test_gen_v016.py (hpp_go_pins) checks it against the independent encoder.
-	const wantCID = "bafyreif77cc4odlswpsaxjezuhgnssjgal5t25wqsbozwuqnogx62wrmum"
-	if got := anetcid.MustSum(b); got != wantCID {
-		t.Errorf("result payload CID\n got  %s\n want %s", got, wantCID)
 	}
 }
 
