@@ -125,6 +125,15 @@ func GenerateIXKey(suite Suite, ix, peerAID string) (*IXKey, error) {
 	return &IXKey{IX: ix, PeerAID: peerAID, Suite: suite, Pub: sk.PublicKey().Bytes(), Private: priv}, nil
 }
 
+// String describes k by its interaction, peer and kid, never by its private
+// half, so a key that reaches a log or an error message does not leak.
+func (k IXKey) String() string {
+	return fmt.Sprintf("IXKey{ix %q, peer %s, kid %x}", k.IX, k.PeerAID, KID(k.Suite, k.Pub))
+}
+
+// GoString is String, for %#v.
+func (k IXKey) GoString() string { return k.String() }
+
 // RK returns the public half of k as inner key 15 carries it.
 func (k *IXKey) RK() *RK { return &RK{Suite: k.Suite, Pub: append([]byte(nil), k.Pub...)} }
 

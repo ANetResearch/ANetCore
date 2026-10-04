@@ -54,7 +54,7 @@
 // The receive pipeline (engine §4.2) is split into steps. This package
 // implements the steps that depend only on the bytes, a clock and a KEL:
 //
-//	step 1-4  Open           outer checks, kid lookup, layer-1 open (ack_key), Wrap, inner decode
+//	step 1-4  Open           outer checks, kid lookup, layer-1 open (ack_key), Wrap, second layer, inner decode
 //	step 5    CheckTime      now <= exp, ts <= now + 5 min, exp - ts <= 15 days
 //	step 7    VerifyInnerSig signature under the resolved KEL, rotation grace
 //	step 8    VerifyInnerKeys + DecideHighWater  the attached key set

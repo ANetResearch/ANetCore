@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"crypto/hpke"
 	"errors"
+	"fmt"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/coredet"
@@ -134,6 +136,13 @@ func TestGenerateIXKey(t *testing.T) {
 	rk.Pub[0] ^= 1
 	if k.Pub[0] == rk.Pub[0] {
 		t.Fatal("RK shares its bytes with the key")
+	}
+	// Printing a key never prints its private half.
+	for _, out := range []string{fmt.Sprint(k), fmt.Sprintf("%v %+v %#v %s", k, k, k, *k), fmt.Sprintf("%+v", []*IXKey{k})} {
+		if strings.Contains(out, fmt.Sprintf("%x", k.Private)) || strings.Contains(out, fmt.Sprint(k.Private)) ||
+			!strings.Contains(out, fmt.Sprintf("%x", k.KID())) {
+			t.Fatalf("printed key: %s", out)
+		}
 	}
 	k2 := mustIXKey(t, "ix-1", "bpeer")
 	if bytes.Equal(k2.Pub, k.Pub) {
