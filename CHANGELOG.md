@@ -1,5 +1,102 @@
 # Changelog
 
+## v0.16.0-rc.1 — 2026-10-04
+
+The kernel side of anet 0.3.0 and hub wire 3: the first release candidate,
+with the wire frozen. anet 0.3.0 and ANetHub 0.3.0 require this version in
+their `go.mod`; from here on a change to the wire bytes needs a new
+candidate and new vectors, and a defect fix is released as the next
+`v0.16.0-rc.N`.
+
+### Wire compatibility
+
+This version breaks compatibility on purpose and carries no migration
+code. Envelopes are `v = 2`, encryption key sets `anet.enckeys/2`, key
+event logs KEL v2 and hub requests wire 3; a node or hub on v0.15.0 cannot
+read what this version writes, and this version refuses what v0.15.0
+wrote. Each wire object now has exactly one byte form: decoders are strict
+and canonical, refuse unassigned and retired keys, and re-encode to the
+bytes they read.
+
+Every key number, label, relay action, hub endpoint, metadata key and
+reason code is listed in `wire/registry.json`. A test in each repository
+type-checks the code against it, so a key, label or signing site that is
+not registered fails the build's tests instead of drifting from the
+design. `golden/` pins the bytes: each vector is written by an
+independent Python implementation (`golden/py/gen_v016.py`) and
+reproduced byte for byte in Go, and `golden/testdata/index.json` requires
+every registered object that travels between nodes to be covered.
+
+### Added
+
+- **`wire`** — the registry, its code scanner (`wire/scan`), the
+  generator of `docs/wire-keys.md` (`wire/gen`) and `wire.Negatives`, one
+  encoding per unassigned key for decoder tests.
+- **`coredet.UnmarshalStrict`** — refuses a map key the struct does not
+  name, so a silently dropped key cannot make two readers disagree.
+- **`seal` v2** — one envelope format for every message: the outer
+  envelope with the delivery credential (key 7) and a one-shot expiry
+  (key 8), the padded `Wrap`, the strict inner envelope with the witness
+  notice, grant and `rk` keys, and a v2 signature preimage that binds both
+  layers. Inside an interaction a message is sealed a second time to the
+  interaction key the peer announced (`RK`, `IXKey`, `GenerateIXKey`), so
+  a stolen day key does not open it once both sides have dropped that
+  key; a layer cannot be stripped, swapped or added.
+- **Delivery capabilities and grants** — `CapBody`, `SignAccess`,
+  `VerifyAccess`, `Grant` and `CheckGrant`: a hub and a recipient admit an
+  envelope that presents a delivery credential only when the credential
+  holds for that envelope, and a grant is kept only when it checks against
+  the key set the same message carried.
+- **Delivery confirmations** — `seal/dack.go`: only the recipient can
+  confirm delivery, with an 80-byte token under the envelope's `ack_key`
+  that only the two ends hold (`VerifyDAck`, `RetryBucket`, note codes).
+- **`identity` KEL v2** — key events carry `anet.kel/2`, decode strictly
+  and re-encode to the same bytes; a `rot` is signed by the key it
+  reveals, timestamps strictly increase, and `ixn`/`drt` are gone.
+  `CheckNewEvents` bounds the times of new events.
+- **`identity.Signer`** — signing code receives a signer that signs and
+  does nothing else; only the holder of the locked `Controller` builds key
+  events. Identity file v2 (`Export`/`Restore`) keeps pending material,
+  witnesses to push and the local commit together.
+- **Recovery seed and recovery file** — `RecoverySeed` and `NextDigest`
+  derive every key after the first rotation, so the next key never lives
+  in the data directory; `SealRecoveryFile`/`OpenRecoveryFile`
+  (Argon2id over the passphrase) and the local-key pair keep the seed;
+  `ParseRecoveryFile` reads a file's header without a secret.
+- **Witness notices** — `NoticeBody`, `SignNotice`, `VerifyNotice`,
+  `CheckNotice`; a rotation names its witness by a well-formed AID
+  (`ValidAID`), and the sender's key is checked at the arrival time with
+  a fixed one-hour grace for planned rotations.
+- **`relayauth`** — first-contact sessions (a session key delivered
+  sealed to a one-time key, a MAC on each send), `MonoClock`, and the
+  actions of hub wire 3, including `fed_status`.
+- **`dirbox`** — sealed directory entries: only a party that already
+  knows an AID can find and open its entry.
+- **`liabtree`** — the Merkle sum tree behind a hub's supply record, with
+  one overflow check shared by build and verify and one JSON proof form.
+- **`regpow`** — the registration proof of work an open hub asks of a new
+  AID.
+- **`evidence` v2** — receipt, review and review attestation bodies with
+  their commitments, replacing the v1 receipt and review.
+- **`delegation`** — card request and response, task-binding contexts,
+  and body v3: every delegation body decodes strictly and canonically, and
+  a request decodes its embedded task document strictly.
+- **`ael`** — the supply epoch record.
+- **Fuzz targets** for every new decoder (envelope, wrap, inner v2, `rk`,
+  second layer, access, capability, grant, directory entry, confirmation,
+  note, recovery file, notice, liability proof, proof of work, body v3).
+
+### Removed
+
+- `identity.SealTo` and `(*Controller).Open`: a sealed box to a peer's
+  identity key had no forward secrecy.
+- `CurrentPrivateKey`, `Incept`, `Rotate` and `Deactivate` on the
+  identity API; `InceptAgent` and `InceptHub` take the inception time.
+- The v1 envelope, the v1 receipt, review and voucher, the prepayment key,
+  the wire-1 challenge, and the relay actions `send`, `p2p` and `fedkeys`.
+- The golden vectors of those objects; `golden/testdata/index.json` lists
+  them as retired.
+
 ## v0.15.0 — 2026-09-28
 
 The kernel side of anet 0.2.0 and hub wire 2 (ANet `docs/A2A-DESIGN-zh.md`,
@@ -65,7 +162,7 @@ their release notes.
   delegation, payment, a2acard, adp, tsir, aobj, evidence, ael, agenturi,
   effect): 31 targets, each next to its package in `fuzz_test.go`, with the
   inputs that found a defect kept under `testdata/fuzz/`. A plain `go test`
-  runs only the seeds and that corpus (ANet `docs/notes/0033`, core).
+  runs only the seeds and that corpus (ANet `an internal note`, core).
 
 ### Changed
 
@@ -103,7 +200,7 @@ their release notes.
   F15): a receipt for another request of the same interaction no longer
   verifies.
 
-Found by fuzzing (ANet `docs/notes/0033`, core; each has a unit regression
+Found by fuzzing (ANet `an internal note`, core; each has a unit regression
 that fails without the fix):
 
 - `aobj.Verify` returns an error for a public key that is not 32 bytes
