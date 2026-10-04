@@ -102,13 +102,18 @@ var ra3Rows = []ra3Row{
 	{relayauth.ActionFedClear, "peer-hub", "POST", "/fed/v3/clear", "7b227265636569707473223a5b5d7d",
 		"anet-relay/v2/fed_clear/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/Emm6QsmD7tlipy4gFT6EjHBEEFOBtM0-NEsYzGSw7bE",
 		"e2cfb983af964c8f6b88a3ad8d348b4c46b28f7e57210a49c3fd662946d40909229ee0de1b2156210652f81f17f89e06d97496fb2dc9476a5528bbe10f743004"},
+	// Delivery tokens: the anonymous status check a hub passes on to the peer hub that queued
+	// the envelopes (peer hub).
+	{relayauth.ActionFedStatus, "peer-hub", "POST", "/fed/v3/relay-status", "7b226974656d73223a5b7b22726964223a2241414141414141414141414141414141414141414141222c2268616e646c65223a2241414141414141414141414141414141414141414141227d5d7d",
+		"anet-relay/v2/fed_status/bafyreianotherhub/bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y/1767225600000/dWTaQ9qfoonxKm1RgHd89YQKGvE-Oy4c4pH_uf1fciM",
+		"69e2399e0c40e16f858ac2cce9544f5f2d4d4aa01c6a86f18af77fdcd468ba11c4c1b4bae9807cb8322b4889023b38be34ae038d14d9397c60d466f869c20e0b"},
 }
 
 // ra3Pending: registered actions whose constant another work item adds, with that item's marker.
-// The item that adds the constant moves the action into ra3Rows with its pinned bytes.
-var ra3Pending = map[string]string{
-	"fed_status": "v030-todo(RC-3)",
-}
+// The item that adds the constant moves the action into ra3Rows with its pinned bytes. Every
+// registered action has its constant now, so it is empty; TestRELAYAUTH3CoversTheRegistry keeps
+// the mechanism for an action registered ahead of its code.
+var ra3Pending = map[string]string{}
 
 func ra3Key(role string) (string, ed25519.PrivateKey) {
 	s := sha256.Sum256([]byte("anet-golden/v016/RELAYAUTH-3/" + role))

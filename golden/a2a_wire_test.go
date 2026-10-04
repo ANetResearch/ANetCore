@@ -1,6 +1,8 @@
 // a2a_wire_test.go pins the wire objects added or extended in ANetCore v0.15.0: the delegation
 // payloads (A2A-DESIGN §3.4: ChatMsg.Metadata, DelegateReq.ContextID and .Metadata,
-// ResultResp.Metadata, and the new StatusMsg) and the relay v2 authentication (§3.7).
+// ResultResp.Metadata, and the new StatusMsg). The relay v2 authentication it also pinned
+// (VEC_RELAYAUTH_2) is retired: RELAYAUTH-3 (relayauth_v3_test.go) pins the same preimage form
+// for every action.
 //
 // Every vector here populates every field of its type, including the ones that existed before.
 // The new fields are optional (omitempty), so the v1 vectors in wire_test.go stay byte-identical
@@ -22,7 +24,6 @@ import (
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/delegation"
 	"github.com/ANetResearch/ANetCore/identity"
-	"github.com/ANetResearch/ANetCore/relayauth"
 	"github.com/ANetResearch/ANetCore/tsir"
 )
 
@@ -211,36 +212,5 @@ func TestVEC_STATUS_1(t *testing.T) {
 	back, err := delegation.UnmarshalStatusMsg(b)
 	if err != nil || !reflect.DeepEqual(back, m) {
 		t.Errorf("status did not round-trip: %+v, %v", back, err)
-	}
-}
-
-// VEC-RELAYAUTH-2: a complete relay v2 authentication, preimage and header value.
-//
-// The daemon signs and the hub verifies; the two never exchange the preimage, only the signature,
-// so a difference in any part of PreimageV2 (a separator, the digest alphabet, the padding, the
-// order of method, target and body) shows up at the hub as an invalid signature from a valid key.
-// Both expected values below were computed outside this module (Python hashlib, base64 and the
-// cryptography package's Ed25519, from the published suite seed), not by the code under test.
-func TestVEC_RELAYAUTH_2(t *testing.T) {
-	const ts = 1767225600000
-	pre := relayauth.PreimageV2(relayauth.ActionPoll, suiteAID, "bafyreigoldenhub", ts,
-		"POST", "/relay/poll", []byte(`{"limit":50}`))
-	const wantPre = "anet-relay/v2/poll/" + suiteAID + "/bafyreigoldenhub/1767225600000/" +
-		"zLJEMi0-k4mBELamLpchUkYojTc9mrNK0RdGNm5raX8"
-	if string(pre) != wantPre {
-		t.Fatalf("relay v2 preimage\n got  %s\n want %s", pre, wantPre)
-	}
-	c := identity.SuiteController()
-	sig, seq := c.Sign(pre)
-	const wantSig = "WKDMJ5qsDGTf7-8RClO5rPFjWeIeRgVCmAi1DM45EkfGh98_3rAaaslMGOxFkJOqZ48I02EJP9OTc17LeD1mAA"
-	if got := relayauth.EncodeSig(sig); got != wantSig {
-		t.Errorf("%s value\n got  %s\n want %s", relayauth.HeaderSig, got, wantSig)
-	}
-	back, err := relayauth.DecodeSig(wantSig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := identity.VerifyObject(c.KEL(), suiteAID, seq, ts, pre, back); err != nil {
-		t.Errorf("the pinned signature must verify against the suite KEL: %v", err)
 	}
 }
