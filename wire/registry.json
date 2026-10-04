@@ -2702,6 +2702,7 @@
       {"code": "egress_unauthorized"},
       {"code": "egress_tunnels"},
       {"code": "egress_too_large"},
+      {"code": "egress_upstream_unreachable"},
       {"code": "policy_server_tool"},
       {"code": "policy_mcp_servers"},
       {"code": "policy_field"},
