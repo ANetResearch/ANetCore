@@ -108,7 +108,7 @@ func (fx *fuzzFixture) sealed(tb testing.TB, in *SealedInner, o SealOpts) (env, 
 
 // seedInners are variants of the fixture inner used as seeds. The last carries the suite KEL
 // after a rotation at fuzzTS+1000 and still declares key state 0: signed with the pre-rotation
-// key before the rotation, it reaches VerifyInnerSig's rotation-grace branch.
+// key before the rotation, it reaches VerifyInnerSig's branch for a retired key state.
 func (fx *fuzzFixture) seedInners(tb testing.TB) []*SealedInner {
 	a := *fx.inner
 	b := *fx.inner
@@ -489,7 +489,7 @@ func (fx *fuzzFixture) checkOpened(t *testing.T, o *Opened) {
 		return
 	}
 	now := in.TS
-	if err := VerifyInnerSig(in, o.Preimage, o.KEL, now, DefaultRotationGrace); err == nil {
+	if err := VerifyInnerSig(in, o.Preimage, o.KEL, now); err == nil {
 		// Accepted: the declared sender is the AID the KEL replays to, and the signature is by
 		// the key the declared key state holds.
 		states, rerr := identity.Replay(o.KEL)

@@ -2828,6 +2828,7 @@
       {"repo": "ANetCore", "func": "(*evidence.ReceiptBody).Sign", "signs": "ReceiptBody"},
       {"repo": "ANetCore", "func": "(*evidence.ReviewAttBody).Sign", "signs": "ReviewAttBody"},
       {"repo": "ANetCore", "func": "a2acard.SignWithSnapshot", "signs": "A2ACardJWS"},
+      {"repo": "ANetCore", "func": "identity.SignNotice", "signs": "NoticeBody"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).hubSigned", "signs": "L22"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).sealWithOpts", "signs": "InnerSigPreimage"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).setupKeyRing", "signs": "EncKeySet"},

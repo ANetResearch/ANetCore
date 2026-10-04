@@ -47,7 +47,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	if err := CheckTime(&o.Inner, t0+60000); err != nil {
 		t.Fatalf("time: %v", err)
 	}
-	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace); err != nil {
+	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000); err != nil {
 		t.Fatalf("signature: %v", err)
 	}
 	_, set, err := VerifyInnerKeys(&o.Inner, o.KEL, t0+60000)
@@ -102,7 +102,7 @@ func TestOptionalInnerKeysStayAbsent(t *testing.T) {
 		t.Fatalf("absent keys came back: %+v", o.Inner)
 	}
 	// The signature is still checkable under the sender's KEL from storage.
-	if err := VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), t0+60000, DefaultRotationGrace); err != nil {
+	if err := VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), t0+60000); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -206,8 +206,8 @@ func TestSignedInnerFieldMutations(t *testing.T) {
 			// Verify against the sender's real KEL, as step 6 would resolve
 			// it from storage; for the kel case the carried KEL is the
 			// mutated one and must not rescue the signature either.
-			wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), t0+60000, DefaultRotationGrace), tc.sigReason)
-			wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace), tc.sigReason)
+			wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), t0+60000), tc.sigReason)
+			wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000), tc.sigReason)
 		})
 	}
 
@@ -216,7 +216,7 @@ func TestSignedInnerFieldMutations(t *testing.T) {
 	in := innerFrom(t, a, b, t0)
 	env := sealHooked(t, in, &b.kp.Public, a.c.Sign, SealOpts{}, sealHooks{inner: func(m fieldMap) { m[keyIX] = enc(t, in.IX) }})
 	o := mustOpen(t, env, b)
-	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace); err != nil {
+	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000); err != nil {
 		t.Fatalf("control: %v", err)
 	}
 }
@@ -243,7 +243,7 @@ func TestOuterFieldsAreSigned(t *testing.T) {
 		// Same recipient, same key, fresh enc.
 		re := encryptFields(t, fields, b.aid(), &b.kp.Public)
 		o := mustOpen(t, re, b)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace), ReasonBadSig)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000), ReasonBadSig)
 	})
 	t.Run("kid", func(t *testing.T) {
 		// Same recipient, its second key.
@@ -256,7 +256,7 @@ func TestOuterFieldsAreSigned(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace), ReasonBadSig)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000), ReasonBadSig)
 	})
 	t.Run("to", func(t *testing.T) {
 		// B forwards A's message to C, rewriting to on both layers.
@@ -267,7 +267,7 @@ func TestOuterFieldsAreSigned(t *testing.T) {
 		fwd[keyTo] = enc(t, c.aid())
 		re := encryptFields(t, fwd, c.aid(), &c.kp.Public)
 		o := mustOpen(t, re, c)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace), ReasonBadSig)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000), ReasonBadSig)
 		// Without rewriting inner to, C's Open rejects it.
 		re = encryptFields(t, fields, c.aid(), &c.kp.Public)
 		_, err := Open(re, c.aid(), c.ring(), nil)
@@ -295,7 +295,7 @@ func TestOuterFieldsAreSigned(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantReason(t, VerifyInnerSig(&o.Inner, pre2, o.KEL, t0+60000, DefaultRotationGrace), ReasonBadSig)
+		wantReason(t, VerifyInnerSig(&o.Inner, pre2, o.KEL, t0+60000), ReasonBadSig)
 	})
 	t.Run("layering", func(t *testing.T) {
 		// The same fields under a preimage that claims a second layer (SI-31):
@@ -305,7 +305,7 @@ func TestOuterFieldsAreSigned(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantReason(t, VerifyInnerSig(&o.Inner, pre2, o.KEL, t0+60000, DefaultRotationGrace), ReasonBadSig)
+		wantReason(t, VerifyInnerSig(&o.Inner, pre2, o.KEL, t0+60000), ReasonBadSig)
 	})
 	t.Run("outer-header-edit", func(t *testing.T) {
 		// Editing enc or ct in the outer without re-encrypting breaks the
@@ -354,7 +354,7 @@ func TestInnerKeySpace(t *testing.T) {
 		in.Ext = map[uint64][]byte{k: enc(t, "x")}
 		env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
 		o := mustOpen(t, env, b)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000, DefaultRotationGrace); err != nil {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0+60000); err != nil {
 			t.Errorf("key %d: %v", k, err)
 		}
 		if !bytes.Contains(o.Preimage, enc(t, "x")) {
@@ -582,7 +582,7 @@ func TestWrapIsPadded(t *testing.T) {
 			t.Fatalf("body %d: inner is %d bytes, unpadded %d", n, len(wf.body), innerLen)
 		}
 		o := mustOpen(t, env, b)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0, DefaultRotationGrace); err != nil {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0); err != nil {
 			t.Fatalf("body %d: %v", n, err)
 		}
 	}
@@ -939,7 +939,7 @@ func TestOuterExp(t *testing.T) {
 		t.Fatal("env_digest does not cover key 8")
 	}
 	o = mustOpen(t, withSession(t, stripped), b)
-	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0, DefaultRotationGrace); err != nil {
+	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, t0); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1006,16 +1006,17 @@ func TestCheckTime(t *testing.T) {
 	}
 }
 
-// Receive step 7 with identity.Controller.Rotate.
+// Receive step 7 across a rotation of the sender (KEL C-54): arrival, not the receiver's clock,
+// decides the planned rotation's grace, which is identity.RotationGrace; an emergency rotation or a
+// deactivation leaves the old key nothing, whatever arrival says (SenderKeyUsable, C-13).
 func TestRotationGrace(t *testing.T) {
 	b := newParty(t)
 	const rot = t0 + 10*minuteMS
-	grace := time.Hour
-	graceMS := uint64(grace.Milliseconds())
+	graceMS := identity.RotationGrace
 
-	// sealBefore seals from a fresh A with ts, then rotates A at rotTS and
-	// returns the opened message and A's KEL after rotation.
-	sealBefore := func(t *testing.T, ts, rotTS uint64, between func(*identity.Controller)) (*Opened, []identity.SignedEvent) {
+	// sealBefore seals from a fresh A with ts, then rotates A at rotTS (an emergency rotation when
+	// emergency is set) and returns the opened message and A's KEL after rotation.
+	sealBefore := func(t *testing.T, ts, rotTS uint64, emergency bool, between func(*identity.Controller)) (*Opened, []identity.SignedEvent) {
 		t.Helper()
 		a := newParty(t)
 		if between != nil {
@@ -1023,39 +1024,54 @@ func TestRotationGrace(t *testing.T) {
 			a.resign(t, t0)
 		}
 		env := mustSeal(t, innerFrom(t, a, b, ts), &b.kp.Public, a.c.Sign)
-		if err := identitytest.Rotate(a.c, rotTS); err != nil {
+		rotate := identitytest.Rotate
+		if emergency {
+			rotate = identitytest.RotateEmergency
+		}
+		if err := rotate(a.c, rotTS); err != nil {
 			t.Fatal(err)
 		}
 		return mustOpen(t, env, b), a.c.KEL()
 	}
 
-	t.Run("old key inside grace", func(t *testing.T) {
-		o, kel := sealBefore(t, t0, rot, nil)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS, grace); err != nil {
+	if graceMS != uint64(time.Hour.Milliseconds()) {
+		t.Fatalf("identity.RotationGrace is %d ms, want one hour", graceMS)
+	}
+	t.Run("old key, arrival inside the grace", func(t *testing.T) {
+		o, kel := sealBefore(t, t0, rot, false, nil)
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS); err != nil {
 			t.Fatalf("at the grace limit: %v", err)
 		}
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, rot-1, grace); err != nil {
-			t.Fatalf("before the rotation by our clock: %v", err)
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, rot-1); err != nil {
+			t.Fatalf("arrived before the rotation: %v", err)
 		}
 	})
-	t.Run("old key past grace", func(t *testing.T) {
-		o, kel := sealBefore(t, t0, rot, nil)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1, grace), ReasonGraceExpired)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+1, 0), ReasonGraceExpired)
+	t.Run("old key, arrival past the grace", func(t *testing.T) {
+		o, kel := sealBefore(t, t0, rot, false, nil)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1), ReasonGraceExpired)
 	})
 	t.Run("old key, ts not before rotation", func(t *testing.T) {
-		o, kel := sealBefore(t, rot, rot, nil)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+1, grace), ReasonRevokedKey)
+		o, kel := sealBefore(t, rot, rot, false, nil)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+1), ReasonRevokedKey)
+	})
+	// M13, M40 (KEL §7.3): an emergency rotation retires the old key urgently. A message under it
+	// is refused one minute after the rotation (where a planned one would still be in its grace),
+	// and also when the receiver's hub dates its arrival before the rotation.
+	t.Run("old key, emergency rotation", func(t *testing.T) {
+		o, kel := sealBefore(t, t0, rot, true, nil)
+		for _, arrival := range []uint64{rot + minuteMS, rot, rot - 1, t0} {
+			wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, arrival), ReasonRevokedKey)
+		}
 	})
 	t.Run("carried KEL predates rotation, stored KEL does not", func(t *testing.T) {
 		// The message verifies under the KEL it carries (top state at the
 		// time) and is still subject to the grace rule under the resolved
 		// longer KEL; step 6 passes the resolved one.
-		o, kel := sealBefore(t, t0, rot, nil)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, rot+graceMS+1, grace); err != nil {
+		o, kel := sealBefore(t, t0, rot, false, nil)
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, rot+graceMS+1); err != nil {
 			t.Fatalf("under the carried KEL: %v", err)
 		}
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1, grace), ReasonGraceExpired)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1), ReasonGraceExpired)
 	})
 	t.Run("new key after rotation", func(t *testing.T) {
 		a := newParty(t)
@@ -1064,7 +1080,7 @@ func TestRotationGrace(t *testing.T) {
 		}
 		a.resign(t, rot)
 		o := mustOpen(t, mustSeal(t, innerFrom(t, a, b, rot+1), &b.kp.Public, a.c.Sign), b)
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), rot+10*dayMS, grace); err != nil {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), rot+10*dayMS); err != nil {
 			t.Fatalf("current key: %v", err)
 		}
 	})
@@ -1076,25 +1092,31 @@ func TestRotationGrace(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		o, kel := sealBefore(t, t0, rot, rotEarly)
+		o, kel := sealBefore(t, t0, rot, false, rotEarly)
 		if o.Inner.KeyStateSeq != 1 {
 			t.Fatalf("setup: signed at %d", o.Inner.KeyStateSeq)
 		}
-		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS, grace); err != nil {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS); err != nil {
 			t.Fatalf("inside grace: %v", err)
 		}
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1, grace), ReasonGraceExpired)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, kel, rot+graceMS+1), ReasonGraceExpired)
 	})
 	t.Run("deactivated", func(t *testing.T) {
 		a := newParty(t)
+		env := mustSeal(t, innerFrom(t, a, b, t0), &b.kp.Public, a.c.Sign)
 		if err := identitytest.Deactivate(a.c, rot); err != nil {
 			t.Fatal(err)
 		}
+		// Signed before the dip: the dip retires the key urgently, so not even an arrival dated
+		// before it helps.
+		o := mustOpen(t, env, b)
+		for _, arrival := range []uint64{rot + 1, rot - 1} {
+			wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), arrival), ReasonRevokedKey)
+		}
 		// Signed at the dip state itself: no key is in force.
 		in := innerFrom(t, a, b, rot+1)
-		env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
-		o := mustOpen(t, env, b)
-		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), rot+2, grace), ReasonRevokedKey)
+		o = mustOpen(t, mustSeal(t, in, &b.kp.Public, a.c.Sign), b)
+		wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, a.c.KEL(), rot+2), ReasonRevokedKey)
 	})
 }
 
@@ -1103,20 +1125,20 @@ func TestVerifyInnerSigInputs(t *testing.T) {
 	o := mustOpen(t, mustSeal(t, innerFrom(t, a, b, t0), &b.kp.Public, a.c.Sign), b)
 
 	// Another identity's KEL.
-	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, c.c.KEL(), t0, DefaultRotationGrace), ReasonFromMismatch)
+	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, c.c.KEL(), t0), ReasonFromMismatch)
 	// A KEL that does not replay.
 	bad := append([]identity.SignedEvent(nil), a.c.KEL()...)
 	bad[0].Sig = make([]byte, 64)
-	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, bad, t0, DefaultRotationGrace), ReasonBadKEL)
-	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, nil, t0, DefaultRotationGrace), ReasonBadKEL)
+	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, bad, t0), ReasonBadKEL)
+	wantReason(t, VerifyInnerSig(&o.Inner, o.Preimage, nil, t0), ReasonBadKEL)
 	// Declared seq beyond the KEL.
 	in := o.Inner
 	in.KeyStateSeq = 5
-	wantReason(t, VerifyInnerSig(&in, o.Preimage, a.c.KEL(), t0, DefaultRotationGrace), ReasonBadKeyState)
+	wantReason(t, VerifyInnerSig(&in, o.Preimage, a.c.KEL(), t0), ReasonBadKeyState)
 	// ts 0 is refused rather than handed to the weaker "unknown time" gate.
 	in = o.Inner
 	in.TS = 0
-	wantReason(t, VerifyInnerSig(&in, o.Preimage, a.c.KEL(), t0, DefaultRotationGrace), ReasonBadInner)
+	wantReason(t, VerifyInnerSig(&in, o.Preimage, a.c.KEL(), t0), ReasonBadInner)
 }
 
 // Seal refuses an inner its receiver would refuse for structural reasons,
@@ -1231,7 +1253,7 @@ func TestErrorClassification(t *testing.T) {
 	}
 	// The identity error stays reachable for callers that want its detail.
 	o := mustOpen(t, env, b)
-	err = VerifyInnerSig(&o.Inner, o.Preimage[:len(o.Preimage)-1], a.c.KEL(), t0, DefaultRotationGrace)
+	err = VerifyInnerSig(&o.Inner, o.Preimage[:len(o.Preimage)-1], a.c.KEL(), t0)
 	var ve *identity.VErr
 	if !errors.As(err, &ve) || ve.Reason != "INVALID_SIGNATURE" {
 		t.Fatalf("want wrapped identity.VErr, got %v", err)

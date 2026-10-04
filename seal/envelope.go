@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
@@ -190,8 +189,8 @@ type SealedInner struct {
 	KEL         []byte // 10: sender KEL (identity.MarshalKEL), within MaxKELBytes / MaxKELEvents
 	// Notices is key 11: the witness notices for the KEL, each a
 	// coredet(NoticeWire) of at most MaxNoticeBytes. Present exactly when
-	// KEL is, and then exactly one (C-52, C-53). CheckNotice (KEL-4) checks
-	// the content.
+	// KEL is, and then exactly one (C-52, C-53). CheckNotice checks the
+	// content.
 	Notices [][]byte
 	Keys    []byte // 12: sender SignedEncKeySet encoding
 	// Grant is key 14 as one CBOR item: a Grant map the sender issues to the
@@ -780,7 +779,7 @@ type Opened struct {
 	// RK is inner key 15 (Inner.RK), nil when absent.
 	RK *RK
 	// Notices is inner key 11 (Inner.Notices): the witness notices for KEL,
-	// nil exactly when KEL is. CheckNotice (KEL-4) checks the content.
+	// nil exactly when KEL is. CheckNotice checks the content.
 	Notices [][]byte
 	// Grant is inner key 14 as received (Inner.Grant), nil when absent. It
 	// may not decode; CheckGrant decides whether to keep it (CORE-K4).
@@ -814,10 +813,10 @@ type Opened struct {
 // (FS-C14). Opened.Layers and Opened.IKID say which it was.
 //
 // It does not check time (CheckTime), resolve the sender's KEL, check the
-// witness notice, verify the signature (VerifyInnerSig) or enforce which
-// keys a message type must carry (the daemon, receive step 4a). Every *Error
-// it returns describes the given bytes and is permanent (the one exception, an
-// internal error of the HPKE export, cannot happen).
+// witness notice (CheckNotice), verify the signature (VerifyInnerSig) or
+// enforce which keys a message type must carry (the daemon, receive step 4a).
+// Every *Error it returns describes the given bytes and is permanent (the one
+// exception, an internal error of the HPKE export, cannot happen).
 func Open(envelope []byte, selfAID string, ring KeyRing, ix IXKeyLookup) (*Opened, error) {
 	outer, err := ParseOuter(envelope)
 	if err != nil {
@@ -1129,32 +1128,100 @@ func CheckTime(inner *SealedInner, now uint64) error {
 	return nil
 }
 
-// DefaultRotationGrace is the rotation grace of receive step 7.
-const DefaultRotationGrace = time.Hour
-
-// VerifyInnerSig is receive step 7. kel is the sender KEL resolved in step 6
-// (the stored KEL or the one carried in the message); preimage is
-// Opened.Preimage. now is unix ms.
+// CheckNotice is receive step 6½ (KEL C-55, D-21): the witness notice in key 11 must confirm the
+// tip of the KEL the message carries, kelInner (Opened.KEL), at arrival. arrival is when the
+// envelope reached this node's hub, as KEL D-20 derives it from the hub's accepted_at, or now
+// for a direct delivery (unix ms). hubKELs gives the hub KELs this node holds (the federation hub
+// KEL set, KEL D-24); it does not go to the network.
 //
-// The KEL must replay to inner.From. The signature is checked with
-// identity.VerifyObject at msgTime = inner.TS, which selects the key at the
-// declared key_state_seq and, for a key state that a later rot or dip
-// retired, requires that the retiring event carries a timestamp
-// SupersededAt and inner.TS < SupersededAt. Then:
-//   - A signature by an active key state (the key in force at the KEL head,
-//     AID not deactivated) is accepted.
-//   - A signature by a retired key state is accepted only when, in
-//     addition, now - SupersededAt <= rotationGrace. The grace lets
-//     messages sealed just before a rotation, and still in a mailbox, be
-//     delivered; its cost is that a stolen pre-rotation key can sign
-//     messages back-dated before the rotation for that long.
-func VerifyInnerSig(inner *SealedInner, preimage []byte, kel []identity.SignedEvent, now uint64, rotationGrace time.Duration) error {
+// kelInner must be the KEL in inner key 10, event for event (invalid-input otherwise): the notice
+// is checked against the KEL of the message's time, not against the KEL this node holds after
+// merging it, so that a message sealed before a planned rotation of its sender, carrying the KEL
+// and notice of then, is still accepted within the rotation grace (VerifyInnerSig decides that
+// under the merged KEL).
+//
+// The checks are identity.VerifyNotice's, and each refusal has its reason: witness-missing (no KEL
+// and notice, or a sender with no witness: a hub, or an agent whose witness is pending),
+// witness-invalid, witness-mismatch, witness-unknown (not permanent: the caller refreshes the hub
+// KEL set once and calls again) and witness-stale. A carried KEL that does not replay is
+// bad-kel. A preview frame carries neither key 10 nor 11 and does not come here (C-52).
+func CheckNotice(inner *SealedInner, kelInner []identity.SignedEvent, hubKELs identity.HubKELSource, arrival uint64) error {
+	switch {
+	case inner == nil:
+		return fail(ReasonInvalidInput, "nil inner")
+	case inner.KEL == nil || len(inner.Notices) == 0:
+		return fail(ReasonWitnessMissing, "the message carries no KEL and witness notice")
+	case len(inner.Notices) != noticesPerMessage:
+		return fail(ReasonWitnessInvalid, "%d notices, want %d", len(inner.Notices), noticesPerMessage)
+	}
+	carried, err := ParseKEL(inner.KEL)
+	if err != nil {
+		return err
+	}
+	if !sameEvents(carried, kelInner) {
+		return fail(ReasonInvalidInput, "the KEL given is not the KEL the message carries; the notice confirms the carried one")
+	}
+	err = identity.VerifyNotice(inner.Notices[0], kelInner, hubKELs, arrival)
+	if err == nil {
+		return nil
+	}
+	for _, m := range noticeReasons {
+		if errors.Is(err, m.err) {
+			return failWrap(m.reason, err, "")
+		}
+	}
+	return failWrap(ReasonBadKEL, err, "")
+}
+
+// noticeReasons maps identity.VerifyNotice's refusals onto their seal reasons (KEL C-56).
+var noticeReasons = []struct {
+	err    error
+	reason string
+}{
+	{identity.ErrNoticeMissing, ReasonWitnessMissing},
+	{identity.ErrNoticeInvalid, ReasonWitnessInvalid},
+	{identity.ErrNoticeMismatch, ReasonWitnessMismatch},
+	{identity.ErrNoticeUnknownWitness, ReasonWitnessUnknown},
+	{identity.ErrNoticeStale, ReasonWitnessStale},
+}
+
+// sameEvents reports whether a and b are the same events: the same length and, event for event,
+// the same event id (the CID of the event's canonical preimage).
+func sameEvents(a, b []identity.SignedEvent) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].EventID != b[i].EventID {
+			return false
+		}
+	}
+	return true
+}
+
+// VerifyInnerSig is receive step 7 (KEL C-54, D-22). kel is the sender's KEL as this node holds
+// it after step 6 merged what the message carried; preimage is Opened.Preimage; arrival is when
+// the envelope reached this node's hub, as KEL D-20 derives it from the hub's accepted_at, or now
+// for a direct delivery (unix ms).
+//
+//  1. kel replays (bad-kel) to inner.From (from-mismatch), and holds the declared
+//     key_state_seq (bad-key-state).
+//  2. identity.VerifyObject at msgTime = inner.TS: the signature verifies under the key of that
+//     state (bad-sig); the state is not the dip's (revoked-key); a state a later rot or dip
+//     retired was retired after inner.TS (revoked-key).
+//  3. An active state is accepted. A retired one must still be usable by its sender at arrival
+//     (identity.SenderKeyUsable): never once an emergency rot or a dip retired it, whatever
+//     arrival says (revoked-key); otherwise until identity.RotationGrace after it was replaced
+//     (rotation-grace-expired). The grace lets a message sealed just before a planned rotation,
+//     still in the mailbox, be delivered; its cost is that a stolen pre-rotation key can sign
+//     messages dated before the rotation for that long. It is a constant, not a parameter.
+func VerifyInnerSig(inner *SealedInner, preimage []byte, kel []identity.SignedEvent, arrival uint64) error {
 	if inner == nil {
 		return fail(ReasonBadInner, "nil inner")
 	}
 	if inner.TS == 0 {
-		// identity.VerifyObject treats msgTime 0 as "unknown" and applies a
-		// weaker revocation gate; a message always has a time.
+		// identity.VerifyObject refuses a retired key state for an object without a time; a
+		// message always has one.
 		return fail(ReasonBadInner, "ts is 0")
 	}
 	if len(inner.Sig) != SigLen {
@@ -1175,19 +1242,14 @@ func VerifyInnerSig(inner *SealedInner, preimage []byte, kel []identity.SignedEv
 		return fromVErr(err)
 	}
 	ks := states[seq]
-	if ks.Status == identity.StatusActive {
+	switch {
+	case identity.SenderKeyUsable(ks, arrival):
 		return nil
+	case ks.RetiredUrgently:
+		return fail(ReasonRevokedKey, "key_state_seq %d was retired at %d by an emergency rotation or a deactivation", seq, ks.SupersededAt)
 	}
-	// Retired: VerifyObject has established ks.SupersededAt != 0 and
-	// inner.TS < ks.SupersededAt.
-	grace := uint64(0)
-	if rotationGrace > 0 {
-		grace = uint64(rotationGrace / time.Millisecond)
-	}
-	if sup := ks.SupersededAt; now > sup && now-sup > grace {
-		return fail(ReasonGraceExpired, "now %d is %d ms after retirement at %d; grace %d ms", now, now-sup, sup, grace)
-	}
-	return nil
+	return fail(ReasonGraceExpired, "arrival %d is more than the rotation grace after key_state_seq %d was retired at %d",
+		arrival, seq, ks.SupersededAt)
 }
 
 // VerifyInnerKeys is receive step 8: decode the sender's key set carried in

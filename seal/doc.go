@@ -76,20 +76,21 @@
 //	step 1-4  Open           outer checks, kid lookup, layer-1 open (ack_key), Wrap, inner decode
 //	step 1a   VerifyAccess   a kind-1 credential issued by this node, under its own mailbox key
 //	step 5    CheckTime      now <= exp, ts <= now + 5 min, exp - ts <= 15 days
-//	step 7    VerifyInnerSig signature under the resolved KEL, rotation grace
+//	step 6½   CheckNotice    the witness notice, against the carried KEL and the hub KELs held
+//	step 7    VerifyInnerSig signature under the resolved KEL; a retired key usable at arrival
 //	step 8    VerifyInnerKeys + DecideHighWater  the attached key set
 //	step 8    CheckGrant     the grant, against that key set (a bad grant is ignored)
 //
 // Which keys each message type must carry (step 4a), the sender's KEL (step
-// 6), the witness notice (step 6½), authorization (step 9) and the replay
-// table and business write (step 10) need the daemon's state and are
-// implemented there.
+// 6), the hub KEL set CheckNotice reads and the arrival time (accepted_at),
+// authorization (step 9) and the replay table and business write (step 10)
+// need the daemon's state and are implemented there.
 //
 // Every failure carries a stable Reason string (a *Error). All reasons except
-// ReasonInternalError describe the input and are permanent: the same bytes
-// fail the same way on every retry. An error of Open after layer 1 opened
-// also carries the ack_key (AckKeyOf), so the recipient can still answer
-// with a token.
+// ReasonInternalError and ReasonWitnessUnknown describe the input and are
+// permanent: the same bytes fail the same way on every retry. An error of
+// Open after layer 1 opened also carries the ack_key (AckKeyOf), so the
+// recipient can still answer with a token.
 //
 // # Forward secrecy
 //

@@ -78,7 +78,7 @@ func (p *party) ring() KeyRing { return StaticKeyRing{p.kp} }
 
 // testNotice stands in for a witness notice in key 11. This package checks
 // only that key 11 is one byte string of at most MaxNoticeBytes that goes with
-// key 10; the notice itself is checked by CheckNotice (KEL-4).
+// key 10; the notice itself is checked by CheckNotice (notice_test.go).
 var testNotice = []byte("notice")
 
 // testGrant is a grant-shaped map for key 14; its content is CheckGrant's.

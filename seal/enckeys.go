@@ -308,9 +308,9 @@ func SignEncKeySet(set *EncKeySet, sign SignFunc) (*SignedEncKeySet, error) {
 //  2. The signature is by an active key state, that is by the key in force
 //     at the KEL head, and the AID is not deactivated. A key set is a
 //     present-tense statement ("these are my keys now"), so no rotation
-//     grace applies: after a rotation the owner must re-sign. A key state
-//     followed only by ixn or drt events is still active; those events do
-//     not change the signing key.
+//     grace applies: after a rotation the owner must re-sign. Every event
+//     after the icp is a rot or a dip (KEL v2), so the one active key state
+//     is the tip's (KEL C-11).
 //  3. The set is well-formed (checkStructure, checkValidAt): type, 1..32
 //     keys, kid matches suite and public key, validity windows of at most
 //     two days, ascending not_before, a mailbox signing key, and at least
