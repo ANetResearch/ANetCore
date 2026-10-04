@@ -8,8 +8,8 @@ package golden
 //
 //   - every A, B and C label of wire/registry.json, and every object, is covered by a row of the
 //     index (an object with no vector at all is listed under "uncovered", with the reason; only a
-//     node-local object or one carried unchanged from 0.2.1 may be, pending W0's decision on
-//     CORE-G1, so a new object that travels between nodes always needs a vector);
+//     node-local object or one carried unchanged from 0.2.1 may be, CORE-G1's one exception, so a
+//     new object that travels between nodes always needs a vector);
 //   - every file and test the index names exists, unless it is marked todo; one marked todo must
 //     not exist yet (the change that delivers it removes the marker); a retired vector must be
 //     gone unless it is marked todo, and must not be gone while it is;
@@ -207,7 +207,7 @@ func checkArtifactShape(where string, a *artifact, retired bool) []string {
 	}
 	for _, m := range []string{a.Todo, a.Rework} {
 		if m != "" && !wire.TodoPattern.MatchString(m) {
-			bad("marker %q is not v030-todo(<work item>)", m)
+			bad("marker %q is not %s", m, wire.TodoMarker("<work item>"))
 		}
 	}
 	if a.Todo != "" && a.Rework != "" {
@@ -635,11 +635,11 @@ func TestGoldenIndexCatches(t *testing.T) {
 				{ID: "V2", Gen: "go", Owner: "X", Covers: ".", Labels: []string{"L2"}, Objects: []string{"B"},
 					At: []*artifact{{Repo: "ANetCore", Path: "x/v2_test.go", Test: "TestV2"}}},
 				{ID: "V3", Gen: "go+python", Owner: "X", Covers: ".",
-					At: []*artifact{{Repo: "ANet", Path: "y/testdata/v3.json", Todo: "v030-todo(XX-3)"}}},
+					At: []*artifact{{Repo: "ANet", Path: "y/testdata/v3.json", Todo: wire.TodoMarker("XX-3")}}},
 				{ID: "V4", Gen: "go", Owner: "X", Covers: ".",
 					At: []*artifact{{Repo: "ANetHub", Path: "z/testdata/v4/", Glob: "*.json"}}},
 			},
-			Retired:   []*retiredVector{{ID: "R1", Why: "gone", At: []*artifact{{Repo: "ANetCore", Path: "x/old_test.go", Test: "TestOld", Todo: "v030-todo(XX-1)"}}}},
+			Retired:   []*retiredVector{{ID: "R1", Why: "gone", At: []*artifact{{Repo: "ANetCore", Path: "x/old_test.go", Test: "TestOld", Todo: wire.TodoMarker("XX-1")}}}},
 			Uncovered: []*uncoveredObject{{Object: "C", Why: "local"}},
 		}
 	}
@@ -715,9 +715,9 @@ func TestGoldenIndexCatches(t *testing.T) {
 		{"todo left on a delivered file", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
 			tr["ANet"]["y/testdata/v3.json"] = &fstest.MapFile{Data: []byte("{}")}
 			tr["ANet"]["y/v3_test.go"] = &fstest.MapFile{Data: []byte("package y\nvar f = \"v3.json\"\n")}
-		}, "V3: ANet/y/testdata/v3.json is delivered, but the index still marks it v030-todo(XX-3)"},
+		}, "V3: ANet/y/testdata/v3.json is delivered, but the index still marks it " + wire.TodoMarker("XX-3")},
 		{"todo added to a present file", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
-			ix.Vectors[0].At[0].Todo = "v030-todo(XX-1)"
+			ix.Vectors[0].At[0].Todo = wire.TodoMarker("XX-1")
 		}, "is delivered, but the index still marks it"},
 		{"retired vector deleted, todo left", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
 			delete(tr["ANetCore"], "x/old_test.go")
@@ -742,7 +742,7 @@ func TestGoldenIndexCatches(t *testing.T) {
 		}, "vector V2 is listed twice"},
 		{"bad todo marker", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
 			ix.Vectors[2].At[0].Todo = "todo(XX-3)"
-		}, "is not v030-todo(<work item>)"},
+		}, "is not " + wire.TodoMarker("<work item>")},
 		{"path escapes the repository", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
 			ix.Vectors[0].At[0].Path = "../ANet/x.json"
 		}, "is not a clean path inside the repository"},
@@ -759,7 +759,7 @@ func TestGoldenIndexCatches(t *testing.T) {
 			ix.Vectors[0].At = append(ix.Vectors[0].At, &artifact{Repo: "ANetCore", Path: "x/v2_test.go", Test: "TestV2"})
 		}, "is written by gen_v016.py, so ANetCore/x/v2_test.go#TestV2 must be a file"},
 		{"rework on a retired vector", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
-			ix.Retired[0].At[0].Todo, ix.Retired[0].At[0].Rework = "", "v030-todo(XX-1)"
+			ix.Retired[0].At[0].Todo, ix.Retired[0].At[0].Rework = "", wire.TodoMarker("XX-1")
 		}, "a retired vector is deleted, not reworked"},
 		{"unknown repository", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
 			ix.Vectors[3].At[0].Repo = "Other"
@@ -805,7 +805,7 @@ func TestGoldenIndexCatches(t *testing.T) {
 			ix.Vectors[1].At[0].Test = "V2"
 		}, "test \"V2\" must be a Test… function"},
 		{"todo and rework together", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
-			ix.Vectors[2].At[0].Rework = "v030-todo(XX-3)"
+			ix.Vectors[2].At[0].Rework = wire.TodoMarker("XX-3")
 		}, "todo and rework together"},
 		{"path is the parent directory", func(ix *goldenIndex, _ map[string]fstest.MapFS, _ *string) {
 			ix.Vectors[3].At[0].Path = "../"
@@ -834,7 +834,7 @@ func TestGoldenIndexCatches(t *testing.T) {
 		}, "uncovered: B is new in 0.3.0 and is not a node-local file, so CORE-G1 needs a vector for it"},
 		// What must exist and be read.
 		{"reworked vector file no test reads", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
-			ix.Vectors[0].At[0].Rework = "v030-todo(XX-1)"
+			ix.Vectors[0].At[0].Rework = wire.TodoMarker("XX-1")
 			delete(tr["ANetCore"], "x/v1_test.go")
 		}, "V1: no Go test in ANetCore names v1.json"},
 		{"a method with the test's name is not the test", func(ix *goldenIndex, tr map[string]fstest.MapFS, _ *string) {
@@ -871,7 +871,7 @@ func TestGoldenIndexCatches(t *testing.T) {
 // must not stand for a row.
 func TestGoldenIndexParseIsStrict(t *testing.T) {
 	for _, b := range []string{
-		`{"format":"anet-golden-index/1","vectors":[{"id":"V1","todos":"v030-todo(X-1)"}]}`,
+		`{"format":"anet-golden-index/1","vectors":[{"id":"V1","todos":"` + wire.TodoMarker("X-1") + `"}]}`,
 		`{"format":"anet-golden-index/1","vector":[]}`,
 		`{"format":"anet-golden-index/1"} {}`,
 		`{"format":"anet-golden-index/1","vectors":[null]}`,
@@ -945,7 +945,7 @@ func FuzzParseIndex(f *testing.F) {
 	if real, err := os.ReadFile(indexPath); err == nil {
 		f.Add(real)
 	}
-	f.Add([]byte(`{"format":"anet-golden-index/1","gens":{},"vectors":[{"id":"V","gen":"python","owner":"X","covers":".","labels":["L1","L1"],"objects":["Nope"],"at":[{"repo":"ANetCore","path":"x/../y/","glob":"[","test":"T"},{"repo":"ANetCore","path":"x/v_test.go","test":"TestV","todo":"v030-todo(A-1)"}]}],"retired":[{"id":"V","why":"","at":[{"repo":"ANet","path":"/abs","rework":"x"}]}],"uncovered":[{"object":"Nope","why":""}]}`))
+	f.Add([]byte(`{"format":"anet-golden-index/1","gens":{},"vectors":[{"id":"V","gen":"python","owner":"X","covers":".","labels":["L1","L1"],"objects":["Nope"],"at":[{"repo":"ANetCore","path":"x/../y/","glob":"[","test":"T"},{"repo":"ANetCore","path":"x/v_test.go","test":"TestV","todo":"` + wire.TodoMarker("A-1") + `"}]}],"retired":[{"id":"V","why":"","at":[{"repo":"ANet","path":"/abs","rework":"x"}]}],"uncovered":[{"object":"Nope","why":""}]}`))
 	rv := viewOf(wire.MustLoad())
 	repos := map[string]fs.FS{
 		"ANetCore": fstest.MapFS{

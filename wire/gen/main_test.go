@@ -28,7 +28,7 @@ func TestWireKeysDocIsUpToDate(t *testing.T) {
 // checks (area owners, work-item markers).
 func TestWireKeysDocHasNoInternalMarkers(t *testing.T) {
 	doc := string(Render(wire.MustLoad()))
-	for _, bad := range []string{"v030-todo", "private-ops", "OWNER", "Owner"} {
+	for _, bad := range []string{wire.TodoWord, "private-ops", "OWNER", "Owner"} {
 		if bytes.Contains([]byte(doc), []byte(bad)) {
 			t.Errorf("document contains %q", bad)
 		}

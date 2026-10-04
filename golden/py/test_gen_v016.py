@@ -21,6 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gen_v016 as g  # noqa: E402
 
+# The marker of an open work item (wire.TodoMarker in Go), built at run time so that a search of
+# the sources for open work items does not find this test's examples.
+TODO_XX3 = "v030" + "-todo(XX-3)"
+
 
 class CoreDet(unittest.TestCase):
     def test_refuses_what_is_not_coredet(self):
@@ -283,7 +287,7 @@ class XCheck(unittest.TestCase):
             "vectors": [
                 {"id": "V1", "gen": "go+python", "at": [{"repo": "ANetCore", "path": "x/testdata/v1.json"}]},
                 {"id": "V2", "gen": "python", "at": [{"repo": "ANet", "path": "y/v2.cbor"}]},
-                {"id": "V3", "gen": "python", "at": [{"repo": "ANetCore", "path": "x/v3.json", "todo": "v030-todo(XX-3)"}]},
+                {"id": "V3", "gen": "python", "at": [{"repo": "ANetCore", "path": "x/v3.json", "todo": TODO_XX3}]},
                 {"id": "V4", "gen": "go", "at": [{"repo": "ANetCore", "path": "x/v4_test.go", "test": "TestV4"}]},
             ],
         }
@@ -311,7 +315,7 @@ class XCheck(unittest.TestCase):
         self.assertTrue(f.read_text().endswith("}\n"))
         problems, notes = self.check()
         self.assertEqual(problems, [])
-        self.assertTrue(any("V3: not delivered yet (v030-todo(XX-3))" in n for n in notes), notes)
+        self.assertTrue(any("V3: not delivered yet (%s)" % TODO_XX3 in n for n in notes), notes)
 
     def test_one_changed_byte_fails(self):
         f = self.written()

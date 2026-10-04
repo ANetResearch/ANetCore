@@ -208,7 +208,7 @@ func TestCarriedDecodersRefuseUnregisteredKeys(t *testing.T) {
 	r := reg(t)
 	rows := []struct {
 		object string
-		todo   string // "v030-todo(<work item>)" while the decoder is still lax
+		todo   string // wire.TodoMarker(<work item>) while the decoder is still lax
 		valid  func() ([]byte, error)
 		decode func([]byte) error
 	}{

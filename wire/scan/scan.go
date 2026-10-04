@@ -175,7 +175,7 @@ func (s *scanner) add(pos token.Pos, rule, format string, args ...any) {
 func (s *scanner) fix(e *wire.TransitionEntry) {
 	if n := len(s.probs); n > 0 {
 		e.Repo = s.cfg.Repo
-		e.Todo = "v030-todo(?)"
+		e.Todo = wire.TodoMarker("?")
 		s.probs[n-1].Fix = e
 	}
 }

@@ -38,9 +38,18 @@ type TransitionEntry struct {
 	Note  string   `json:"note,omitempty"`
 }
 
-// TodoPattern is the form of TransitionEntry.Todo, the same marker R-5 asks for in code
-// ("// v030-todo(<id>)"), so one grep finds every open item.
-var TodoPattern = regexp.MustCompile(`^v030-todo\(([A-Z0-9]+-[0-9]+[a-z]?)\)$`)
+// TodoWord is the marker of an open v0.3.0 work item. In code it is written TodoWord, then the
+// work item's id in parentheses, as a comment on a stopgap or as the reason of a skipped test;
+// TransitionEntry.Todo and the golden index use the same form, so one search of the sources finds
+// every open item and nothing else. That is why it is spelled here in two pieces: the framework
+// that checks the markers must not be one of the hits.
+const TodoWord = "v030" + "-todo"
+
+// TodoMarker returns the marker of work item id: TodoWord, then id in parentheses.
+func TodoMarker(id string) string { return TodoWord + "(" + id + ")" }
+
+// TodoPattern is the form of TransitionEntry.Todo: the marker of one work item.
+var TodoPattern = regexp.MustCompile(`^` + TodoWord + `\(([A-Z0-9]+-[0-9]+[a-z]?)\)$`)
 
 var (
 	transOnce sync.Once
@@ -65,7 +74,7 @@ func ParseTransition(b []byte) (*Transition, error) {
 	seen := map[string]bool{}
 	for i, e := range t.Entries {
 		if !TodoPattern.MatchString(e.Todo) {
-			return nil, fmt.Errorf("wire: transition.json entry %d: todo %q is not v030-todo(<work item>)", i, e.Todo)
+			return nil, fmt.Errorf("wire: transition.json entry %d: todo %q is not %s", i, e.Todo, TodoMarker("<work item>"))
 		}
 		switch e.Repo {
 		case "ANetCore", "ANet", "ANetHub":
