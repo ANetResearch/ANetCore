@@ -42,8 +42,10 @@ func FuzzParseRegistry(f *testing.F) {
 
 // FuzzParseTransition: ParseTransition never panics and accepts only well-formed entries.
 func FuzzParseTransition(f *testing.F) {
-	f.Add([]byte(`{"about":"x","entries":[{"todo":"v030-todo(FS-1)","repo":"ANetCore","kind":"string","value":"anet.x/1"}]}`))
-	f.Add([]byte(`{"entries":[{"todo":"v030-todo(KEL-8a)","repo":"ANet","kind":"struct","go":"a.B","keys":["1 A string"]}]}`))
+	// The markers are built at run time, so that a search of the sources for open work items does
+	// not find these seeds.
+	f.Add([]byte(`{"about":"x","entries":[{"todo":"` + wire.TodoMarker("AB-1") + `","repo":"ANetCore","kind":"string","value":"anet.x/1"}]}`))
+	f.Add([]byte(`{"entries":[{"todo":"` + wire.TodoMarker("AB-2a") + `","repo":"ANet","kind":"struct","go":"a.B","keys":["1 A string"]}]}`))
 	f.Add([]byte(`{"entries":[{"todo":"todo","repo":"ANet","kind":"struct"}]}`))
 	f.Fuzz(func(t *testing.T, b []byte) {
 		tr, err := wire.ParseTransition(b)

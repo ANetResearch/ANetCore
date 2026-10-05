@@ -392,9 +392,11 @@ func TestValidatePreview(t *testing.T) {
 	atLimit := full(func(m *ChatMsg) {
 		m.Body = strings.Repeat("a", MaxPreviewTail-3) + "€"
 		m.ReasoningBody = strings.Repeat("r", MaxPreviewTail)
+		m.MsgID = strings.Repeat("i", MaxPreviewIDLen)
+		m.Answers = strings.Repeat("m", MaxPreviewIDLen)
 	})
 	if err := ValidatePreview(atLimit); err != nil {
-		t.Fatalf("tails of exactly %d bytes are refused: %v", MaxPreviewTail, err)
+		t.Fatalf("tails of exactly %d bytes and ids of exactly %d are refused: %v", MaxPreviewTail, MaxPreviewIDLen, err)
 	}
 	for name, m := range map[string]*ChatMsg{
 		"with key 3 (attachments)": full(func(m *ChatMsg) { m.Attachments = att("a.png") }),
@@ -407,6 +409,8 @@ func TestValidatePreview(t *testing.T) {
 		"without key 5":            full(func(m *ChatMsg) { m.StreamAtMS = 0 }),
 		"without key 9":            full(func(m *ChatMsg) { m.MsgID = "" }),
 		"without key 13":           full(func(m *ChatMsg) { m.Answers = "" }),
+		"key 9 of 257 bytes":       full(func(m *ChatMsg) { m.MsgID = strings.Repeat("i", MaxPreviewIDLen+1) }),
+		"key 13 of 257 bytes":      full(func(m *ChatMsg) { m.Answers = strings.Repeat("m", MaxPreviewIDLen+1) }),
 		"a text message":           {Kind: ChatText, Body: "x"},
 		"nil":                      nil,
 	} {

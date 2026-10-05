@@ -380,8 +380,11 @@ func TestRegistryMetadataKeys(t *testing.T) {
 	}
 }
 
-// the owner decision (no-terminal first join) as revision 3 of the core design registers it.
-func TestRegistryD13(t *testing.T) {
+// A first join without a terminal: the identity is usable at once and its recovery seed is sealed
+// under a key in the data directory until a passphrase is set. The registry carries the local
+// commitment, the second recovery key-derivation shape, the local-key mode of L20 and the code for
+// a file without a passphrase, and no code that would stop such a join.
+func TestRegistryNoTerminalJoin(t *testing.T) {
 	r := reg(t)
 	idf := r.Object("IdentityFile")
 	if k := idf.Key(7); k == nil || k.Name != "local_commit" || k.Type != "bstr" || k.Size != 32 || k.Req != "may" {
@@ -404,7 +407,7 @@ func TestRegistryD13(t *testing.T) {
 		t.Error("recovery_file_unprotected missing from reasons.user")
 	}
 	if r.Reason("user", "recovery_setup_required") != nil {
-		t.Error("recovery_setup_required is not introduced")
+		t.Error("recovery_setup_required is not introduced: a join without a terminal completes, it does not wait for a passphrase")
 	}
 	retired := false
 	for _, c := range r.Reasons.Retired {
@@ -603,7 +606,8 @@ func exempted(x *wire.Exempt, v string) bool {
 	return false
 }
 
-// Every transition entry names a v030-todo work item; nothing in it is registered as active.
+// Every transition entry names an open work item (wire.TodoMarker); nothing in it is registered as
+// active.
 func TestTransitionEntries(t *testing.T) {
 	tr, err := wire.LoadTransition()
 	if err != nil {

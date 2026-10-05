@@ -137,7 +137,7 @@ func newGrantScene() *grantScene {
 	return &grantScene{
 		body: CapBody{Type: CapType, Owner: "bafyissuer", Epoch: 5, CapID: bytes.Repeat([]byte{9}, CapIDLen),
 			Class: CapClassContact, CapExp: t0 + 7*dayMS, Holder: holder.Public().(ed25519.PublicKey)},
-		signer: mbox, seed: holder.Seed(), home: "bafyhome",
+		signer: mbox, seed: holder.Seed(), home: testHomeAID,
 		from: "bafyissuer", inIX: "ix-1",
 		keys: EncKeySet{AID: "bafyissuer", Mbox: Mbox{Epoch: 5, Pub: mbox.Public().(ed25519.PublicKey)}},
 		now:  t0,
@@ -341,7 +341,6 @@ func TestGrantMarshal(t *testing.T) {
 		t.Fatalf("a grant with the fewest fields has keys %v (%v)", m, err)
 	}
 	for name, g := range map[string]Grant{
-		"empty p2p": {Cap: *c, HolderSeed: s.seed, Home: s.home, P2P: strp("")},
 		"pay false": {Cap: *c, HolderSeed: s.seed, Home: s.home, Pay: boolp(false)},
 		"empty ix":  {Cap: *c, HolderSeed: s.seed, Home: s.home, IX: strp("")},
 		"every key": {Cap: *c, HolderSeed: s.seed, Home: s.home, P2P: strp("192.0.2.1:1"), Pay: boolp(true)},
@@ -376,6 +375,9 @@ func TestGrantMarshal(t *testing.T) {
 		"another holder seed":     {Cap: *c, HolderSeed: other.Seed(), Home: s.home},
 		"empty home":              {Cap: *c, HolderSeed: s.seed},
 		"home with U+0000":        {Cap: *c, HolderSeed: s.seed, Home: "a\x00b"},
+		"home not an AID":         {Cap: *c, HolderSeed: s.seed, Home: "hub.example"},
+		"empty p2p":               {Cap: *c, HolderSeed: s.seed, Home: s.home, P2P: strp("")},
+		"p2p without a port":      {Cap: *c, HolderSeed: s.seed, Home: s.home, P2P: strp("192.0.2.1")},
 		"p2p in a stranger grant": {Cap: *sc, HolderSeed: s.seed, Home: s.home, P2P: strp("192.0.2.1:1")},
 		"p2p in a one-shot grant": {Cap: *c, HolderSeed: s.seed, Home: s.home, IX: strp("i"), P2P: strp("192.0.2.1:1")},
 		"pay in a one-shot grant": {Cap: *c, HolderSeed: s.seed, Home: s.home, IX: strp("i"), Pay: boolp(true)},

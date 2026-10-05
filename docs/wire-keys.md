@@ -2450,6 +2450,8 @@ or the relayauth text preimage (L22).
 | ANet | `(*internal/daemon.Daemon).sealWithOpts` | InnerSigPreimage |
 | ANet | `(*internal/daemon.Daemon).setupKeyRing` | EncKeySet |
 | ANet | `(*internal/daemon.Daemon).maintainKeyRing` | EncKeySet |
+| ANet | `(*module/org.Credential).Sign` | OrgCredBody |
+| ANet | `(*module/blackboard.CogUnit).Sign` | CogUnitBody |
 | ANet | `(*module/x402.Module).Authorize` | PaymentAuthorization |
 | ANet | `(*module/x402.Module).WitnessHub` | AELHeadAttestation |
 | ANet | `(*module/x402.Module).signedGet` | L22 |

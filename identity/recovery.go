@@ -117,6 +117,11 @@ var (
 	// ErrPassphraseTooShort: fewer than MinPassphraseRunes code points after NFC (C-34;
 	// passphrase_too_short).
 	ErrPassphraseTooShort = errors.New("identity: the recovery passphrase is shorter than 12 characters")
+	// ErrPassphraseNotUTF8: the passphrase is not valid UTF-8 (C-34; passphrase_not_utf8). It was
+	// typed in a terminal that does not use UTF-8: those bytes could not be typed again in one that
+	// does, so a file sealed under them could never be opened there. Refused before sealing and
+	// before opening alike.
+	ErrPassphraseNotUTF8 = errors.New("identity: the recovery passphrase is not UTF-8 text; switch the terminal to UTF-8 and type it again")
 	// ErrNextKeyInput: the AID or the seed cannot be used for next-key derivation: the AID is empty,
 	// is not valid UTF-8 or holds U+0000 (CORE-E9: with U+0000 two (aid, seq) pairs could derive
 	// alike), or the seed is all zero.
@@ -223,10 +228,13 @@ func nextSeed(rs [32]byte, aid string, seq uint64) ([]byte, error) {
 
 // ---- passphrases (C-34) -------------------------------------------------------------------------
 
-// CheckPassphrase reports whether p may protect a recovery file: at least MinPassphraseRunes code
-// points after NFC (ErrPassphraseTooShort). The CLI checks the first entry with it before asking
-// for the second.
+// CheckPassphrase reports whether p may protect a recovery file: valid UTF-8
+// (ErrPassphraseNotUTF8) and at least MinPassphraseRunes code points after NFC
+// (ErrPassphraseTooShort). The CLI checks the first entry with it before asking for the second.
 func CheckPassphrase(p []byte) error {
+	if !utf8.Valid(p) {
+		return ErrPassphraseNotUTF8
+	}
 	n := nfc(p)
 	defer clear(n)
 	if c := utf8.RuneCount(n); c < MinPassphraseRunes {
@@ -397,8 +405,9 @@ func WithRecoveryNote(file []byte, lines ...string) ([]byte, error) {
 
 // OpenRecoveryFile opens a passphrase-protected recovery file (C-35) and returns the seed and what
 // the file states. Errors: ErrRecoveryFormat, ErrRecoveryWrongIdentity, ErrRecoveryUnprotected
-// (the file has no passphrase yet: kdf local), ErrRecoveryPassphrase (the passphrase does not open
-// it). The caller compares aid with the identity it acts for, and clears rs and passphrase.
+// (the file has no passphrase yet: kdf local), ErrPassphraseNotUTF8 (no file is sealed under a
+// passphrase that is not UTF-8), ErrRecoveryPassphrase (the passphrase does not open it). The
+// caller compares aid with the identity it acts for, and clears rs and passphrase.
 func OpenRecoveryFile(b, passphrase []byte) (rs [32]byte, aid, hub string, commits Commit, err error) {
 	f, err := parseRecovery(b)
 	if err != nil {
@@ -406,6 +415,11 @@ func OpenRecoveryFile(b, passphrase []byte) (rs [32]byte, aid, hub string, commi
 	}
 	if f.blob.KDF.Alg != kdfArgon2id {
 		return rs, "", "", Commit{}, ErrRecoveryUnprotected
+	}
+	if !utf8.Valid(passphrase) {
+		// No file was ever sealed under such a passphrase (CheckPassphrase): say why it cannot
+		// open rather than that it is the wrong one (C-34).
+		return rs, "", "", Commit{}, ErrPassphraseNotUTF8
 	}
 	n := nfc(passphrase)
 	defer clear(n)
@@ -542,6 +556,9 @@ func parseRecovery(b []byte) (*recoveryFile, error) {
 	if !seen["AID"] || !seen["commits"] {
 		return nil, fmt.Errorf("%w: the header lacks the AID or commits line", ErrRecoveryFormat)
 	}
+	if checkHeaderAID(hAID) != nil {
+		return nil, fmt.Errorf("%w: the AID line does not hold an AID", ErrRecoveryFormat)
+	}
 	hc, err := parseCommitsLine(hCommits)
 	if err != nil {
 		return nil, err
@@ -643,11 +660,12 @@ func validKDF(k recoveryKDF) bool {
 	return false
 }
 
-// checkHeaderAID: the AID goes into L19 (no U+0000, CORE-E9) and into a header line (no white space
-// or control character, which would break the line).
+// checkHeaderAID: the AID of a recovery file, in its header and in its block, must be an AID
+// (ValidAID, KEL C-33). That also keeps it fit for L19 (no U+0000, CORE-E9) and for a header line
+// (no white space or control character): an AID is lower-case base32 after its "b".
 func checkHeaderAID(aid string) error {
-	if aid == "" || !utf8.ValidString(aid) || strings.IndexFunc(aid, notTokenRune) >= 0 {
-		return fmt.Errorf("identity: %q is not a usable AID for a recovery file", aid)
+	if !ValidAID(aid) {
+		return fmt.Errorf("identity: %q is not an AID, so it cannot name the identity of a recovery file", aid)
 	}
 	return nil
 }

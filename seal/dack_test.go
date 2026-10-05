@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/wire"
@@ -270,11 +271,11 @@ func TestDAckDerivationP1(t *testing.T) {
 
 // randNote is a random note a refused token may carry: the empty reason, a code of core §2.15.2,
 // or another well-formed code, with a retry_after from anywhere in the u32 range.
-func randNote(r *rand.Rand) Note {
+func randNote(r *rand.Rand, codes []string) Note {
 	var n Note
 	switch r.IntN(3) {
 	case 1:
-		n.Reason = noteCodes[r.IntN(len(noteCodes))]
+		n.Reason = codes[r.IntN(len(codes))]
 	case 2:
 		b := []byte{byte('a' + r.IntN(26))}
 		for range r.IntN(MaxNoteReasonLen) {
@@ -304,7 +305,7 @@ func TestVerifyDAckP2(t *testing.T) {
 		at := r.IntN(len(keys))
 		o, n := OutcomeProcessed, Note{}
 		if r.IntN(2) == 1 {
-			o, n = OutcomeRefused, randNote(r)
+			o, n = OutcomeRefused, randNote(r, noteCodes(t))
 		}
 		d := mustDAck(t, keys[at], o, n)
 		want := n
@@ -359,12 +360,12 @@ func TestDAckShapeP3(t *testing.T) {
 		}
 	}
 	check(OutcomeProcessed, Note{})
-	for _, c := range noteCodes {
+	for _, c := range noteCodes(t) {
 		check(OutcomeRefused, Note{Reason: c})
 		check(OutcomeRefused, Note{Reason: c, RetryAfterS: RetryBucket(1000, false, 0)})
 	}
 	for range 500 {
-		check(OutcomeRefused, randNote(r))
+		check(OutcomeRefused, randNote(r, noteCodes(t)))
 	}
 	for _, bad := range badNoteReasons() {
 		if _, err := k.MakeDAck(OutcomeRefused, Note{Reason: bad}); ReasonOf(err) != ReasonInvalidInput {
@@ -596,14 +597,24 @@ func TestRetryBucket(t *testing.T) {
 
 // --- the note codes and the imports (DLV-C-5, DLV-C-7) -----------------------------------------
 
-// noteCodes are the values of the Note* constants of dack.go, read from the source.
-var noteCodes = func() []string {
-	codes, err := noteConstants()
-	if err != nil {
-		panic(err)
+// noteCodes returns the values of the Note* constants of dack.go, read from the source when a
+// test first asks for them. It is not a package variable: one read at init would make every test
+// binary of this package, the fuzz targets among them, panic when it runs outside the package
+// directory, where dack.go is not.
+func noteCodes(tb testing.TB) []string {
+	tb.Helper()
+	noteCodesOnce.Do(func() { noteCodesVal, noteCodesErr = noteConstants() })
+	if noteCodesErr != nil {
+		tb.Fatalf("reading the Note* constants from dack.go: %v", noteCodesErr)
 	}
-	return codes
-}()
+	return noteCodesVal
+}
+
+var (
+	noteCodesOnce sync.Once
+	noteCodesVal  []string
+	noteCodesErr  error
+)
 
 // noteConstants reads the string constants named Note* from dack.go.
 func noteConstants() ([]string, error) {
@@ -644,16 +655,17 @@ func noteConstants() ([]string, error) {
 // (CORE-K21). TestWireRegistry checks the same set from the "complete" directive.
 func TestNoteCodesAreTheRegistrySet(t *testing.T) {
 	reg := wire.MustLoad().ReasonCodes("note")
-	if len(reg) != 18 || !slices.Equal(noteCodes, reg) {
-		t.Fatalf("Note* constants %v\nregistry reasons.note %v", noteCodes, reg)
+	codes := noteCodes(t)
+	if len(reg) != 18 || !slices.Equal(codes, reg) {
+		t.Fatalf("Note* constants %v\nregistry reasons.note %v", codes, reg)
 	}
-	for _, c := range noteCodes {
+	for _, c := range codes {
 		if !ValidNoteReason(c) {
 			t.Errorf("%q is not a reason code (CORE-K19)", c)
 		}
 	}
 	for _, c := range []string{"sandbox_unavailable", "budget", "provider_policy"} {
-		if slices.Contains(noteCodes, c) {
+		if slices.Contains(codes, c) {
 			t.Errorf("%q is decided after the message is taken; it is not a note code (CORE-K21)", c)
 		}
 	}

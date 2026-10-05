@@ -1,6 +1,7 @@
 package scan_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,9 @@ func fixtureTags(t *testing.T, tags [][]string, edits ...edit) ([]scan.Problem, 
 		t.Fatal(err)
 	}
 	tb, _ := os.ReadFile(filepath.Join(dst, "transition.json"))
+	// The fixture writes its markers as "@todo(…)", so a search of the sources for open work
+	// items does not find them; they become real markers here.
+	tb = bytes.ReplaceAll(tb, []byte("@todo("), []byte(wire.TodoWord+"("))
 	tr, err := wire.ParseTransition(tb)
 	if err != nil {
 		t.Fatal(err)

@@ -190,6 +190,17 @@ func TestSEALED_2B(t *testing.T) {
 		if !ed25519.Verify(ed25519.PublicKey(holder), msg, a.Proof) {
 			t.Fatal("the proof is not the holder's over env_digest (L5)")
 		}
+		// The way the hub admits it (SSR-W23): VerifyAccess with the envelope's env_digest, the
+		// recipient's mailbox key and outer to, at the time the message was sent.
+		var digest [32]byte
+		copy(digest[:], v.EnvDigest)
+		mb := Mbox{Epoch: v.RecipientMbox.Epoch, Pub: mbox}
+		if err := VerifyAccess(a, digest, mb, o.Outer.To, v.Inner.TS); err != nil {
+			t.Fatalf("VerifyAccess: %v", err)
+		}
+		wantStep(t, VerifyAccess(a, digest, mb, v.Sender.AID, v.Inner.TS), "owner")
+		digest[0] ^= 1
+		wantStep(t, VerifyAccess(a, digest, mb, o.Outer.To, v.Inner.TS), "proof")
 	})
 	t.Run("wrap and second layer", func(t *testing.T) {
 		wrap := openLayer1(t, v.Envelope, kp)

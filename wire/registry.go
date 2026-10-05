@@ -12,8 +12,8 @@
 //   - wire/gen renders docs/wire-keys.md from it.
 //
 // transition.json lists the v0.2 shapes that are still in the code while the v0.3.0 rewrite is
-// under way. Every entry names the work item that removes it ("v030-todo(<id>)"); the list
-// must be empty before release.
+// under way. Every entry names the work item that removes it (TodoMarker); the list must be
+// empty before release.
 package wire
 
 import (

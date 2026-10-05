@@ -4155,6 +4155,216 @@ def gen_local_1():
     }
 
 
+# --- CORE: the module objects of org and blackboard (MODOBJ-1, L41, L42, L43) ------------------
+#
+# OrgGenesis (core §2.19): 0 "anet.org-genesis/1", 1 governance_root (founder AIDs, byte-sorted and
+# deduplicated), 2 m, 3 nonce (absent when empty); not signed, org_id = CID(coredet(OrgGenesis))
+# (L41). OrgCredBody: 0 "anet.org-cred/1", 1 org_id, 2 subject, 3 role, 4 epoch (absent: 0.3.0
+# accepts only the default), 5 issued_at, 6 not_after; SignedCredential {1: body bstr, 2: aobj
+# envelope} with the issuer's identity key over the body bytes (L42). CogUnitBody: 0 "anet.cogunit/1",
+# 1 author, 2 task_id, 3 scope, 4 type, 5 stamp (HLC {1 wall, 2 logical, 3 node_id}, the last two
+# absent when zero), 6 body, 7 body_cid (2, 3, 6, 7 absent when empty); CogUnitWire {1: body bstr,
+# 2: aobj envelope} with the author's identity key over the body bytes (L43); the unit id is the CID
+# of the body.
+#
+# Issuer and author are the conformance identity (as in EV2-1), so the Go tests sign with the real
+# code path and every object in the negatives is signed by the same key and key state: the
+# negatives show that a signature by that key over one kind of object never passes for another
+# (SI-81). Each "…_as_credential" or "…_as_unit" negative is a valid signed object of another kind
+# (its signature verifies over its own bytes), refused because its body is not a credential or a
+# unit; each "signature_elsewhere" row is the credential's or the unit's own signature carried by
+# another kind of object, refused by that object's verifier.
+
+ORG_GENESIS_TYPE = "anet.org-genesis/1"
+ORG_CRED_TYPE = "anet.org-cred/1"
+COGUNIT_TYPE = "anet.cogunit/1"
+MODOBJ_T0 = 1767225600000  # 2026-01-01
+
+
+def org_genesis_bytes(founders: list, m: int, nonce: str) -> bytes:
+    g = {0: ORG_GENESIS_TYPE, 1: sorted(set(founders), key=lambda a: a.encode("utf-8")), 2: m}
+    if nonce:
+        g[3] = nonce
+    return cbor(g)
+
+
+def org_cred_body(org_id: str, subject: str, role: str, issued_at: int, not_after: int, epoch: int = 0,
+                  tag: str | None = ORG_CRED_TYPE) -> bytes:
+    b = {1: org_id, 2: subject, 3: role, 5: issued_at, 6: not_after}
+    if epoch:
+        b[4] = epoch
+    if tag is not None:
+        b[0] = tag
+    return cbor(b)
+
+
+def hlc(wall: int, logical: int = 0, node_id: str = "") -> dict:
+    h = {1: wall}
+    if logical:
+        h[2] = logical
+    if node_id:
+        h[3] = node_id
+    return h
+
+
+def cogunit_body(author: str, task_id: str, scope: str, typ: str, stamp: dict, body: bytes, body_cid: str,
+                 tag: str | None = COGUNIT_TYPE) -> bytes:
+    b = {1: author, 4: typ, 5: stamp}
+    for k, v in ((2, task_id), (3, scope), (6, body), (7, body_cid)):
+        if v:
+            b[k] = v
+    if tag is not None:
+        b[0] = tag
+    return cbor(b)
+
+
+def modobj_signed(body: bytes) -> dict:
+    """{1: body, 2: envelope}: the body signed by the conformance identity at key state 0."""
+    sig = ed25519_sign(sha256(b"anet-suite-identity-v1/cur"), body)
+    return {"body": body, "sig": sig, "wire": cbor({1: body, 2: envelope(SUITE_AID, 0, sig)})}
+
+
+@vector("MODOBJ-1", "ANet/module/org/testdata/vec-org-1.json", "ANet/module/blackboard/testdata/vec-cogunit-1.json")
+def gen_modobj_1():
+    V = "MODOBJ-1"
+    kel = suite_kel()
+    cur = sha256(b"anet-suite-identity-v1/cur")
+    pub = ed25519_public(cur)
+    issuer = {"aid": kel.aid, "kel": b16(kel.wire())}
+
+    # The organization and one member credential.
+    second = aid_for(V, "founder-2")
+    as_given = [second, kel.aid, second]
+    genesis = org_genesis_bytes(as_given, 1, "golden")
+    org_id = cid(genesis)
+    subject = aid_for(V, "member")
+    issued, until = MODOBJ_T0, MODOBJ_T0 + 365 * 86400000
+    cred = modobj_signed(org_cred_body(org_id, subject, "member", issued, until))
+
+    # The unit.
+    payload = "the dataset has 3 duplicate rows".encode("utf-8")
+    stamp = hlc(MODOBJ_T0, 1, "golden")
+    unit = modobj_signed(cogunit_body(kel.aid, "task-golden-1", "org", "claim", stamp, payload, cid_raw(payload)))
+
+    # The other kinds of object the same key signs (SI-81).
+    # An inner signature preimage v2 (core §3.3, L3) of a message from the conformance identity.
+    ts = MODOBJ_T0
+    fields = {1: Raw(cbor(kel.aid)), 2: Raw(cbor(0)), 3: Raw(cbor(subject)), 4: Raw(cbor("anet.message/1")),
+              5: Raw(cbor("ix-modobj-1")), 6: Raw(cbor(seed(V, "mid")[:16])), 7: Raw(cbor(ts)),
+              8: Raw(cbor(ts + 86400000)), 9: Raw(cbor(b"hello"))}
+    inner_pre = seal_preimage(fields, seed(V, "enc1"), seed(V, "kid")[:16], 1)
+    inner_sig = ed25519_sign(cur, inner_pre)
+    # The EV2-1 receipt (L29): ReceiptWire {1: body, 2: envelope}.
+    rc = ev2_receipt()
+    receipt_env = envelope(kel.aid, 0, rc["sig"])
+    receipt_at = EV2_DAY * 86400000
+    # A payment authorization (carried, D class): PaymentAuthorizationWire {1: authorization, 2: envelope}.
+    auth = {1: kel.aid, 2: aid_for(V, "payee"), 3: 25, 4: "hub:" + aid_for(V, "hub"), 5: "modobj-nonce",
+            6: MODOBJ_T0, 7: MODOBJ_T0 + 300000, 8: b16(sha256(pay_bind_preimage("ix-modobj-1", "modobj-nonce")))}
+    auth_sig = ed25519_sign(cur, cbor(auth))
+    auth_at = MODOBJ_T0 + 1
+
+    for b, sig in ((cred["body"], cred["sig"]), (unit["body"], unit["sig"]), (inner_pre, inner_sig),
+                   (rc["body"], rc["sig"]), (cbor(auth), auth_sig)):
+        if not ed25519_verify(pub, b, sig):
+            raise GoldenError("MODOBJ-1: a signature of the conformance identity does not verify")
+    bodies = [cred["body"], unit["body"], inner_pre, rc["body"], cbor(auth)]
+    for i, b in enumerate(bodies):
+        for j, sig in enumerate((cred["sig"], unit["sig"], inner_sig, rc["sig"], auth_sig)):
+            if i != j and ed25519_verify(pub, b, sig):
+                raise GoldenError("MODOBJ-1: one signature verifies over two kinds of object")
+
+    def wire_of(body: bytes, sig: bytes) -> str:
+        return b16(cbor({1: body, 2: envelope(kel.aid, 0, sig)}))
+
+    def foreign(name_as: str) -> list:
+        """Valid signed objects of the other kinds, presented as name_as."""
+        return [
+            {"name": "inner_preimage_as_" + name_as, "note": "an inner signature preimage v2 (L3) with its valid signature", "wire": wire_of(inner_pre, inner_sig), "refused": "decode"},
+            {"name": "receipt_as_" + name_as, "note": "the EV2-1 ReceiptBody (L29) with its valid signature", "wire": wire_of(rc["body"], rc["sig"]), "refused": "decode"},
+            {"name": "authorization_as_" + name_as, "note": "a payment authorization (carried) with its valid signature", "wire": wire_of(cbor(auth), auth_sig), "refused": "decode"},
+        ]
+
+    def elsewhere(sig: bytes, what: str) -> list:
+        """The signature sig carried by the other kinds of object."""
+        return [
+            {"name": what + "_signature_on_inner_preimage", "note": "verified as the signature of a message from the conformance identity at ts",
+             "preimage": b16(inner_pre), "ts": ts, "sig": b16(sig)},
+            {"name": what + "_signature_on_receipt", "note": "the EV2-1 ReceiptBody with this signature in its envelope",
+             "receipt_wire": b16(cbor({1: rc["body"], 2: envelope(kel.aid, 0, sig)})), "verify_at": receipt_at},
+            {"name": what + "_signature_on_authorization", "note": "the payment authorization above with this signature in its envelope",
+             "authorization_wire": b16(cbor({1: auth, 2: envelope(kel.aid, 0, sig)})), "verify_at": auth_at},
+        ]
+
+    def resigned(body: bytes) -> str:
+        return modobj_signed(body)["wire"].hex()
+
+    cred_neg = [
+        {"name": "no_key_0", "note": "the body without key 0 (the 0.2 form), signed", "wire": resigned(drop_key(cred["body"], 0)), "refused": "decode"},
+        {"name": "tag_one_char_off", "note": "key 0 is anet.org-cred/2, signed", "wire": resigned(org_cred_body(org_id, subject, "member", issued, until, tag="anet.org-cred/2")), "refused": "decode"},
+        {"name": "unit_as_credential", "note": "the unit's CogUnitWire presented as a SignedCredential: the same shape, another tag", "wire": b16(unit["wire"]), "refused": "decode"},
+        {"name": "unit_signature_on_credential", "note": "the credential's body with the unit's signature", "wire": wire_of(cred["body"], unit["sig"]), "refused": "signature"},
+        *foreign("credential"),
+        {"name": "sig_byte_changed", "note": "the last byte of the wire (of the signature) changed", "wire": b16(flip(cred["wire"])), "refused": "signature"},
+        {"name": "body_byte_changed", "note": "the last byte of not_after in the body changed, the envelope kept", "wire": wire_of(flip(cred["body"]), cred["sig"]), "refused": "signature"},
+        {"name": "body_key_7", "note": "the body with an unregistered key 7, signed", "wire": resigned(add_key(cred["body"], 7, 0)), "refused": "decode"},
+        {"name": "wire_key_3", "note": "the wire with an unregistered key 3", "wire": b16(add_key(cred["wire"], 3, 0)), "refused": "decode"},
+        {"name": "epoch_2", "note": "a credential at governance epoch 2, signed: 0.3.0 accepts only the default", "wire": resigned(org_cred_body(org_id, subject, "member", issued, until, epoch=2)), "refused": "epoch"},
+    ]
+    unit_neg = [
+        {"name": "no_key_0", "note": "the body without key 0, signed", "wire": resigned(drop_key(unit["body"], 0)), "refused": "decode"},
+        {"name": "tag_one_char_off", "note": "key 0 is anet.cogunit/2, signed", "wire": resigned(cogunit_body(kel.aid, "task-golden-1", "org", "claim", stamp, payload, cid_raw(payload), tag="anet.cogunit/2")), "refused": "decode"},
+        {"name": "v02_form", "note": "the 0.2 wire form: keys 1-7 and the envelope in key 8 of one map", "wire": b16(cbor({**uncbor(drop_key(unit["body"], 0)), 8: envelope(kel.aid, 0, ed25519_sign(cur, drop_key(unit["body"], 0)))})), "refused": "decode"},
+        {"name": "credential_as_unit", "note": "the SignedCredential presented as a CogUnitWire: the same shape, another tag", "wire": b16(cred["wire"]), "refused": "decode"},
+        {"name": "credential_signature_on_unit", "note": "the unit's body with the credential's signature", "wire": wire_of(unit["body"], cred["sig"]), "refused": "signature"},
+        *foreign("unit"),
+        {"name": "sig_byte_changed", "note": "the last byte of the wire (of the signature) changed", "wire": b16(flip(unit["wire"])), "refused": "signature"},
+        {"name": "body_byte_changed", "note": "the last byte of body_cid in the body changed, the envelope kept", "wire": wire_of(flip(unit["body"]), unit["sig"]), "refused": "signature"},
+        {"name": "body_key_8", "note": "the body with an unregistered key 8, signed", "wire": resigned(add_key(unit["body"], 8, 0)), "refused": "decode"},
+        {"name": "wire_key_3", "note": "the wire with an unregistered key 3", "wire": b16(add_key(unit["wire"], 3, 0)), "refused": "decode"},
+        {"name": "author_not_signer", "note": "a unit whose author is another AID, signed by the conformance identity", "wire": resigned(cogunit_body(subject, "task-golden-1", "org", "claim", stamp, payload, cid_raw(payload))), "refused": "author"},
+    ]
+    envelope_json = {"signer_aid": kel.aid, "key_state_seq": 0, "alg": ALG_EDDSA}
+    org_file = {
+        "id": V,
+        "description": ("Module objects, organization part: the genesis and its org_id (L41), a member credential signed by "
+                        "the issuer's identity key (L42). Issuer and second founder as named; the issuer is the conformance "
+                        "identity. Each negative must be refused for the reason it names (decode: not a credential; "
+                        "signature: does not verify; epoch: names a governance epoch). Each signature_elsewhere row is the "
+                        "credential's signature carried by another kind of object, and must fail there."),
+        "labels": {"genesis": ORG_GENESIS_TYPE, "credential": ORG_CRED_TYPE},
+        "issuer": issuer,
+        "genesis": {"governance_root_as_given": as_given, "m": 1, "nonce": "golden", "bytes": b16(genesis), "org_id": org_id},
+        "credential": {
+            "org_id": org_id, "subject": subject, "role": "member", "issued_at": issued, "not_after": until,
+            "body": b16(cred["body"]), "body_cid": cid(cred["body"]), "sig": b16(cred["sig"]),
+            "envelope": envelope_json, "wire": b16(cred["wire"]), "verify_at": issued + 1000,
+        },
+        "negatives": cred_neg,
+        "signature_elsewhere": elsewhere(cred["sig"], "credential"),
+    }
+    unit_file = {
+        "id": V,
+        "description": ("Module objects, blackboard part: a cognitive unit, its body and id (the CID of the body), signed by "
+                        "the author's identity key (L43); the author is the conformance identity. Each negative must be "
+                        "refused for the reason it names (decode: not a unit; signature: does not verify; author: the "
+                        "signer is not the author). Each signature_elsewhere row is the unit's signature carried by "
+                        "another kind of object, and must fail there."),
+        "labels": {"unit": COGUNIT_TYPE},
+        "author": issuer,
+        "unit": {
+            "author": kel.aid, "task_id": "task-golden-1", "scope": "org", "type": "claim",
+            "stamp": {"wall": MODOBJ_T0, "logical": 1, "node_id": "golden"},
+            "payload": b16(payload), "body_cid": cid_raw(payload),
+            "body": b16(unit["body"]), "id": cid(unit["body"]), "sig": b16(unit["sig"]),
+            "envelope": envelope_json, "wire": b16(unit["wire"]), "verify_at": MODOBJ_T0,
+        },
+        "negatives": unit_neg,
+        "signature_elsewhere": elsewhere(unit["sig"], "unit"),
+    }
+    return {"ANet/module/org/testdata/vec-org-1.json": org_file,
+            "ANet/module/blackboard/testdata/vec-cogunit-1.json": unit_file}
+
 # ---------------------------------------------------------------------------------------------
 
 def _list(ws: Workspace) -> int:
