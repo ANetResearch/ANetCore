@@ -2457,6 +2457,7 @@ or the relayauth text preimage (L22).
 | ANet | `(*module/x402.Module).signedGet` | L22 |
 | ANet | `tools/anetfixture.cmdSeal` | InnerSigPreimage |
 | ANet | `tools/anetfixture.v2Headers` | L22 |
+| ANetHub | `(*internal/federation.Signer).send` | L22 |
 
 ## Fields that must not hold U+0000
 

@@ -2841,7 +2841,8 @@
       {"repo": "ANet", "func": "(*module/x402.Module).WitnessHub", "signs": "AELHeadAttestation"},
       {"repo": "ANet", "func": "(*module/x402.Module).signedGet", "signs": "L22"},
       {"repo": "ANet", "func": "tools/anetfixture.cmdSeal", "signs": "InnerSigPreimage"},
-      {"repo": "ANet", "func": "tools/anetfixture.v2Headers", "signs": "L22"}
+      {"repo": "ANet", "func": "tools/anetfixture.v2Headers", "signs": "L22"},
+      {"repo": "ANetHub", "func": "(*internal/federation.Signer).send", "signs": "L22"}
     ]
   },
   "scan": {
