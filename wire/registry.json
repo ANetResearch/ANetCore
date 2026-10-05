@@ -2805,6 +2805,7 @@
     {"value": "anet-official", "class": "name", "status": "active", "note": "program name"},
     {"value": "anet-hub", "class": "name", "status": "active", "note": "program name"},
     {"value": "anet-hub-admin", "class": "name", "status": "active", "note": "program name"},
+    {"value": "anet/", "class": "name", "status": "active", "note": "User-Agent prefix of every daemon request to its hub: anet/<version>, the same on the signed and the anonymous side (sealed-sender SSR-D25)"},
     {"value": "anet.reply", "class": "artifact-id", "status": "active", "note": "A2A artifact id of a text task's reply"},
     {"value": "anet.result", "class": "artifact-id", "status": "active", "note": "A2A artifact id of a capability call's deliverable"},
     {"value": "anet-wire-registry/1", "class": "json-format", "status": "active", "note": "format of this register"}
