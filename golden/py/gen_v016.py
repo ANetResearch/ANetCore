@@ -4060,8 +4060,8 @@ def gen_regpow_1():
 
 
 # --- FS: the local data key of a task and the fields stored under it (LOCAL-1, L35 and L36) -------
-# The client key and client digest of the same vector (L37, L38) are CUX's part, added beside these
-# sections by the package that implements them; the sections below do not change when it does.
+# The client key and client digest of the same vector (L37, L38) are CUX's part: the "client" member,
+# written by local_client_section below; the FS sections do not change with it.
 
 LOCAL_FIELD_LABEL = "anet-local/v1"
 LOCAL_AEAD_INFO = b"anet-local-aead/v1"
@@ -4152,6 +4152,161 @@ def gen_local_1():
         "fields": fields,
         "empty": empty,
         "negatives": negatives,
+        "client": local_client_section(V, mac_key),
+    }
+
+
+# --- CUX: a local client's retry key (LOCAL-1, L37 and L38; correctness-ux CUX-D1) -------------
+# client_key = SHA-256("anet-client-key/v1" || 0x00 || messageId); client_digest =
+# HMAC-SHA256(mac_key, "anet-client-msg/v1" || 0x00 || canon), mac_key the task's L36 key. canon is
+# the message's content as a JSON object: RFC 8785's member order (UTF-16 code units) and string
+# escaping, no whitespace, and every number as the client wrote it, never through a double (core
+# L38): a double makes 9007199254740993 and 9007199254740992 one number, and so one request. This is
+# written out here rather than taken from a JCS library, which would re-encode the numbers.
+
+CLIENT_KEY_LABEL = "anet-client-key/v1"
+CLIENT_MSG_LABEL = "anet-client-msg/v1"
+CLIENT_PREVIEW_URI = "https://agentnetwork.org.cn/a2a/ext/anet-preview/v1"
+CLIENT_X402_URI = "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2"
+
+
+class JSONLiteral(str):
+    """A JSON number as the client wrote it."""
+
+
+def json_literal_loads(text: str):
+    """JSON with every number kept as its literal (JSONLiteral)."""
+    return json.loads(text, parse_int=JSONLiteral, parse_float=JSONLiteral,
+                      parse_constant=lambda c: (_ for _ in ()).throw(GoldenError("JSON constant %s" % c)))
+
+
+def canon_string(s: str) -> str:
+    """RFC 8785 §3.2.2.2: the short escapes, \\u00xx for the other controls, the rest as it is."""
+    short = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r"}
+    out = ['"']
+    for ch in s:
+        if ch in short:
+            out.append(short[ch])
+        elif ord(ch) < 0x20:
+            out.append("\\u%04x" % ord(ch))
+        else:
+            out.append(ch)
+    out.append('"')
+    return "".join(out)
+
+
+def canon_json(v) -> str:
+    if v is None:
+        return "null"
+    if v is True:
+        return "true"
+    if v is False:
+        return "false"
+    if isinstance(v, JSONLiteral):
+        return str.__str__(v)
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, str):
+        return canon_string(v)
+    if isinstance(v, list):
+        return "[" + ",".join(canon_json(e) for e in v) + "]"
+    if isinstance(v, dict):
+        keys = sorted(v, key=lambda k: k.encode("utf-16-be"))
+        return "{" + ",".join(canon_string(k) + ":" + canon_json(v[k]) for k in keys) + "}"
+    raise GoldenError("canon: %s" % type(v).__name__)
+
+
+def client_content(msg: dict, ext: list) -> dict:
+    """The content of a client message (CUX-D1): a payment decision when the metadata has x402.*
+    keys, otherwise its texts and files, or a capability call's skill and args. The metadata keeps
+    the client's own keys only; the extensions are sorted, each once, without the preview one."""
+    meta = msg.get("metadata") or {}
+    own = {k: v for k, v in meta.items() if not k.startswith(("a2a.", "anet.", "x402."))}
+    exts = sorted(set(e for e in ext if e != CLIENT_PREVIEW_URI))
+    c = {"v": JSONLiteral("1"), "meta": own, "ext": exts}
+    if any(k.startswith("x402.") for k in meta):
+        x = {"status": meta.get("x402.payment.status")}
+        if meta.get("anet.payment.accept") is not None:
+            x["accept"] = meta["anet.payment.accept"]
+        c.update(kind="payment", x402=x)
+        return c
+    texts, files, skill, args = [], [], None, None
+    for p in msg.get("parts", []):
+        if "text" in p:
+            texts.append(p["text"])
+        elif "raw" in p:
+            data = base64.b64decode(p["raw"])
+            name = (p.get("filename") or "").rsplit("/", 1)[-1] or "attachment"
+            files.append({"name": name, "mime": p["mediaType"].split(";")[0].strip().lower(), "cid": cid_raw(data)})
+        elif "data" in p and isinstance(p["data"], dict) and "skill" in p["data"]:
+            skill, args = p["data"]["skill"], p["data"].get("args", {})
+        else:
+            raise GoldenError("client_content: a part this vector does not use")
+    if skill is not None:
+        c.update(kind="skill", skill=skill, args=args, files=files)
+    else:
+        c.update(kind="text", texts=texts, files=files)
+    return c
+
+
+def client_key(message_id: str) -> bytes:
+    return sha256(CLIENT_KEY_LABEL.encode() + b"\x00" + message_id.encode("utf-8"))
+
+
+def client_digest(mac_key: bytes, canon: bytes) -> bytes:
+    return hmac_sha256(mac_key, CLIENT_MSG_LABEL.encode() + b"\x00" + canon)
+
+
+def local_client_section(V: str, mac_key: bytes) -> dict:
+    files = Stream("anet-golden/v016/%s/client-files" % V)
+    jpeg = b"\xff\xd8\xff\xe0" + files.read(60)
+    png = b"\x89PNG\r\n\x1a\n" + files.read(56)
+    payee = "bafyrei" + seed(V, "client-payee").hex()[:52]
+    # Each message as the client wrote it: JSON text, so its number literals are the client's.
+    messages = [
+        ("text", "the four kinds: a text message with metadata of its own and of anet's, two extensions activated",
+         '{"messageId":"m-text-1","role":"ROLE_USER","contextId":"ctx-1","parts":[{"text":"Book the small room for Friday 10:00."},'
+         '{"text":"Two people, \\"quiet\\" please\\n\\u0001 — merci"}],'
+         '"metadata":{"trace":"t-7","b":[1,2.50,true,null],"a2a.messageId":"x","anet.preview_mode":"on"}}',
+         [CLIENT_X402_URI, CLIENT_PREVIEW_URI, CLIENT_X402_URI]),
+        ("skill_big", "the four kinds: a capability call whose args hold 9007199254740993",
+         '{"messageId":"m-skill-1","role":"ROLE_USER","parts":[{"data":{"skill":"calc.add",'
+         '"args":{"a":9007199254740993,"z":{"\\u00fc":true,"\\ud83d\\ude00":0,"\\ue000":1},"b":-0}}}]}', []),
+        ("skill_big_neighbour", "skill_big with 9007199254740992: a double holds neither, and the digests differ",
+         '{"messageId":"m-skill-1","role":"ROLE_USER","parts":[{"data":{"skill":"calc.add",'
+         '"args":{"a":9007199254740992,"z":{"\\u00fc":true,"\\ud83d\\ude00":0,"\\ue000":1},"b":-0}}}]}', []),
+        ("skill_one", "a capability call with the number 1",
+         '{"messageId":"m-one","role":"ROLE_USER","parts":[{"data":{"skill":"calc.add","args":{"n":1}}}]}', []),
+        ("skill_one_point_zero", "skill_one with 1.0: the same double, another literal, another digest",
+         '{"messageId":"m-one","role":"ROLE_USER","parts":[{"data":{"skill":"calc.add","args":{"n":1.0}}}]}', []),
+        ("files", "the four kinds: a text message with two files",
+         '{"messageId":"m-files-1","role":"ROLE_USER","parts":[{"text":"Compare the faces."},'
+         '{"raw":"%s","filename":"photos/a.jpg","mediaType":"image/jpeg"},'
+         '{"raw":"%s","filename":"b.png","mediaType":"image/png"}]}' % (base64.b64encode(jpeg).decode(), base64.b64encode(png).decode()), []),
+        ("payment_submit", "the four kinds: a payment decision; its parts are not part of it",
+         '{"messageId":"m-pay-1","role":"ROLE_USER","taskId":"ix_0","parts":[{"text":"paying"}],'
+         '"metadata":{"x402.payment.status":"payment-submitted","anet.payment.accept":{"scheme":"exact",'
+         '"network":"anet:hub","amount":"3","asset":"credits","payTo":"%s","maxTimeoutSeconds":600}}}' % payee,
+         [CLIENT_X402_URI]),
+    ]
+    out = []
+    for name, note, text, ext in messages:
+        msg = json_literal_loads(text)
+        canon = canon_json(client_content(msg, ext)).encode("utf-8")
+        out.append({"name": name, "note": note, "message": text, "extensions": ext,
+                    "canon": canon.decode("utf-8"), "client_key": b16(client_key(msg["messageId"])),
+                    "client_digest": b16(client_digest(mac_key, canon))})
+    by = {m["name"]: m for m in out}
+    pairs = []
+    for a, b in (("skill_big", "skill_big_neighbour"), ("skill_one", "skill_one_point_zero")):
+        if by[a]["client_digest"] == by[b]["client_digest"] or by[a]["client_key"] != by[b]["client_key"]:
+            raise GoldenError("LOCAL-1 client: %s and %s must share a key and differ in digest" % (a, b))
+        pairs.append({"a": a, "b": b, "note": "one messageId, two contents: the digests differ"})
+    return {
+        "description": "A local client's retry key (core L37, L38; correctness-ux CUX-D1): client_key = SHA-256(\"anet-client-key/v1\" || 0x00 || messageId); client_digest = HMAC-SHA256(mac_key, \"anet-client-msg/v1\" || 0x00 || canon), mac_key = keys.mac_key. canon is the message's content: {v, kind, texts, files, meta, ext} for text, {v, kind, skill, args, files, meta, ext} for a capability call, {v, kind, x402: {status, accept?}, meta, ext} for a payment decision; meta without a2a.*, anet.* and x402.* keys; ext sorted, each once, without the preview extension; members in RFC 8785 order, strings escaped as RFC 8785 does, numbers as the client wrote them. message is the client's message as JSON text, extensions the extensions it activated.",
+        "labels": {"client_key": CLIENT_KEY_LABEL, "client_digest": CLIENT_MSG_LABEL},
+        "messages": out,
+        "pairs": pairs,
     }
 
 
