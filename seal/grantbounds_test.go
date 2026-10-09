@@ -41,6 +41,9 @@ func TestGrantHomeAndP2PBounds(t *testing.T) {
 		{"port 0", testHomeAID, strp("192.0.2.10:0"), false},
 		{"port 65536", testHomeAID, strp("192.0.2.10:65536"), false},
 		{"port 99999999999999999999", testHomeAID, strp("192.0.2.10:99999999999999999999"), false},
+		// 2^64 + 80 and 2^64 + 1: read into a 64-bit counter without a bound, they wrap to 80 and 1.
+		{"port 2^64 + 80", testHomeAID, strp("192.0.2.10:18446744073709551696"), false},
+		{"port 2^64 + 1", testHomeAID, strp("192.0.2.10:18446744073709551617"), false},
 		{"port with a sign", testHomeAID, strp("192.0.2.10:+80"), false},
 		{"port negative", testHomeAID, strp("192.0.2.10:-1"), false},
 		{"port a name", testHomeAID, strp("192.0.2.10:http"), false},
