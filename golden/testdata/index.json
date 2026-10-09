@@ -261,7 +261,7 @@
       "labels": [],
       "objects": ["CapList", "CapEntry", "Describe", "InvokeReq", "Caller", "InvokeResp", "Refusal", "EffectEvidence"],
       "at": [
-        {"repo": "ANet", "path": "provider/anetlink/testdata/c1v1/", "glob": "*.cbor", "todo": "v030-todo(EXE-12)"},
+        {"repo": "ANet", "path": "provider/anetlink/testdata/c1v1/", "glob": "*.cbor"},
         {"repo": "ANetLink", "path": "northbound/c1serv/testdata/c1v1/", "glob": "*.cbor"}
       ]
     },
