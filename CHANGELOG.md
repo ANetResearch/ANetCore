@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.16.0-rc.2 — 2026-10-09
+
+The second release candidate of the kernel of anet 0.3.0 and hub wire 3.
+anet 0.3.0 and ANetHub 0.3.0 require this version in their `go.mod`. No
+golden vector of rc.1 changed a byte. What changed is that decoders and
+checks refuse values rc.1 let through, the register follows what the
+daemon and the hub now send, one more vector pins the module objects,
+and the `adp` package is gone.
+
+### Changed
+
+- **Keys of small order are refused.** An Ed25519 public key of small
+  order is no key at all: anyone can make a signature that verifies under
+  it. A key set whose mailbox signing key is one fails its structure
+  check; a capability whose holder key is one is neither issued
+  (`SignCap`) nor decoded; and `VerifyAccess` and `CheckGrant` refuse such
+  a mailbox key at the signature step. Every key made from a seed passes.
+- **Grant bounds.** A grant's `home` must be an AID (`identity.ValidAID`).
+  Its `p2p`, when present, must be `host:port` with a host, a port from 1
+  to 65535 and at most 262 bytes; a port too large to be a number is
+  refused, not wrapped. `seal.ValidP2PAddr` lets an issuer leave out an
+  address a grant could not carry.
+- **Recovery files.** A passphrase that is not valid UTF-8 is refused
+  with `identity.ErrPassphraseNotUTF8` by `CheckPassphrase`,
+  `SealRecoveryFile` and `OpenRecoveryFile`: such bytes could not be typed
+  again in a UTF-8 terminal. The AID in a recovery file's header and block
+  must be an AID (`ValidAID`).
+- **Preview frames.** `ValidatePreview` refuses a `msg_id` or `answers`
+  longer than `delegation.MaxPreviewIDLen` (256 bytes), so an accepted
+  frame has a bounded size.
+- **Register** (`wire/registry.json`, `docs/wire-keys.md`):
+  - user reasons `egress_upstream_unreachable` and `datadir_too_new`; hub
+    operator reasons `hub_data_too_new` and `quota_bad_value`;
+  - the `record` of a hub's liability proof is base64url text, as every
+    binary value of wire 3;
+  - the name `anet/`, the User-Agent prefix of every daemon request to its
+    hub;
+  - signing sites: the daemon signs its key set in one function
+    (`ringInputsAt`); the org credential and the cognitive unit of the
+    module objects; the hub's federation client (relay-auth L22).
+- **Transition list.** 28 entries are gone with the v0.2 shapes they
+  stood for: the ADP card signers, public prices and vouchers, the
+  daemon's task board and wire-1 relay signing, the old key-ring file, the
+  untagged module objects, the hub's per-event credit records, the
+  federation v2 signers and the retired relay-auth actions `send` and
+  `fedkeys`.
+- `wire.TodoWord` and `wire.TodoMarker` spell the open-item marker, so the
+  framework that checks markers is not itself one of the hits.
+
+### Added
+
+- **MODOBJ-1** — vectors for the org genesis, the org credential and the
+  cognitive unit (labels L41, L42, L43), written by the Python generator
+  and checked in Go where the objects live; the negatives show that a
+  signature over one kind of object never passes for another.
+- `seal.ValidP2PAddr`, `identity.ErrPassphraseNotUTF8`,
+  `delegation.MaxPreviewIDLen`, `wire.TodoWord`, `wire.TodoMarker`.
+
+### Removed
+
+- The `adp` package (ADP agent cards, card tombstones and gossip). Nothing
+  signs or reads an ADP card any more; an agent's card is its A2A
+  AgentCard (`a2acard`).
+
 ## v0.16.0-rc.1 — 2026-10-04
 
 The kernel side of anet 0.3.0 and hub wire 3: the first release candidate,
