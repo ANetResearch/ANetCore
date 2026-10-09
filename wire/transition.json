@@ -5,7 +5,6 @@
     {"todo": "v030-todo(PAY-9)", "repo": "ANetCore", "kind": "signer", "go": "(*adp.CardTombstone).Sign", "note": "ADP cards are removed; adp has no user left after the daemon side goes"},
     {"todo": "v030-todo(UX-3)", "repo": "ANet", "kind": "string", "value": "anet.final", "note": "anet.final is removed"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANet", "kind": "string", "value": "anet.pricing", "note": "public prices are removed"},
-    {"todo": "v030-todo(FS-4)", "repo": "ANet", "kind": "struct", "go": "internal/daemon.encKeyFile", "keys": ["1 V uint64", "2 AID string", "3 LastSeq uint64", "4 Pairs []seal.KeyPair", "5 Signed []byte"], "note": "enc_keys.cbor v2 (EncKeyFile)"},
     {"todo": "v030-todo(SS-11)", "repo": "ANet", "kind": "action", "value": "p2p", "note": "retired relayauth action (hub rendezvous removed)"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANet", "kind": "string", "value": "anet.voucher.redeemed", "note": "vouchers are removed"},
     {"todo": "v030-todo(PAY-9)", "repo": "ANet", "kind": "string", "value": "anet.voucher.refused", "note": "vouchers are removed"},
