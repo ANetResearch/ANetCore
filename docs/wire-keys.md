@@ -2447,7 +2447,7 @@ or the relayauth text preimage (L22).
 | ANetCore | `a2acard.SignWithSnapshot` | A2ACardJWS |
 | ANetCore | `identity.SignNotice` | NoticeBody |
 | ANet | `(*internal/daemon.Daemon).hubSigned` | L22 |
-| ANet | `(*internal/daemon.Daemon).sealWithOpts` | InnerSigPreimage |
+| ANet | `(*internal/daemon.Daemon).sealMessage` | InnerSigPreimage |
 | ANet | `(*internal/daemon.Daemon).ringInputsAt` | EncKeySet |
 | ANet | `(*module/org.Credential).Sign` | OrgCredBody |
 | ANet | `(*module/blackboard.CogUnit).Sign` | CogUnitBody |

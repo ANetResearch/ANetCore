@@ -2835,7 +2835,7 @@
       {"repo": "ANetCore", "func": "a2acard.SignWithSnapshot", "signs": "A2ACardJWS"},
       {"repo": "ANetCore", "func": "identity.SignNotice", "signs": "NoticeBody"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).hubSigned", "signs": "L22"},
-      {"repo": "ANet", "func": "(*internal/daemon.Daemon).sealWithOpts", "signs": "InnerSigPreimage"},
+      {"repo": "ANet", "func": "(*internal/daemon.Daemon).sealMessage", "signs": "InnerSigPreimage"},
       {"repo": "ANet", "func": "(*internal/daemon.Daemon).ringInputsAt", "signs": "EncKeySet"},
       {"repo": "ANet", "func": "(*module/org.Credential).Sign", "signs": "OrgCredBody"},
       {"repo": "ANet", "func": "(*module/blackboard.CogUnit).Sign", "signs": "CogUnitBody"},
