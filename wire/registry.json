@@ -2644,6 +2644,7 @@
       {"code": "recover_not_witness"},
       {"code": "clock_skew"},
       {"code": "identity_v02"},
+      {"code": "datadir_too_new"},
       {"code": "rotation_emergency_done"},
       {"code": "notice_stale"},
       {"code": "old_hub_unacked"},
