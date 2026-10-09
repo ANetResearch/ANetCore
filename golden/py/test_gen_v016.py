@@ -688,5 +688,38 @@ class Repository(unittest.TestCase):
         self.assertEqual(g.suite_kel().aid, g.SUITE_AID)
 
 
+class ClientCanon(unittest.TestCase):
+    """LOCAL-1's client part (core L37, L38): the canonical content is RFC 8785's member order and
+    escaping with the client's own number literals."""
+
+    def canon(self, text):
+        return g.canon_json(g.json_literal_loads(text))
+
+    def test_members_sort_by_utf16(self):
+        self.assertEqual(self.canon('{"\\ue000":1,"\\ud83d\\ude00":2,"\\u00fc":3,"b":4,"a":5}'),
+                         '{"a":5,"b":4,"\u00fc":3,"\U0001F600":2,"\ue000":1}')
+
+    def test_strings_escape_as_rfc8785(self):
+        self.assertEqual(g.canon_string('\x01\b\t\n\f\r"\\/\x7f\u2028\u00fc'),
+                         '"\\u0001\\b\\t\\n\\f\\r\\"\\\\/\x7f\u2028\u00fc"')
+
+    def test_numbers_keep_their_literals(self):
+        self.assertEqual(self.canon("[1.0,1e2,-0,9007199254740993,0.1000,1]"),
+                         "[1.0,1e2,-0,9007199254740993,0.1000,1]")
+        self.assertNotEqual(self.canon('{"a":9007199254740993}'), self.canon('{"a":9007199254740992}'))
+
+    def test_vector_pairs_differ(self):
+        v = g.gen_local_1()["client"]
+        by = {m["name"]: m for m in v["messages"]}
+        for p in v["pairs"]:
+            self.assertEqual(by[p["a"]]["client_key"], by[p["b"]]["client_key"])
+            self.assertNotEqual(by[p["a"]]["client_digest"], by[p["b"]]["client_digest"])
+        mac = bytes.fromhex(g.gen_local_1()["keys"]["mac_key"]["key"])
+        for m in v["messages"]:
+            self.assertEqual(g.client_digest(mac, m["canon"].encode("utf-8")).hex(), m["client_digest"])
+            self.assertNotEqual(g.client_digest(bytes.fromhex(g.gen_local_1()["ix_dek"]), m["canon"].encode("utf-8")).hex(),
+                                m["client_digest"], "keyed with ix_dek itself")
+
+
 if __name__ == "__main__":
     unittest.main()
