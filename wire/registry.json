@@ -1784,9 +1784,24 @@
           ]
         },
         "response": {"partial": true, "fields": []},
-        "reasons": ["keys_rollback"],
+        "reasons": ["keys_rollback", "kel_invalid"],
         "owner": "FS",
-        "note": "keys_rollback carries stored_seq"
+        "note": "keys_rollback carries stored_seq, also for a set whose seq is not above the stored one; kel_invalid: the key history this hub holds cannot verify a new set; a set refused by SSR-W9 is 400 bad_request, without keys_status"
+      },
+      {
+        "method": "GET",
+        "path": "/agents/{aid}/keys",
+        "auth": "none",
+        "response": {
+          "fields": [
+            {"name": "aid", "type": "string", "req": "must"},
+            {"name": "keys", "type": "b64url", "req": "must", "note": "SignedEncKeySet bytes"},
+            {"name": "kel", "type": "b64url", "req": "must"}
+          ]
+        },
+        "reasons": ["unknown_aid", "not_found"],
+        "owner": "FS, SS",
+        "note": "only for agents registered here; not_found: registered with no key set to serve yet"
       },
       {
         "method": "POST",
@@ -2742,7 +2757,9 @@
       {"code": "hub_running"},
       {"code": "hub_identity_v02"},
       {"code": "hub_data_too_new"},
-      {"code": "quota_bad_value"}
+      {"code": "quota_bad_value"},
+      {"code": "hub_passphrase_too_short"},
+      {"code": "hub_passphrase_not_utf8"}
     ],
     "x402": [
       {"code": "payee_not_local", "note": "new errorReason"},
