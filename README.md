@@ -56,7 +56,6 @@ flowchart TB
 | `ael` | Agent Event Ledger — per-DID append-only anti-fork hash chain (P6) | evidence-spec |
 | `tsir` | TaskDoc, closed predicate calculus, `EffectRecord`, acceptance evaluation | tsir-spec |
 | `effect` | The execution-effect envelope: what happened, whether it is verifiable, the metrics a TSIR predicate evaluates | contracts C1/C4 |
-| `adp` | AgentCard — capability self-description, typed CID mounts | adp-spec |
 | `agenturi` | `agent://` URI scheme — parsing and canonical form | agent-uri-spec |
 | `golden` | Conformance vectors — the byte-for-byte oracle | `_CONVENTIONS §8` |
 
