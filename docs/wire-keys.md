@@ -2448,8 +2448,7 @@ or the relayauth text preimage (L22).
 | ANetCore | `identity.SignNotice` | NoticeBody |
 | ANet | `(*internal/daemon.Daemon).hubSigned` | L22 |
 | ANet | `(*internal/daemon.Daemon).sealWithOpts` | InnerSigPreimage |
-| ANet | `(*internal/daemon.Daemon).setupKeyRing` | EncKeySet |
-| ANet | `(*internal/daemon.Daemon).maintainKeyRing` | EncKeySet |
+| ANet | `(*internal/daemon.Daemon).ringInputsAt` | EncKeySet |
 | ANet | `(*module/org.Credential).Sign` | OrgCredBody |
 | ANet | `(*module/blackboard.CogUnit).Sign` | CogUnitBody |
 | ANet | `(*module/x402.Module).Authorize` | PaymentAuthorization |
