@@ -2,7 +2,6 @@
   "about": "v0.2 shapes still in the code while the v0.3.0 rewrite is under way. Each entry names the work item that removes it; wire/scan accepts an entry only exactly as written here and fails when an entry matches nothing any more. The list must be empty before release.",
   "entries": [
     {"todo": "v030-todo(UX-3)", "repo": "ANet", "kind": "string", "value": "anet.final", "note": "anet.final is removed"},
-    {"todo": "v030-todo(SS-11)", "repo": "ANet", "kind": "action", "value": "p2p", "note": "retired relayauth action (hub rendezvous removed)"},
     {"todo": "v030-todo(PAY-13)", "repo": "ANet", "kind": "string", "value": "anet.credit.issued", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(PAY-13)", "repo": "ANet", "kind": "string", "value": "anet.credit.retired", "note": "per-event issuance records are replaced by supply epochs"},
     {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.Receipt", "keys": ["1 InteractionID string", "2 RequesterAID string", "3 ProviderAID string", "4 RequestCID string", "5 ResultCID string", "6 CompletedAt uint64"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
