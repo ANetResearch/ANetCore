@@ -431,6 +431,7 @@
     {"object": "IdentityPending", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
     {"object": "WitnessPush", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
     {"object": "KeyStateNoticeFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
+    {"object": "EvidenceQueueRecord", "why": "a line of a file in the node's data directory, written and read only by the node that owns it, and only until a key event is over; no other implementation reads it"},
     {"object": "MboxKeyFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
     {"object": "EncKeyFile", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
     {"object": "RingKey", "why": "a file in the node's data directory, written and read only by the node that owns it; no other implementation reads it"},
