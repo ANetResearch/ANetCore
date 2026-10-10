@@ -3,6 +3,7 @@ package wire_test
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -112,24 +113,45 @@ type encKeyStale struct {
 	Old []byte `cbor:"6,keyasint,omitempty"`
 }
 
-// A decoder that knows a key the object does not assign is caught whatever the type of its field:
-// the negative's value is null, which decodes into any field, so the strict decoder's refusal can
-// only come from the key itself.
+// A decoder that knows a key the object does not assign is caught whatever the type of its field.
+// The negative's value is null, which the decoder alone takes into any field; since CORE-E4
+// revision 7 UnmarshalStrict refuses a null that would go into anything but a pointer, so the
+// refusal of the stale decoder below comes from the value, not the key: it is a NullError where
+// every other key is an unknown field. A test that wants "refused for the key" says so with
+// errors.As(err, *cbor.UnknownFieldError) (or the object's own reason for an unknown key), and a
+// stale field of a pointer type still takes the null outright.
 func TestNegativesExposeADecoderThatKnowsAnUnassignedKey(t *testing.T) {
 	r := reg(t)
 	negs, err := wire.Negatives(r, "EncKey", validEncKey(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	type encKeyStalePtr struct {
+		encKey
+		Old *[]byte `cbor:"6,keyasint,omitempty"`
+	}
+	notForTheKey := map[uint64]bool{}
 	took := map[uint64]bool{}
 	for _, n := range negs {
 		var v encKeyStale
-		if coredet.UnmarshalStrict(n.Bytes, &v) == nil {
+		err := coredet.UnmarshalStrict(n.Bytes, &v)
+		var uf *cbor.UnknownFieldError
+		if !errors.As(err, &uf) {
+			notForTheKey[n.Key] = true
+			if !errors.Is(err, coredet.ErrNullOrUndefined) {
+				t.Errorf("key %d: refused for %v, neither the key nor the null", n.Key, err)
+			}
+		}
+		var p encKeyStalePtr
+		if coredet.UnmarshalStrict(n.Bytes, &p) == nil {
 			took[n.Key] = true
 		}
 	}
+	if len(notForTheKey) != 1 || !notForTheKey[6] {
+		t.Fatalf("a decoder with a field for key 6 refused for the key everywhere but %v; want exactly key 6 exposed", notForTheKey)
+	}
 	if len(took) != 1 || !took[6] {
-		t.Fatalf("a decoder with a field for key 6 took %v; want exactly key 6 exposed", took)
+		t.Fatalf("a decoder with a pointer field for key 6 took %v; want exactly key 6 exposed", took)
 	}
 }
 
