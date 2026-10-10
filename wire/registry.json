@@ -1814,7 +1814,7 @@
         },
         "reasons": ["unknown_aid", "not_found"],
         "owner": "FS, SS",
-        "note": "only for agents registered here; not_found: registered with no key set to serve yet"
+        "note": "only for agents registered here; not_found: registered with no key set to serve yet, or the stored KEL is over the replay limit"
       },
       {
         "method": "POST",
@@ -2058,7 +2058,7 @@
             {"name": "next", "type": "string", "req": "may"}
           ]
         },
-        "reasons": ["not_peer"],
+        "reasons": ["not_peer", "source_rate"],
         "owner": "SS",
         "note": "no partial: a peer answers for its own entries only"
       },
@@ -2093,7 +2093,7 @@
             }
           ]
         },
-        "reasons": ["not_peer", "rate_limited"],
+        "reasons": ["not_peer", "rate_limited", "source_rate"],
         "owner": "DLV"
       },
       {
@@ -2102,8 +2102,9 @@
         "auth": "relayauth fed_settle",
         "request": {"raw": "x402 FacilitatorRequest"},
         "response": {"raw": "x402 SettlementResponse"},
+        "reasons": ["source_rate"],
         "owner": "HPP",
-        "note": "x402 errorReason; payee is this hub's own account: payee_mismatch"
+        "note": "x402 errorReason; payee is this hub's own account: payee_mismatch; source_rate is a hub error body (429), as on every /fed/v3 POST"
       },
       {
         "method": "GET",
@@ -2145,7 +2146,7 @@
         "auth": "relayauth fed_clear",
         "request": {"partial": true, "fields": []},
         "response": {"partial": true, "fields": []},
-        "reasons": ["not_peer"],
+        "reasons": ["not_peer", "source_rate"],
         "owner": "HPP",
         "note": "body of the former /federation/clear"
       }
@@ -2175,7 +2176,9 @@
           {"name": "error", "type": "string", "req": "must", "note": "one sentence in the user's language"},
           {"name": "reason", "type": "string", "req": "must", "note": "user reason code"},
           {"name": "next", "type": "string", "req": "may", "note": "a command to copy; omitted when there is none"},
-          {"name": "hub_code", "type": "string", "req": "may", "note": "hub_refused only: the hub's code"}
+          {"name": "hub_code", "type": "string", "req": "may", "note": "hub_refused only: the hub's code"},
+          {"name": "task_id", "type": "string", "req": "may", "note": "message_id_reused only: the task the message id already names"},
+          {"name": "state", "type": "string", "req": "may", "note": "message_id_reused only: that task's A2A state name"}
         ]
       },
       "owner": "UX",

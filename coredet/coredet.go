@@ -11,6 +11,7 @@ package coredet
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -104,9 +105,20 @@ func Unmarshal(b []byte, v any) error {
 // know is refused instead of silently dropped: dropping one is how a writer and a reader end up
 // agreeing on bytes and disagreeing on meaning.
 //
-// Fields typed any, map or cbor.RawMessage still take whatever they are given; a caller that
-// wants those checked decodes them again into a struct. On error v may be partly filled and must
-// not be used.
+// It also refuses (NullError, CORE-E4 revision 7) a CBOR undefined anywhere, and a CBOR null
+// wherever the value would go into anything but a pointer, an interface or a cbor.RawMessage: a
+// struct, an array, a slice, a map, a string, a byte string, a number or a bool. The decoder alone
+// takes both into the zero value without a word — `81 f7` decodes into a list of one empty entry —
+// and neither is how a canonical encoder writes any value. A type with its own UnmarshalCBOR is
+// given its bytes as they are, null included, and answers for itself.
+//
+// Fields typed any or cbor.RawMessage still take whatever else they are given, and a map takes
+// any key it can hold; a caller that wants those checked decodes them again into a struct. On
+// error v may be partly filled and must not be used.
 func UnmarshalStrict(b []byte, v any) error {
-	return strictDecMode.Unmarshal(b, v)
+	if err := strictDecMode.Unmarshal(b, v); err != nil {
+		return err
+	}
+	// The decoder accepted v: it is a non-nil pointer, and what b holds goes into its element.
+	return refuseNulls(b, reflect.TypeOf(v).Elem())
 }

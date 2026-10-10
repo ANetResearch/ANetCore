@@ -1216,10 +1216,12 @@ func TestSealInputChecks(t *testing.T) {
 
 func TestParseKELCaps(t *testing.T) {
 	// 257 events that decode; they are not a valid KEL, but the count cap
-	// applies before any replay.
+	// applies before any replay. The lists are empty rather than nil: nil
+	// encodes as null, which does not decode (coredet, CORE-E4 revision 7).
 	events := make([]identity.SignedEvent, MaxKELEvents+1)
 	for i := range events {
 		events[i].Event.KELType = identity.KELType
+		events[i].Event.Keys, events[i].Sig = [][]byte{}, []byte{}
 	}
 	b, err := identity.MarshalKEL(events)
 	if err != nil {

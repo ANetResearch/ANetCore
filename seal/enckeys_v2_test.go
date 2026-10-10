@@ -54,6 +54,21 @@ func rawEdit(t testing.TB, b []byte, edit func(m fieldMap)) []byte {
 	return out
 }
 
+// rawEditList changes the items of an encoded CBOR array.
+func rawEditList(t testing.TB, b []byte, edit func(l []cbor.RawMessage)) []byte {
+	t.Helper()
+	var l []cbor.RawMessage
+	if err := coredet.Unmarshal(b, &l); err != nil {
+		t.Fatal(err)
+	}
+	edit(l)
+	out, err := coredet.Marshal(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 // rawEditKey changes the i-th EncKey inside an encoded EncKeySet.
 func rawEditKey(t testing.TB, set []byte, i int, edit func(m fieldMap)) []byte {
 	t.Helper()
@@ -138,7 +153,13 @@ func TestEncKeySetV2Rejects(t *testing.T) {
 		{"not canonical", rawEdit(t, encSet(base()), func(m fieldMap) { m[2] = []byte{0x1b, 0, 0, 0, 0, 0, 0, 0, 5} }), 0, "canonical"},
 
 		// (2) number of keys and validity.
-		{"no keys", with(func(s *EncKeySet) { s.Keys = nil }), 0, "keys, want 1..32"},
+		{"no keys", with(func(s *EncKeySet) { s.Keys = []EncKey{} }), 0, "keys, want 1..32"},
+		// A null where the list should be is not an empty list: it does not decode (coredet,
+		// CORE-E4 revision 7).
+		{"keys null", rawEdit(t, encSet(base()), func(m fieldMap) { m[3] = []byte{0xf6} }), 0, "CBOR null at .3"},
+		{"a key null", rawEdit(t, encSet(base()), func(m fieldMap) {
+			m[3] = rawEditList(t, m[3], func(l []cbor.RawMessage) { l[0] = []byte{0xf6} })
+		}), 0, "CBOR null at .3[0]"},
 		{"33 keys", with(func(s *EncKeySet) { s.Keys = thirtyThree }), 0, "keys, want 1..32"},
 		{"a key valid for three days", with(func(s *EncKeySet) { s.Keys[14] = threeDays }), 0, "exceeds"},
 		{"a key valid two days and 1 ms", with(func(s *EncKeySet) { s.Keys[14].NotAfter = s.Keys[14].NotBefore + 2*dayMS + 1 }), 0, "exceeds"},
@@ -154,7 +175,11 @@ func TestEncKeySetV2Rejects(t *testing.T) {
 		{"mbox epoch 0", with(func(s *EncKeySet) { s.Mbox.Epoch = 0 }), 0, "mbox epoch is 0"},
 		{"mbox pub 31 bytes", with(func(s *EncKeySet) { s.Mbox.Pub = s.Mbox.Pub[:31] }), 0, "mbox pub is 31 bytes"},
 		{"mbox pub 33 bytes", with(func(s *EncKeySet) { s.Mbox.Pub = append(append([]byte(nil), s.Mbox.Pub...), 0) }), 0, "mbox pub is 33 bytes"},
-		{"mbox pub empty", with(func(s *EncKeySet) { s.Mbox.Pub = nil }), 0, "mbox pub is 0 bytes"},
+		{"mbox pub empty", with(func(s *EncKeySet) { s.Mbox.Pub = []byte{} }), 0, "mbox pub is 0 bytes"},
+		{"mbox pub null", rawEdit(t, encSet(base()), func(m fieldMap) {
+			m[5] = rawEdit(t, m[5], func(mb fieldMap) { mb[2] = []byte{0xf6} })
+		}), 0, "CBOR null at .5.2"},
+		{"mbox undefined", rawEdit(t, encSet(base()), func(m fieldMap) { m[5] = []byte{0xf7} }), 0, "CBOR undefined at .5"},
 
 		// (5) a key valid at now + ClockSkewMS.
 		{"day 15", base(), keys[14].NotAfter + hourMS, "no key valid"},

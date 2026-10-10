@@ -1677,7 +1677,7 @@ Response:
 
 Codes: `unknown_aid`, `not_found`.
 
-only for agents registered here; not_found: registered with no key set to serve yet.
+only for agents registered here; not_found: registered with no key set to serve yet, or the stored KEL is over the replay limit.
 
 #### `POST /agents/kel:push`
 
@@ -1940,7 +1940,7 @@ Response:
 | `entries.box` | b64url | required | — |
 | `next` | string | optional | — |
 
-Codes: `not_peer`.
+Codes: `not_peer`, `source_rate`.
 
 no partial: a peer answers for its own entries only.
 
@@ -1964,7 +1964,7 @@ Response:
 | `items.state` | enum: `queued`, `done`, `unknown` | required | — |
 | `items.dack` | b64url | optional | — |
 
-Codes: `not_peer`, `rate_limited`.
+Codes: `not_peer`, `rate_limited`, `source_rate`.
 
 #### `POST /fed/v3/settle`
 
@@ -1974,7 +1974,9 @@ Request: x402 FacilitatorRequest
 
 Response: x402 SettlementResponse
 
-x402 errorReason; payee is this hub's own account: payee_mismatch.
+Codes: `source_rate`.
+
+x402 errorReason; payee is this hub's own account: payee_mismatch; source_rate is a hub error body (429), as on every /fed/v3 POST.
 
 #### `GET /fed/v3/reviews`
 
@@ -2019,7 +2021,7 @@ Request (only the members this version adds or changes): as in wire 2.
 
 Response (only the members this version adds or changes): as in wire 2.
 
-Codes: `not_peer`.
+Codes: `not_peer`, `source_rate`.
 
 body of the former /federation/clear.
 
@@ -2055,6 +2057,8 @@ Response (only the members this version adds or changes):
 | `reason` | string | required | user reason code |
 | `next` | string | optional | a command to copy; omitted when there is none |
 | `hub_code` | string | optional | hub_refused only: the hub's code |
+| `task_id` | string | optional | message_id_reused only: the task the message id already names |
+| `state` | string | optional | message_id_reused only: that task's A2A state name |
 
 every control-plane error; MCP tool error text = error.
 

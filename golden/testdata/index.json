@@ -269,7 +269,7 @@
       "id": "FRAME-3",
       "gen": "go",
       "owner": "DLV, SS",
-      "covers": "the JSON frame of every p2p op; a frame with v = 2 refused; a dack of 107 characters",
+      "covers": "the JSON frame of every p2p op; a frame with v = 2, an unregistered member or a missing one refused; a dack of 107 characters",
       "labels": [],
       "objects": [],
       "at": [{"repo": "ANet", "path": "module/p2p/testdata/frame-v3.json"}]
