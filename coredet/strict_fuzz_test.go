@@ -1,10 +1,13 @@
 package coredet
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/fxamacker/cbor/v2"
 )
 
 // FuzzUnmarshalStrict: UnmarshalStrict never panics; whatever it accepts, Unmarshal accepts too
@@ -74,7 +77,11 @@ func FuzzUnmarshalStrictNull(f *testing.F) {
 		if lerr != nil {
 			t.Fatalf("strict accepted what lax refused: %v", lerr)
 		}
-		if !reflect.DeepEqual(s, l) {
+		// Compared by their deterministic encodings rather than DeepEqual: a
+		// NaN under the interface member is not equal to itself.
+		se, err1 := sameEnc.Marshal(s)
+		le, err2 := sameEnc.Marshal(l)
+		if err1 != nil || err2 != nil || !bytes.Equal(se, le) {
 			t.Fatalf("strict and lax disagree:\n%#v\n%#v", s, l)
 		}
 		for _, off := range nullOffsets(t, b) {
@@ -87,6 +94,16 @@ func FuzzUnmarshalStrictNull(f *testing.F) {
 		}
 	})
 }
+
+// sameEnc writes a decoded value deterministically, NaN included, so that two
+// decodings can be compared byte for byte.
+var sameEnc = func() cbor.EncMode {
+	m, err := cbor.EncOptions{Sort: cbor.SortCoreDeterministic}.EncMode()
+	if err != nil {
+		panic(err)
+	}
+	return m
+}()
 
 // nullOffsets lists where the null items of a well-formed input are.
 func nullOffsets(t *testing.T, b []byte) []int {
