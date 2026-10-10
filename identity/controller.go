@@ -22,6 +22,9 @@ var (
 	ErrEventPending = errors.New("identity: another key event is still being published")
 	// ErrNothingPending is Adopt or Restamp without a pending event.
 	ErrNothingPending = errors.New("identity: no key event is being published")
+	// ErrDiscardRefused is DiscardPending of an event that may have been accepted: anything but a
+	// built witness designation on the KEL tip (KEL D-14a).
+	ErrDiscardRefused = errors.New("identity: only a witness designation the hub refused for good can be discarded")
 )
 
 // Controller holds an identity's private keys and its KEL (KEL C-20–C-25). It is the signing side;
@@ -375,6 +378,28 @@ func (c *Controller) Adopt(ev SignedEvent) error {
 	c.kel = kel
 	c.cur = p.revealed
 	c.hot = nil
+	c.pending = nil
+	return nil
+}
+
+// DiscardPending drops the pending witness designation (KEL D-14a): the hub it was registered at
+// refused it for good, so no hub ever accepted it and dropping it forks nothing. The controller
+// signs with the key of the accepted tip again, and still holds the hot key the icp committed, so
+// a later BuildWitnessDesignation can name another hub. Any other pending event — a rot, a dip,
+// material without an event — may have reached a witness that accepted it, and is refused with
+// ErrDiscardRefused; so is a designation built on another tip than the accepted one.
+func (c *Controller) DiscardPending() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	p := c.pending
+	if p == nil {
+		return ErrNothingPending
+	}
+	last := c.kel[len(c.kel)-1]
+	if p.kind != PendingWitness || p.event == nil || c.hot == nil || len(c.kel) != 1 ||
+		p.event.Event.Seq != last.Event.Seq+1 || p.event.Event.Prev != last.EventID {
+		return ErrDiscardRefused
+	}
 	c.pending = nil
 	return nil
 }
