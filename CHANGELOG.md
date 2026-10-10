@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.16.0-rc.3 — 2026-10-10
+
+The third release candidate of the kernel of anet 0.3.0 and hub wire 3.
+anet 0.3.0 and ANetHub 0.3.0 require this version in their `go.mod`.
+Nothing rc.2 pinned changed a byte: LOCAL-1's file gained its client
+member and is otherwise as it was. The KEL decoder refuses an entry
+that carries no event, the register follows what the hub and the daemon
+now send, and the Python generator reproduces the client's retry key and
+digest.
+
+### Changed
+
+- **A KEL entry without an event does not decode.** `identity.UnmarshalKEL`
+  returned no error for a null or undefined entry, an empty map or a map
+  holding only the signature: such an entry decoded to a zero
+  `SignedEvent` without the event's own decoder running, so a caller that
+  only decoded took it for a KEL of that length, and `Replay` refused it
+  later for the wrong reason (as a v0.2 KEL). Every entry must now carry
+  its event; one that does not is a KEL that does not decode. The
+  two-byte input that showed it is kept as a fuzz seed.
+
+### Register
+
+- `GET /agents/{aid}/keys` is registered: no authentication, answered
+  only for agents registered at that hub, with `aid` and the key set and
+  KEL in base64url (`keys`, `kel`); `unknown_aid`, and `not_found` while
+  the agent has no key set to serve yet.
+- Publishing a key set may be refused with `kel_invalid`, when the key
+  history the hub holds cannot verify the new set; `keys_rollback` also
+  covers a set whose `seq` is not above the stored one.
+- Hub operator codes `hub_passphrase_too_short` and
+  `hub_passphrase_not_utf8`, for the hub's own recovery passphrase.
+- The daemon signs inner messages in `sealMessage` (the signer list named
+  `sealWithOpts`).
+- Storage: the hub's restore tables `restore_released` and `kel_hwm` and
+  the agent row's `tip_seq` and `tip_head` are listed with what the hub
+  keeps (descriptive; no wire value changes).
+- Transition list: the hub's copy of evidence v1 (receipts and reviews,
+  eight entries) is gone, as the hub now takes and serves evidence v2
+  reviews only. The daemon's evidence v1 entries stay until it does too.
+
+### Golden vectors
+
+- LOCAL-1 gains its client part: the client key and client digest of a
+  text message, a capability call whose args hold 9007199254740993, a
+  message with two files and a payment decision, and two pairs of one
+  message ID with two contents (9007199254740993 and 9007199254740992; 1
+  and 1.0) whose digests differ. `gen_v016.py` writes the canon itself
+  (member order and escapes of RFC 8785, the client's number literals
+  kept as written) and reproduces the daemon's file byte for byte. The
+  index has no open row left.
+
 ## v0.16.0-rc.2 — 2026-10-09
 
 The second release candidate of the kernel of anet 0.3.0 and hub wire 3.
