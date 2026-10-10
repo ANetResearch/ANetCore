@@ -26,12 +26,16 @@ type Negative struct {
 //     space), also 64 and 65535.
 //
 // Each negative is valid with that one key added and is re-encoded canonically. The added value
-// is CBOR null: a Go decoder takes null into a field of any type, so a decoder that refuses the
+// is CBOR null: fxamacker/cbor takes null into a field of any type, so a decoder that refuses the
 // negative does so because of the key and not because of the value's type. (With a typed value,
 // a decoder that still has a field for a retired key of another type would refuse it for the
-// type and pass for the wrong reason.) Objects that are only built and never decoded (preimages,
-// HPKE info) have no negatives, and a valid encoding that already holds a key the object does
-// not assign is an error, not a base to build on.
+// type and pass for the wrong reason.) coredet.UnmarshalStrict refuses a null that would go into
+// anything but a pointer (CORE-E4, revision 7): a strict decoder that still has a field for the
+// key refuses with coredet.ErrNullOrUndefined rather than for the key, and a test that must tell
+// the two apart checks which (wire's TestNegativesExposeADecoderThatKnowsAnUnassignedKey). Objects
+// that are only built and never decoded (preimages, HPKE info) have no negatives, and a valid
+// encoding that already holds a key the object does not assign is an error, not a base to build
+// on.
 func Negatives(r *Registry, name string, valid []byte) ([]Negative, error) {
 	o := r.Object(name)
 	if o == nil {

@@ -2,6 +2,7 @@ package coredet
 
 import (
 	"encoding/hex"
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -43,4 +44,108 @@ func FuzzUnmarshalStrict(f *testing.F) {
 			t.Fatalf("re-encoding is refused: %v", err)
 		}
 	})
+}
+
+// FuzzUnmarshalStrictNull (CORE-E4 revision 7): on a type with every kind of target, a null that
+// UnmarshalStrict accepts is one the decoder alone also takes to the same value, and it sits where
+// a value may be absent: written as undefined instead, the same input is refused. A NullError only
+// ever follows what the decoder alone took. The walk never panics and never reads past the input.
+func FuzzUnmarshalStrictNull(f *testing.F) {
+	for _, s := range []string{
+		"f6", "f7", "81f6", "81f7", "82f6f6",
+		"a114f6", "a115f6", "a116f6", "a117f6", "a101f6", "a106f6", "a107f6",
+		"a11681a101f7", "a11581f6", "a1181aa101f6", "a10881f6", "a108a101f6",
+		"bf01f6ff", "9ff6ff", "a1189fa101f6",
+	} {
+		b, _ := hex.DecodeString(s)
+		f.Add(b)
+	}
+	f.Fuzz(func(t *testing.T, b []byte) {
+		var s nullOuter
+		err := UnmarshalStrict(b, &s)
+		var l nullOuter
+		lerr := Unmarshal(b, &l)
+		if errors.Is(err, ErrNullOrUndefined) && lerr != nil {
+			t.Fatalf("a null refusal of what the decoder itself refused: %v / %v", err, lerr)
+		}
+		if err != nil {
+			return
+		}
+		if lerr != nil {
+			t.Fatalf("strict accepted what lax refused: %v", lerr)
+		}
+		if !reflect.DeepEqual(s, l) {
+			t.Fatalf("strict and lax disagree:\n%#v\n%#v", s, l)
+		}
+		for _, off := range nullOffsets(t, b) {
+			u := append([]byte(nil), b...)
+			u[off] = 0xf7
+			var again nullOuter
+			if err := UnmarshalStrict(u, &again); !errors.Is(err, ErrNullOrUndefined) {
+				t.Fatalf("the null at %d accepted, but undefined there gives %v", off, err)
+			}
+		}
+	})
+}
+
+// nullOffsets lists where the null items of a well-formed input are.
+func nullOffsets(t *testing.T, b []byte) []int {
+	var out []int
+	w := nullWalk{b: b}
+	var item func() bool
+	item = func() bool {
+		if w.off >= len(b) {
+			return false
+		}
+		if b[w.off] == 0xf6 {
+			out = append(out, w.off)
+			w.off++
+			return true
+		}
+		major, ai, arg, err := w.head()
+		if err != nil {
+			return false
+		}
+		n := int(arg)
+		switch {
+		case major == 2 || major == 3:
+			if ai == 31 {
+				for b[w.off] != 0xff {
+					if !item() {
+						return false
+					}
+				}
+				w.off++
+				return true
+			}
+			return w.skip(arg) == nil
+		case major == 4 || major == 5:
+			per := 1
+			if major == 5 {
+				per = 2
+			}
+			if ai == 31 {
+				for w.off < len(b) && b[w.off] != 0xff {
+					if !item() {
+						return false
+					}
+				}
+				w.off++
+				return true
+			}
+			for i := 0; i < n*per; i++ {
+				if !item() {
+					return false
+				}
+			}
+			return true
+		case major == 6:
+			return item()
+		}
+		return true
+	}
+	if !item() {
+		t.Fatalf("an accepted input does not scan: %x", b)
+	}
+	return out
 }
