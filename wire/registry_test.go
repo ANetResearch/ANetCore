@@ -366,7 +366,7 @@ func TestRegistryMetadataKeys(t *testing.T) {
 		}
 	}
 	for _, k := range []string{"anet.delivery", "anet.delivery_detail", "anet.delivery_wait", "anet.content_expires_at",
-		"anet.payment_note", "anet.spend_check", "anet.deduplicated", "anet.preview", "anet.identity_note"} {
+		"anet.payment_note", "anet.spend_check", "anet.deduplicated", "anet.preview", "anet.identity_note", "anet.next"} {
 		m := r.MetaKey(k)
 		if m == nil || !m.LocalOnly || m.Status != wire.StatusActive {
 			t.Errorf("%s must be registered, active and local-only (CORE-K17)", k)

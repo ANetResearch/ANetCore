@@ -2226,6 +2226,7 @@ per entry; public card only; never fetches an extended card.
 | `anet.spend_check` | local (local only) | object | active | {who, amount, reason, reason_tier?, reason_limit?}; reason_tier auto, agent or manual |
 | `anet.deduplicated` | local (local only) | bool | active | only on the answer judged a retry; true |
 | `anet.preview` | local, artifact (local only) | bool | active | preview artifacts and TaskArtifactUpdateEvent; true |
+| `anet.next` | local (local only) | string | active | one command to copy and run: the next of the anet.reason row (with the sentence variant the projection shows) when its next_kind is command, placeholders filled; the same source as the control-plane error body's next (core §2.13 revision 7) |
 | `anet.identity_note` | local (local only) | string | active | one sentence (identity.unprotected or its .resume variant) on tasks this node projects (local A2A, control /tasks/*, MCP), only while the identity has no recovery passphrase |
 | `anet.receipt_verified` | local | string: verified, unverified, unknown, mismatch | active | — |
 | `anet.effect_status` | local | string | active | capability effect status: OK, UNVERIFIED, FAILED, UNAVAILABLE, PAYMENT_REQUIRED |
