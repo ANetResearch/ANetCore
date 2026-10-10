@@ -165,7 +165,9 @@ func MarshalKEL(kel []SignedEvent) ([]byte, error) { return coredet.Marshal(kel)
 // UnmarshalKEL is the inverse of MarshalKEL. It decodes strictly (R-0): a signed event or an
 // event carrying a key KEL v2 does not define is refused, as are an event without key 0 or with
 // another type tag (ErrKELv1) and an event whose bytes are not its canonical encoding
-// (ErrNonCanonicalEvent). It does not replay: callers pass the result to Replay or ExtendsKEL.
+// (ErrNonCanonicalEvent). An entry that carries no event (null, undefined, or a map without key
+// 1) is a KEL that does not decode. It does not replay: callers pass the result to Replay or
+// ExtendsKEL.
 func UnmarshalKEL(b []byte) ([]SignedEvent, error) {
 	var kel []SignedEvent
 	if err := coredet.UnmarshalStrict(b, &kel); err != nil {
@@ -179,6 +181,14 @@ func UnmarshalKEL(b []byte) ([]SignedEvent, error) {
 			return nil, errUnregisteredSignedKey
 		}
 		return nil, fmt.Errorf("identity: KEL does not decode: %w", err)
+	}
+	// A null or undefined entry, or a map without the event, decodes to a zero SignedEvent
+	// without KeyEvent's decoder ever running, so nothing above refused it; a decoded event always
+	// has key 0.
+	for i := range kel {
+		if kel[i].Event.KELType != KELType {
+			return nil, fmt.Errorf("identity: KEL does not decode: entry %d carries no event", i)
+		}
 	}
 	return kel, nil
 }
