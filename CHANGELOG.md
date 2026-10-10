@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+For the next release candidate (anet 0.3.0's identity orchestration).
+
+### Added
+
+- `identity.Controller.DiscardPending` drops a pending witness
+  designation that its hub refused for good: no hub accepted it, so
+  dropping it forks nothing, and the identity can join another hub. Every
+  other pending event (a rot, a dip, material without an event) may have
+  reached a witness and is refused with `identity.ErrDiscardRefused`.
+
+### Register
+
+- User code `hub_publication_blocked`: a registration this node's own
+  publication screen kept back; it is not retried.
+- Local object `EvidenceQueueRecord`: one line of the daemon's evidence
+  queue, a record written while a key event of the identity is pending,
+  signed and chained once the event is adopted or dropped.
+
 ## v0.16.0-rc.3 — 2026-10-10
 
 The third release candidate of the kernel of anet 0.3.0 and hub wire 3.

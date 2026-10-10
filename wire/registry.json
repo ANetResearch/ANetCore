@@ -544,6 +544,19 @@
       ]
     },
     {
+      "name": "EvidenceQueueRecord",
+      "group": "local",
+      "class": "plain",
+      "keyspace": "closed",
+      "owner": "KEL",
+      "desc": "One line of evidence.ael.jsonl.queue in the data directory, 0600 (base64 of its CoreDet encoding): an evidence record written while a key event of the identity is pending, signed and chained once the event is adopted or dropped.",
+      "keys": [
+        {"n": 1, "name": "event_type", "type": "tstr", "req": "must", "status": "active"},
+        {"n": 2, "name": "payload", "type": "bstr", "req": "must", "status": "active", "note": "CoreDet encoding of the record's payload"},
+        {"n": 3, "name": "timestamp", "type": "int", "req": "must", "status": "active"}
+      ]
+    },
+    {
       "name": "DirEntry",
       "group": "directory",
       "class": "plain",
@@ -2672,6 +2685,7 @@
       {"code": "hub_pending_admission"},
       {"code": "hub_retrying"},
       {"code": "hub_refused"},
+      {"code": "hub_publication_blocked"},
       {"code": "hub_unreachable"},
       {"code": "invite_removed"},
       {"code": "wire_too_old"},
