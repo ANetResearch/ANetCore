@@ -1,8 +1,31 @@
 # Changelog
 
-## Unreleased
+## v0.16.0-rc.4 — 2026-10-16
 
-For the next release candidate (anet 0.3.0's identity orchestration).
+The fourth release candidate of the kernel of anet 0.3.0 and hub wire 3.
+anet 0.3.0 and ANetHub 0.3.0 require this version in their `go.mod`.
+No golden vector changed a byte: the strict decoder refuses more input,
+the register follows what the hub and the daemon now send, and the
+identity controller can drop a witness designation a hub refused.
+
+### Changed
+
+- **`coredet.UnmarshalStrict` refuses a CBOR null or undefined where a
+  value must be.** The decoder takes both into the zero value without a
+  word, so `81 f7` decoded into a list of one empty entry, and an object
+  with a null member decoded as if the member were zero. No canonical
+  encoder writes either. `UnmarshalStrict` now refuses an undefined
+  anywhere, and a null wherever it would go into anything but a pointer,
+  an interface or a `cbor.RawMessage`; the refusal is a `*NullError`
+  (`errors.Is(err, ErrNullOrUndefined)`) naming the path. A type with its
+  own `UnmarshalCBOR` is still given its bytes as they are and answers for
+  itself. `coredet/coredettest` lists the decode sites of every registered
+  object so that a test in each package can check that all of them refuse
+  null and undefined.
+- `wire.Negatives` still builds its negatives with a null for the added
+  key; a strict decoder that still has a field for the key now refuses
+  with `ErrNullOrUndefined` instead of for the key, and the negative test
+  tells the two apart.
 
 ### Added
 
@@ -19,6 +42,21 @@ For the next release candidate (anet 0.3.0's identity orchestration).
 - Local object `EvidenceQueueRecord`: one line of the daemon's evidence
   queue, a record written while a key event of the identity is pending,
   signed and chained once the event is adopted or dropped.
+- Local projection key `anet.next`: the one command to copy and run, the
+  `next` of the `anet.reason` row, on the tasks this node projects; the
+  same source as the control-plane error body's `next`.
+- Control-plane error body: `task_id` and `state`, for `message_id_reused`
+  only (the task the message id already names, and its A2A state).
+- Hub reason `source_rate` (429) on `POST /fed/v3/directory:bucket`,
+  `POST /fed/v3/relay-status`, `POST /fed/v3/settle` and
+  `POST /fed/v3/clear`, as on every `/fed/v3` POST (`/fed/v3/forward`
+  already had it).
+- `GET /agents/{aid}/keys` answers `not_found` also when the stored KEL
+  is over the replay limit.
+- Golden `FRAME-3` also covers a p2p frame with an unregistered member or
+  a missing one.
+- Transition list: the entries for `anet.final` and the retired relayauth
+  action `p2p` are gone.
 
 ## v0.16.0-rc.3 — 2026-10-10
 
