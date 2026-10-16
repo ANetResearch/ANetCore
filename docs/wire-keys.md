@@ -2479,14 +2479,12 @@ or the relayauth text preimage (L22).
 | ANetCore | `(*evidence.ReviewAttBody).Sign` | ReviewAttBody |
 | ANetCore | `a2acard.SignWithSnapshot` | A2ACardJWS |
 | ANetCore | `identity.SignNotice` | NoticeBody |
-| ANet | `(*internal/daemon.Daemon).hubSigned` | L22 |
+| ANet | `(*internal/daemon.Daemon).signHubRequest` | L22 |
 | ANet | `(*internal/daemon.Daemon).sealMessage` | InnerSigPreimage |
 | ANet | `(*internal/daemon.Daemon).ringInputsAt` | EncKeySet |
 | ANet | `(*module/org.Credential).Sign` | OrgCredBody |
 | ANet | `(*module/blackboard.CogUnit).Sign` | CogUnitBody |
 | ANet | `(*module/x402.Module).Authorize` | PaymentAuthorization |
-| ANet | `(*module/x402.Module).WitnessHub` | AELHeadAttestation |
-| ANet | `(*module/x402.Module).signedGet` | L22 |
 | ANet | `tools/anetfixture.cmdSeal` | InnerSigPreimage |
 | ANet | `tools/anetfixture.v2Headers` | L22 |
 | ANetHub | `(*internal/federation.Signer).send` | L22 |
