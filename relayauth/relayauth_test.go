@@ -23,7 +23,8 @@ import (
 //
 // "anet-relay/v2/" + action + "/" + aid + "/" + hubAID + "/" + ts + "/" + digest is unambiguous
 // exactly while action, aid and hubAID are slash-free: an AID "a/1" signed for "poll" and an AID
-// "1" signed for "poll/a" are the same bytes. Actions are the constants below and AIDs are CIDs,
+// "1" signed for "poll/a" would be the same bytes without escaping. PreimageV2 percent-escapes "/"
+// and "%" in those three fields, so a caller that breaks the precondition still cannot collide. Actions are the constants below and AIDs are CIDs,
 // so neither can carry a slash today — the ambiguity is a property of the inputs, not of the
 // format.
 //
@@ -36,9 +37,10 @@ func TestTheFormatIsUnambiguousOnlyForSlashFreeFields(t *testing.T) {
 			t.Errorf("action %q contains the separator: it can pose as a different action+aid pair", a)
 		}
 	}
-	// The collision the constraint rules out, stated so it is visible.
-	if string(PreimageV2("poll", "a/1", "h", 2, "POST", "/", nil)) != string(PreimageV2("poll/a", "1", "h", 2, "POST", "/", nil)) {
-		t.Fatal("expected the documented ambiguity; the format changed, so re-derive the precondition")
+	// The collision the constraint rules out. The function no longer lets a caller reach it:
+	// "/" and "%" in a field are percent-escaped (T-1 finding), so the two are different bytes.
+	if string(PreimageV2("poll", "a/1", "h", 2, "POST", "/", nil)) == string(PreimageV2("poll/a", "1", "h", 2, "POST", "/", nil)) {
+		t.Fatal("a slash in a field shifted it into the next one")
 	}
 }
 

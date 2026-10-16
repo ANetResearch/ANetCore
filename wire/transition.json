@@ -1,15 +1,5 @@
 {
   "about": "v0.2 shapes still in the code while the v0.3.0 rewrite is under way. Each entry names the work item that removes it; wire/scan accepts an entry only exactly as written here and fails when an entry matches nothing any more. The list must be empty before release.",
   "entries": [
-    {"todo": "v030-todo(PAY-13)", "repo": "ANet", "kind": "string", "value": "anet.credit.issued", "note": "per-event issuance records are replaced by supply epochs"},
-    {"todo": "v030-todo(PAY-13)", "repo": "ANet", "kind": "string", "value": "anet.credit.retired", "note": "per-event issuance records are replaced by supply epochs"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.Receipt", "keys": ["1 InteractionID string", "2 RequesterAID string", "3 ProviderAID string", "4 RequestCID string", "5 ResultCID string", "6 CompletedAt uint64"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.receiptPreimage", "keys": ["1 InteractionID string", "2 RequesterAID string", "3 ProviderAID string", "4 RequestCID string", "5 ResultCID string", "6 CompletedAt uint64"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "signer", "go": "(*internal/evidencev1.Receipt).Sign", "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.receiptWire", "keys": ["1 Body receiptPreimage", "2 Envelope *aobj.Envelope"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.Review", "keys": ["1 InteractionID string", "2 SubjectAID string", "3 ReviewerAID string", "4 Rating int", "5 Comment string", "6 ReceiptCID string", "7 CreatedAt uint64"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.reviewPreimage", "keys": ["1 InteractionID string", "2 SubjectAID string", "3 ReviewerAID string", "4 Rating int", "5 Comment string", "6 ReceiptCID string", "7 CreatedAt uint64"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "signer", "go": "(*internal/evidencev1.Review).Sign", "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"},
-    {"todo": "v030-todo(PAY-14)", "repo": "ANet", "kind": "struct", "go": "internal/evidencev1.reviewWire", "keys": ["1 Body reviewPreimage", "2 Envelope *aobj.Envelope"], "note": "evidence v1, kept in the daemon until it issues and checks evidence v2"}
   ]
 }
