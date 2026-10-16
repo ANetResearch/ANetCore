@@ -310,8 +310,16 @@ func UnmarshalAuthorization(b []byte) (*Authorization, error) {
 func Amount(n uint64) string { return strconv.FormatUint(n, 10) }
 
 // ParseAmount reads one back.
+//
+// The spelling is canonical decimal: ASCII digits only, no sign, no leading zero (except "0"
+// itself), and at most math.MaxInt64, the largest amount a ledger holds as a signed 64-bit
+// integer. A larger value, which strconv would still read as a uint64, is refused here so that
+// no caller can forget the range check.
 func ParseAmount(s string) (uint64, error) {
-	n, err := strconv.ParseUint(s, 10, 64)
+	if len(s) > 1 && s[0] == '0' {
+		return 0, fmt.Errorf("payment: amount %q has a leading zero", s)
+	}
+	n, err := strconv.ParseUint(s, 10, 63)
 	if err != nil {
 		return 0, fmt.Errorf("payment: amount %q is not a whole number of units: %w", s, err)
 	}

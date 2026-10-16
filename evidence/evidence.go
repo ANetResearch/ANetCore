@@ -2,6 +2,12 @@
 // it completes a task, the review the requester writes about it, and the attestation a hub signs
 // when it stores a review (core §2.9, labels L27–L33).
 //
+// Limit: an object is verified against the key state in force at its own time (identity.VerifyObject,
+// DayStart(completed_day) for CheckV2). The package has no arrival-time anchor, so the holder of a
+// key that was later rotated away, in an emergency rotation too, can sign a receipt and, through
+// its review key, a review for a past day. A consumer must anchor receipts to the time it stored
+// them, as messages are anchored to the hub's arrival time.
+//
 // Version 2 keeps what made the v1 pair worth having — a rating comes from a real counterparty of a
 // real interaction, and anyone holding the objects can check that without asking the hub — and
 // stops the pair from naming the parties to anyone they show it to:

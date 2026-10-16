@@ -1,6 +1,7 @@
 package seal
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -38,6 +39,18 @@ func decodeFields(b []byte) (fieldMap, error) {
 	var m fieldMap
 	if err := coredet.Unmarshal(b, &m); err != nil {
 		return nil, err
+	}
+	// The decoder also takes some spellings the core never writes: an indefinite-length map,
+	// keys in another order, a longer-than-needed integer head. Each is a different byte string
+	// for the same fields, so a third party could re-spell a message without breaking anything.
+	// Only the canonical encoding is accepted: re-encode the fields and compare (CORE-E2/G4).
+	// Values stay raw, so a nested map is held to the same rule by its own decodeFields.
+	re, err := coredet.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(re, b) {
+		return nil, errors.New("not the canonical encoding")
 	}
 	return m, nil
 }
