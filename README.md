@@ -60,7 +60,7 @@ flowchart TB
 | `golden` | Conformance vectors — the byte-for-byte oracle | `_CONVENTIONS §8` |
 
 Spec anchors refer to the `design3` specification corpus (`_CONVENTIONS` plus per-protocol specs) and to
-ANet's [A2A alignment design](https://github.com/ANetResearch/ANet/blob/main/docs/A2A-DESIGN-zh.md).
+the [protocol reference](https://docs.agentnetwork.org.cn/docs/en/latest/reference/protocol.html) of ANet.
 
 ## Use
 
