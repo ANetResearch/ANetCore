@@ -2715,6 +2715,7 @@
       {"code": "extended_card_unavailable"},
       {"code": "daemon_not_running"},
       {"code": "daemon_not_answering"},
+      {"code": "local_write_failed"},
       {"code": "aid_invalid"},
       {"code": "cli_removed"},
       {"code": "config_key_removed"},
