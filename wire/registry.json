@@ -2199,11 +2199,19 @@
               {"name": "text", "type": "string", "req": "must"},
               {"name": "next", "type": "string", "req": "may"}
             ]
+          },
+          {
+            "name": "profile",
+            "type": "object",
+            "req": "must",
+            "fields": [
+              {"name": "summary", "type": "string", "req": "must"}
+            ]
           }
         ]
       },
       "owner": "UX",
-      "note": "summary from a2ashape.StatusSummary; MCP node_status.summary passes it through"
+      "note": "summary from a2ashape.StatusSummary; MCP node_status.summary passes it through; profile.summary is the profile text that /status.summary was in v0.2"
     },
     {
       "route": "/tasks/events delivery",

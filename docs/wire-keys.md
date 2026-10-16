@@ -2073,8 +2073,10 @@ Response (only the members this version adds or changes):
 | `summary.level` | string | required | — |
 | `summary.text` | string | required | — |
 | `summary.next` | string | optional | — |
+| `profile` | object | required | — |
+| `profile.summary` | string | required | — |
 
-summary from a2ashape.StatusSummary; MCP node_status.summary passes it through.
+summary from a2ashape.StatusSummary; MCP node_status.summary passes it through; profile.summary is the profile text that /status.summary was in v0.2.
 
 ### /tasks/events delivery
 
