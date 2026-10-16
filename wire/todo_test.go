@@ -16,7 +16,7 @@ func TestTodoMarker(t *testing.T) {
 	if wire.TodoWord != strings.Join([]string{"v030", "todo"}, "-") {
 		t.Fatalf("TodoWord is %q", wire.TodoWord)
 	}
-	for _, id := range []string{"PAY-9", "KEL-8a", "CORE-5", ""} {
+	for _, id := range []string{"PAY-9", "KEL-8a", "CORE-5", "UX-12"} {
 		m := wire.TodoMarker(id)
 		if !wire.TodoPattern.MatchString(m) || wire.TodoPattern.FindStringSubmatch(m)[1] != id {
 			t.Errorf("TodoPattern does not take %q for work item %s", m, id)

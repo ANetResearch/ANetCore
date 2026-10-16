@@ -1,4 +1,4 @@
-"""Generate the a2a-python cross-SDK vectors for package a2acard (A2A-DESIGN §10.3, an internal note).
+"""Generate the a2a-python cross-SDK vectors for package a2acard (A2A-DESIGN §10.3).
 
 Every card here is built as an lf.a2a.v1.AgentCard protobuf message and signed the way the
 a2a-python reference SDK signs: proto -> MessageToDict -> drop "signatures" -> drop empty values

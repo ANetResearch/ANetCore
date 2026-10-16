@@ -1,6 +1,6 @@
 package aobj_test
 
-// Fuzz target for the P1 signature envelope and Verify (ANet docs/notes/0033).
+// Fuzz target for the P1 signature envelope and Verify.
 
 import (
 	"crypto/ed25519"

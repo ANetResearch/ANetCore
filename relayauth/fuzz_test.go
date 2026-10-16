@@ -1,6 +1,6 @@
 package relayauth
 
-// Fuzz targets for the relay v2 authentication header and preimage (ANet an internal note).
+// Fuzz targets for the relay v2 authentication header and preimage.
 
 import (
 	"bytes"

@@ -31,7 +31,7 @@ func TestPadmeValues(t *testing.T) {
 }
 
 // Near math.MaxInt the next Padmé length does not fit in an int. Padme used to
-// round up anyway and return a negative length (ANet an internal note, found by
+// round up anyway and return a negative length (found by
 // FuzzPadme); it returns n, which is at least n and a fixed point.
 func TestPadmeDoesNotWrapNearMaxInt(t *testing.T) {
 	const top = math.MaxInt - (1<<56 - 1) // the last Padmé length of a 64-bit int

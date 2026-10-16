@@ -1,6 +1,6 @@
 package agenturi
 
-// Fuzz target for the agent:// canonical form (ANet docs/notes/0033).
+// Fuzz target for the agent:// canonical form.
 //
 // canonical(s) = serialize(parse(s)) is "the only form that may be signed, content-addressed,
 // resolved, relayed, or compared", so it must be a fixed point: the canonical form of a

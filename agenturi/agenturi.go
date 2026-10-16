@@ -210,7 +210,7 @@ func decodeQ(s string) (string, *Error) {
 	}
 	// As for labels: percent-decoding can yield bytes that are not UTF-8. Kept, they would be
 	// re-encoded as U+FFFD by Serialize, so "a=%FF" and "a=%FE" would share one canonical form
-	// and compare Equal (ANet docs/notes/0033, found by FuzzCanonical).
+	// and compare Equal (found by FuzzCanonical).
 	if !utf8.Valid(out) {
 		return "", errf("BAD_UTF8", "decoded query bytes not valid utf-8")
 	}
@@ -226,7 +226,7 @@ func decodeQ(s string) (string, *Error) {
 // can produce what the mapping folds: U+212A KELVIN SIGN normalizes to ASCII 'K'. Mapped
 // first and normalized after, "%E2%84%AA" folded to "K", whose canonical form is "k", so the
 // canonical form was not a fixed point (AU-C-08) and two spellings of one name compared
-// unequal (ANet docs/notes/0033).
+// unequal.
 func foldLabel(s string) string {
 	var b strings.Builder
 	for _, r := range norm.NFC.String(s) {
@@ -257,8 +257,7 @@ func foldLabel(s string) string {
 // table) is a follow-up keyed to UTS-39 confusables.txt.
 func rejectCheck(label string) *Error {
 	// A label that folds to nothing (it held only ZWJ/ZWNJ, which S3 removes) is an empty
-	// label: serialized, it would be "agent://" or "/ns=", which do not parse (ANet
-	// docs/notes/0033).
+	// label: serialized, it would be "agent://" or "/ns=", which do not parse.
 	if label == "" {
 		return errf("EMPTY_LABEL", "label folds to the empty string")
 	}

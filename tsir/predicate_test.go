@@ -120,7 +120,7 @@ func TestMalformed(t *testing.T) {
 
 // globMatch takes time linear in the pattern and the string. The recursive matcher it replaced
 // tried every split at every star, so a pattern of twenty-one stars against twenty bytes ran for
-// minutes (ANet docs/notes/0033, found by FuzzGlobMatch: "*********************0").
+// minutes (found by FuzzGlobMatch: "*********************0").
 func TestGlobMatchIsNotExponential(t *testing.T) {
 	long := strings.Repeat("a", 4000)
 	cases := []struct {
@@ -172,7 +172,7 @@ func TestGlobMatchDialect(t *testing.T) {
 
 // A CBOR null among a connective's children decodes to a nil *Predicate. Validate reports it as
 // MALFORMED instead of dereferencing it; Compile, which validates a signed TaskDoc's scopes,
-// used to panic on one (ANet docs/notes/0033).
+// used to panic on one.
 func TestValidateRefusesANullChild(t *testing.T) {
 	// {1: 1, 2: [null, {1: 11, 11: {1: "t", 2: 1}}]}: AND of null and a test clause.
 	b := []byte{0xa2, 0x01, 0x01, 0x02, 0x82, 0xf6, 0xa2, 0x01, 0x0b, 0x0b, 0xa2, 0x01, 0x61, 't', 0x02, 0x01}

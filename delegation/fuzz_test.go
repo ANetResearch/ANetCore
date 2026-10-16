@@ -1,6 +1,6 @@
 package delegation_test
 
-// Fuzz targets for the relayed delegation payloads and their verifiers (ANet an internal note).
+// Fuzz targets for the relayed delegation payloads and their verifiers.
 //
 // A mutated signed object almost never keeps its signature, so FuzzDelegateReq and
 // FuzzResultResp can re-sign what they decoded (the TaskDoc, the receipt) with a fixed identity

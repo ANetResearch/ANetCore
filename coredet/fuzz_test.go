@@ -1,6 +1,6 @@
 package coredet
 
-// Fuzz target for the CoreDet-CBOR decoder and encoder (ANet docs/notes/0033).
+// Fuzz target for the CoreDet-CBOR decoder and encoder.
 //
 // Decoding is permissive about encoding form; encoding is canonical. So for any input that
 // decodes: the value re-encodes (unless it holds NaN or ±Inf, C-R1), the encoding decodes to an

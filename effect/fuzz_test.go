@@ -1,6 +1,6 @@
 package effect_test
 
-// Fuzz target for the effect envelope decoder (ANet docs/notes/0033).
+// Fuzz target for the effect envelope decoder.
 
 import (
 	"testing"

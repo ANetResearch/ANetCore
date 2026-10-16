@@ -41,8 +41,8 @@ func TestEnvelopeValidateThenVerify(t *testing.T) {
 	}
 }
 
-// A public key of any length but 32 is an error, not a panic in ed25519.Verify (ANet
-// docs/notes/0033, found by FuzzEnvelopeVerify with a 1-byte key).
+// A public key of any length but 32 is an error, not a panic in ed25519.Verify
+// (found by FuzzEnvelopeVerify with a 1-byte key).
 func TestVerifyRefusesAWrongLengthKey(t *testing.T) {
 	pre := []byte("hello-anet")
 	sig := SuiteSign(pre)

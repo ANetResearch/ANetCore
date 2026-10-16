@@ -1,7 +1,7 @@
 package a2acard
 
 // Fuzz targets for RFC 8785 canonicalization, the publish form, default stripping, the JWS
-// header and card verification (ANet docs/notes/0033).
+// header and card verification.
 //
 // FuzzVerify feeds whole signed cards: a mutated card keeps a valid signature only when the
 // mutation stays outside what the signature covers, so an accepted card must carry a payload the

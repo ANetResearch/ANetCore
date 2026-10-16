@@ -1,6 +1,6 @@
 package tsir
 
-// Fuzz targets for the TaskDoc and the predicate calculus (ANet docs/notes/0033).
+// Fuzz targets for the TaskDoc and the predicate calculus.
 //
 // The calculus is meant to be total and bounded ("non-Turing-complete, so two conformant
 // implementations compute the same verdict"): Validate and Evaluate must not panic on any

@@ -455,7 +455,7 @@ const ClockSkew = 2 * 60 * 1000 // milliseconds
 // it is more than ClockSkew before t. They compare the difference rather than adding the skew
 // to t: t is the signer's value, and t + ClockSkew overflowed for a NotAfter near
 // math.MaxInt64 (an authorization meant never to expire), which wrapped to a large negative
-// time and refused the authorization at every moment (ANet an internal note). The difference of
+// time and refused the authorization at every moment. The difference of
 // two int64 values always fits a uint64 once their order is known.
 func pastWithSkew(now, t int64) bool { return now > t && uint64(now)-uint64(t) > ClockSkew }
 

@@ -1,6 +1,6 @@
 package ael
 
-// Fuzz targets for head attestations, event records and the ledger (ANet docs/notes/0033).
+// Fuzz targets for head attestations, event records and the ledger.
 //
 // FuzzLedgerImport decodes a batch of records and, when asked, re-signs each with the suite
 // identity (as a chain owner would), then imports it; whatever the batch, the ledger must keep

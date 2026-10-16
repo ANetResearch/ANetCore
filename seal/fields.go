@@ -214,8 +214,7 @@ func sigPreimage(fields fieldMap, enc, kid []byte, suite Suite, ikid, enc2 []byt
 //
 // n below 2 is returned as is. So is an n whose Padmé length exceeds
 // math.MaxInt (n > 2^63 - 2^56 on a 64-bit int): no message is that long,
-// and rounding up would wrap to a negative length (ANet an internal note,
-// found by FuzzPadme).
+// and rounding up would wrap to a negative length (found by FuzzPadme).
 func Padme(n int) int {
 	if n < 2 {
 		return n

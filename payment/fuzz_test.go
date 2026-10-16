@@ -1,6 +1,6 @@
 package payment_test
 
-// Fuzz targets for the anet-credit wire objects and amounts (ANet an internal note).
+// Fuzz targets for the anet-credit wire objects and amounts.
 //
 // Each target decodes, checks the round trip, optionally re-signs the decoded object with the
 // suite identity and verifies it; an accepted object must be signed by the declared signer and

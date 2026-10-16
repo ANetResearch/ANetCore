@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.16.0 - 2026-10-16
 
 ### Changed
 
@@ -371,7 +371,7 @@ their release notes.
   delegation, payment, a2acard, adp, tsir, aobj, evidence, ael, agenturi,
   effect): 31 targets, each next to its package in `fuzz_test.go`, with the
   inputs that found a defect kept under `testdata/fuzz/`. A plain `go test`
-  runs only the seeds and that corpus (ANet `an internal note`, core).
+  runs only the seeds and that corpus.
 
 ### Changed
 
@@ -409,7 +409,7 @@ their release notes.
   F15): a receipt for another request of the same interaction no longer
   verifies.
 
-Found by fuzzing (ANet `an internal note`, core; each has a unit regression
+Found by fuzzing (each has a unit regression
 that fails without the fix):
 
 - `aobj.Verify` returns an error for a public key that is not 32 bytes

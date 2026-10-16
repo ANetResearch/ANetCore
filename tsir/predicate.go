@@ -157,7 +157,7 @@ func (p *Predicate) Validate() error { return p.validate(0) }
 
 func (p *Predicate) validate(depth int) error {
 	// A nil node is a CBOR null in a children array (or a nil receiver): not a predicate.
-	// Without the check the switch below dereferenced it (ANet an internal note).
+	// Without the check the switch below dereferenced it.
 	if p == nil || depth > MaxPredicateDepth {
 		return ErrMalformed
 	}
@@ -315,7 +315,7 @@ func matchResource(m ResourceMatch, id string) bool {
 // The match runs the tokens over the set of positions in s reachable so far, so it takes
 // O(len(pat) * len(s)) steps whatever the pattern. The recursive matcher it replaces tried
 // every split point at every star and took exponential time on patterns with several
-// stars (ANet an internal note, found by FuzzGlobMatch).
+// stars (found by FuzzGlobMatch).
 func globMatch(pat, s string) bool {
 	n := len(s)
 	cur := make([]bool, n+1)

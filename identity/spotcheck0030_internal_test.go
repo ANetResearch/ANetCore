@@ -2,7 +2,7 @@ package identity
 
 // Spot checks of the fx-e fix (Replay refuses icp/rot keys that are not 32
 // bytes instead of panicking in ed25519.Verify) after the round-5b merge
-// (ANet an internal note): every length around 32, the key in each place a
+//: every length around 32, the key in each place a
 // KEL carries one, and replays racing through the process-wide cache.
 
 import (

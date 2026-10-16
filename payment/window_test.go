@@ -10,8 +10,7 @@ import (
 
 // The validity window is compared without adding the skew to the signer's value. NotAfter +
 // ClockSkew used to overflow for a NotAfter near math.MaxInt64 and wrap negative, so an
-// authorization meant never to expire was refused as expired at every moment (ANet
-// an internal note).
+// authorization meant never to expire was refused as expired at every moment.
 func TestWindowEdgesDoNotOverflow(t *testing.T) {
 	c := identity.SuiteController()
 	const now = int64(1767225600000)
