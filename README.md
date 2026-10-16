@@ -52,13 +52,13 @@ flowchart TB
 | `seal` | End-to-end relay envelope: signed `EncKeySet`, sign-then-encrypt `SealedEnvelope` (HPKE Base, X25519 / HKDF-SHA256 / ChaCha20-Poly1305), Padmé padding | A2A-DESIGN §3 |
 | `a2acard` | A2A AgentCard signing and verification: RFC 8785 JCS + JWS EdDSA, standard library only | A2A-DESIGN §10.3 |
 | `payment` | x402 wire objects + the `anet-credit` scheme: signed authorizations and settlement receipts | x402 v2 |
-| `relayauth` | The canonical challenge a client signs to authenticate a hub request (v1 and v2) | arch-03 |
-| `delegation` | The relayed task wire: signed request, completion, chat; `VerifyDelegateReq`, `VerifyResult` | arch-03 |
+| `relayauth` | What a client signs or MACs to authenticate a hub request: the signed request preimage, and the first-contact session (key delivery and MAC) | `docs/wire-keys.md` L7, L8, L22 |
+| `dirbox` | Directory entries sealed so that only a party that already knows the AID can find and open them | `docs/wire-keys.md` L9, L10 |
+| `delegation` | The relayed task wire: signed request, completion, chat and preview frames, decoded strictly; `VerifyDelegateReqWithKEL`, `VerifyResultForRequest`, `ValidatePreview`, `ValidateReply` | arch-03 |
 | `evidence` | Receipt + Review — the interaction-anchored trust pair anyone can verify | evidence-spec |
 | `ael` | Agent Event Ledger — per-DID append-only anti-fork hash chain (P6) | evidence-spec |
 | `tsir` | TaskDoc, closed predicate calculus, `EffectRecord`, acceptance evaluation | tsir-spec |
 | `effect` | The execution-effect envelope: what happened, whether it is verifiable, the metrics a TSIR predicate evaluates | contracts C1/C4 |
-| `adp` | AgentCard — capability self-description, typed CID mounts | adp-spec |
 | `agenturi` | `agent://` URI scheme — parsing and canonical form | agent-uri-spec |
 | `golden` | Conformance vectors — the byte-for-byte oracle | `_CONVENTIONS §8` |
 
@@ -72,10 +72,11 @@ go get github.com/ANetResearch/ANetCore@latest
 ```
 
 ```go
-ctrl, _ := identity.Incept()                                            // a new self-certifying AID and its key event log
+ctrl, _ := identity.InceptAgent(uint64(time.Now().UnixMilli()))         // a new self-certifying AID and its key event log
 pre, _ := coredet.Marshal(map[string]any{"goal": "hello"})             // canonical (deterministic) CBOR preimage
 cid, _ := anetcid.Sum(pre)                                              // content id: CIDv1 · dag-cbor · sha2-256
-sig, seq := ctrl.Sign(pre)                                              // Ed25519 under the current key
+var signer identity.Signer = ctrl                                       // what signing code is given: it signs, nothing else
+sig, seq := signer.Sign(pre)                                            // Ed25519 under the current key
 err := identity.VerifyObject(ctrl.KEL(), ctrl.AID(), seq, 0, pre, sig) // verify against the key history
 ```
 

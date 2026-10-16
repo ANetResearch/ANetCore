@@ -1,6 +1,10 @@
 package a2acard
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
+)
 
 func TestCheckHighWaterBranches(t *testing.T) {
 	h1 := [32]byte{1}
@@ -46,7 +50,7 @@ func TestCheckHighWaterWithVerifiedCards(t *testing.T) {
 	}
 	stored := first.Mark()
 
-	if err := c.Rotate(t0); err != nil {
+	if err := identitytest.Rotate(c, t0); err != nil {
 		t.Fatal(err)
 	}
 	resigned, err := Verify(signCard(t, card, c), newResolver(c).resolve, t0)

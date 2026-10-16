@@ -1,0 +1,7 @@
+{
+  "about": "fixture",
+  "entries": [
+    {"todo": "@todo(FX-1)", "repo": "ANetCore", "kind": "struct", "go": "legacy.Old", "keys": ["1 X string", "2 Y []byte"]},
+    {"todo": "@todo(FX-1)", "repo": "ANetCore", "kind": "string", "value": "anet-fx-old/v1"}
+  ]
+}

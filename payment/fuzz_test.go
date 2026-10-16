@@ -1,6 +1,6 @@
 package payment_test
 
-// Fuzz targets for the anet-credit wire objects and amounts (ANet docs/notes/0033).
+// Fuzz targets for the anet-credit wire objects and amounts (ANet an internal note).
 //
 // Each target decodes, checks the round trip, optionally re-signs the decoded object with the
 // suite identity and verifies it; an accepted object must be signed by the declared signer and
@@ -87,56 +87,31 @@ func FuzzAuthorization(f *testing.F) {
 	})
 }
 
-func FuzzReceiptVoucher(f *testing.F) {
+func FuzzReceipt(f *testing.F) {
 	c := identity.SuiteController()
 	r := &payment.Receipt{AuthID: "bafyreiauth", Payer: "p", PayTo: "q", Amount: 7, Network: "hub:x", SettleAt: fuzzNow}
 	if err := r.Sign(c); err != nil {
 		f.Fatal(err)
 	}
 	rb, _ := r.Marshal()
-	v := &payment.Voucher{AuthID: "bafyreiauth", Payer: "p", PayTo: "q", Capability: "cap", Amount: 7,
-		Network: "hub:x", NotAfter: fuzzNow + 60_000, Nonce: "n", ArgsCID: "bafyreiargs"}
-	if err := v.Sign(c); err != nil {
-		f.Fatal(err)
-	}
-	vb, _ := v.Marshal()
 	f.Add(rb, false, fuzzNow)
-	f.Add(vb, true, fuzzNow)
-	f.Add(vb, true, int64(math.MinInt64))
+	f.Add(rb, true, int64(math.MinInt64))
 	f.Fuzz(func(t *testing.T, b []byte, resign bool, now int64) {
-		if r, err := payment.UnmarshalReceipt(b); err == nil {
-			if rb, err := r.Marshal(); err == nil {
-				back, err := payment.UnmarshalReceipt(rb)
-				if err != nil || !reflect.DeepEqual(back, r) {
-					t.Fatalf("receipt round trip: %v", err)
-				}
-			}
-			if resign && r.Sign(c) != nil {
-				return
-			}
-			if err := r.Verify(c.KEL(), c.AID(), now); err == nil && r.Envelope.SignerAID != c.AID() {
-				t.Fatalf("accepted a receipt signed by %s", r.Envelope.SignerAID)
+		r, err := payment.UnmarshalReceipt(b)
+		if err != nil {
+			return
+		}
+		if rb, err := r.Marshal(); err == nil {
+			back, err := payment.UnmarshalReceipt(rb)
+			if err != nil || !reflect.DeepEqual(back, r) {
+				t.Fatalf("receipt round trip: %v", err)
 			}
 		}
-		if v, err := payment.UnmarshalVoucher(b); err == nil {
-			if vb, err := v.Marshal(); err == nil {
-				back, err := payment.UnmarshalVoucher(vb)
-				if err != nil || !reflect.DeepEqual(back, v) {
-					t.Fatalf("voucher round trip: %v", err)
-				}
-			}
-			if resign && v.Sign(c) != nil {
-				return
-			}
-			err := v.Verify(c.KEL(), c.AID(), v.PayTo, v.Capability, v.Network, now)
-			expired := v.NotAfter != 0 && !inWindow(now, math.MinInt64+payment.ClockSkew, v.NotAfter)
-			if err == nil {
-				if v.Envelope.SignerAID != c.AID() || v.Nonce == "" || expired {
-					t.Fatalf("accepted voucher %+v at %d", v, now)
-				}
-			} else if resign && v.Nonce != "" && !expired {
-				t.Fatalf("refused a signed, unexpired voucher (not after %d, now %d): %v", v.NotAfter, now, err)
-			}
+		if resign && r.Sign(c) != nil {
+			return
+		}
+		if err := r.Verify(c.KEL(), c.AID(), now); err == nil && r.Envelope.SignerAID != c.AID() {
+			t.Fatalf("accepted a receipt signed by %s", r.Envelope.SignerAID)
 		}
 	})
 }

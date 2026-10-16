@@ -68,8 +68,8 @@ const (
 	KIDPrefix = "did:anet:"
 )
 
-// Limits enforced by Verify (A2A-DESIGN §10.3). Lengths are in bytes of UTF-8, the same unit
-// the ADP card limits use; a hub stores cards as bytes, so a byte bound is what caps storage.
+// Limits enforced by Verify (A2A-DESIGN §10.3). Lengths are in bytes of UTF-8: a hub stores cards
+// as bytes, so a byte bound is what caps storage.
 const (
 	MaxCardBytes        = 64 << 10
 	MaxNameBytes        = 128

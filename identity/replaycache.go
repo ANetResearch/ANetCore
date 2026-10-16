@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"bytes"
 	"container/list"
 	"crypto/sha256"
 	"sync"
@@ -110,12 +109,10 @@ func (c *ReplayCache) replay(kel []SignedEvent) ([]KeyState, error) {
 	return states, err
 }
 
-// compactStates copies states for the cache without the memory Replay's own result spends on
-// delegated keys, and returns the copy and its estimated size. Replay gives every drt a new copy
-// of the list so far, so a KEL of n delegations holds n²/2 slice headers; each list is a prefix of
-// the last state's, so the copy shares one array, capped so that an append by a caller copies it.
-// The keys are copied, so the cache holds no memory of the caller's. ok is false when the states
-// are not as Replay makes them, and then nothing is cached.
+// compactStates copies states for the cache and returns the copy and its estimated size. A state
+// whose keys are the previous state's shares that state's copy, as Replay's own result does for
+// the dip; every other key is copied, so the cache holds no memory of the caller's. ok is false
+// when there is nothing to cache.
 func compactStates(states []KeyState) (out []KeyState, cost int, ok bool) {
 	if len(states) == 0 {
 		return nil, 0, false
@@ -131,28 +128,16 @@ func compactStates(states []KeyState) (out []KeyState, cost int, ok bool) {
 		}
 		return cp
 	}
-	all := copyKeys(states[len(states)-1].DelegatedKeys)
 	out = make([]KeyState, len(states))
 	cost += len(out) * int(unsafe.Sizeof(KeyState{}))
 	for i, s := range states {
-		if len(s.DelegatedKeys) > len(all) {
-			return nil, 0, false
-		}
-		for j, k := range s.DelegatedKeys {
-			if !bytes.Equal(k, all[j]) {
-				return nil, 0, false
-			}
-		}
 		out[i] = s
-		if s.DelegatedKeys != nil {
-			out[i].DelegatedKeys = all[:len(s.DelegatedKeys):len(s.DelegatedKeys)]
-		}
 		if i > 0 && sameKeys(s.CurrentKeys, states[i-1].CurrentKeys) {
 			out[i].CurrentKeys = out[i-1].CurrentKeys
 		} else {
 			out[i].CurrentKeys = copyKeys(s.CurrentKeys)
 		}
-		cost += len(s.LastEventID)
+		cost += len(s.LastEventID) + len(s.Witness)
 	}
 	return out, cost + len(states[0].AID), true
 }

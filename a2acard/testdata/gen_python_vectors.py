@@ -1,4 +1,4 @@
-"""Generate the a2a-python cross-SDK vectors for package a2acard (A2A-DESIGN §10.3, note 0012).
+"""Generate the a2a-python cross-SDK vectors for package a2acard (A2A-DESIGN §10.3, an internal note).
 
 Every card here is built as an lf.a2a.v1.AgentCard protobuf message and signed the way the
 a2a-python reference SDK signs: proto -> MessageToDict -> drop "signatures" -> drop empty values
@@ -14,9 +14,9 @@ Outputs, next to this script:
                               must match it (TestSchemaMatchesReferenceDescriptors)
 
 Environment used for the committed files (see "generator" in python-vectors.json):
-  python3 -m venv --without-pip /data/projs/anet-dev/.venv
-  python3 -m pip --python /data/projs/anet-dev/.venv/bin/python install 'a2a-sdk[signing]'
-  cd ANetCore/a2acard/testdata && /data/projs/anet-dev/.venv/bin/python gen_python_vectors.py
+  python3 -m venv --without-pip /path/to/workspace/.venv
+  python3 -m pip --python /path/to/workspace/.venv/bin/python install 'a2a-sdk[signing]'
+  cd ANetCore/a2acard/testdata && /path/to/workspace/.venv/bin/python gen_python_vectors.py
 
 The signing key is the frozen anet conformance identity (ANetCore identity/suite.go): Ed25519
 seed SHA-256("anet-suite-identity-v1/cur"), AID SUITE_AID below, so the Go tests can run the
@@ -42,7 +42,7 @@ from a2a.utils._jcs import canonicalize
 
 SEED = hashlib.sha256(b"anet-suite-identity-v1/cur").digest()
 # identity.SuiteController().AID(); python_vectors_test.go asserts the two are equal.
-SUITE_AID = "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y"
+SUITE_AID = "bafyreihq42j7esljj5drxgieudh2ar4gsspogpejmdxmg4nezfa3twdmke"
 KID = f"did:anet:{SUITE_AID}#0"
 JKU = f"https://hub.example.org/agents/{SUITE_AID}/jwks.json"
 T0 = 1767225600000  # 2026-01-01T00:00:00Z, the "now" of the Go tests

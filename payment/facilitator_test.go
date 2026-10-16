@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ANetResearch/ANetCore/payment"
 )
@@ -82,6 +83,8 @@ func TestTheErrorReasonValuesArePinned(t *testing.T) {
 		{payment.ReasonSettlementFailed, "settlement_failed"},
 		{payment.ReasonMalformed, "malformed_payment"},
 		{payment.ReasonInvalidRequirements, "invalid_payment_requirements"},
+		{payment.ReasonPayeeNotLocal, "payee_not_local"},
+		{payment.ReasonAuthWindowTooLong, "auth_window_too_long"},
 		{payment.ExtReplayed, "anet.replayed"},
 		{payment.ExtOriginalTransaction, "anet.original_transaction"},
 		{payment.ExtErrorDetail, "anet.error_detail"},
@@ -90,5 +93,13 @@ func TestTheErrorReasonValuesArePinned(t *testing.T) {
 		if pair[0] != pair[1] {
 			t.Errorf("%q, want %q", pair[0], pair[1])
 		}
+	}
+}
+
+// A hub accepts an authorization window of at most a day (HPP §0.4); the
+// daemon signs five minutes.
+func TestMaxAuthWindowIsADay(t *testing.T) {
+	if payment.MaxAuthWindow != 24*time.Hour {
+		t.Fatalf("MaxAuthWindow = %v", payment.MaxAuthWindow)
 	}
 }

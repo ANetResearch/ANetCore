@@ -1,0 +1,134 @@
+{
+  "id": "REGPOW-1",
+  "description": "Registration proof of work: the L24 seed of an hour under a fixed pow_key; the L23 hash; the smallest counters whose 8-byte big-endian nonce passes 22 bits, has exactly 21 bits, and passes 8 bits; refused inputs.",
+  "labels": {
+    "hash": "anet-regpow/v1",
+    "seed": "anet-regpow-seed/v1"
+  },
+  "bits": 22,
+  "seed": {
+    "pow_key": "52289f30c3a431835080eece02cafd0629c6790850b5ab37fa533a48365a0336",
+    "ms": 1767231000000,
+    "hour": 490897,
+    "message": "616e65742d726567706f772d736565642f76310000000000077d91",
+    "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+    "not_after": 1767236400000
+  },
+  "hub_aid": "bafyreie3ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4",
+  "aid": "bafyreifoujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+  "prefix": "616e65742d726567706f772f7631006261667972656965336f6b36616a7332713275706476776b326e64726f7561756376706879776c3567376571763579636a6a366d6c347a367871340062616679726569666f756a6a6b6f62656a783669777a63646f68686379656e6b7964666e726473786d3365326675627876696777377267646d616100856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+  "solutions": [
+    {
+      "name": "pass_22",
+      "note": "the first nonce with at least 22 leading zero bits",
+      "counter": 1399197,
+      "nonce": "000000000015599d",
+      "preimage": "616e65742d726567706f772f7631006261667972656965336f6b36616a7332713275706476776b326e64726f7561756376706879776c3567376571763579636a6a366d6c347a367871340062616679726569666f756a6a6b6f62656a783669777a63646f68686379656e6b7964666e726473786d3365326675627876696777377267646d616100856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828000000000015599d",
+      "hash": "0000031fd55891212b01579536367e9427ac14008b5a414f3949e634405e830c",
+      "zero_bits": 22,
+      "check": {
+        "8": true,
+        "21": true,
+        "22": true,
+        "23": false
+      }
+    },
+    {
+      "name": "fail_21",
+      "note": "the first nonce with exactly 21 leading zero bits: passes 21, fails 22",
+      "counter": 5188831,
+      "nonce": "00000000004f2cdf",
+      "preimage": "616e65742d726567706f772f7631006261667972656965336f6b36616a7332713275706476776b326e64726f7561756376706879776c3567376571763579636a6a366d6c347a367871340062616679726569666f756a6a6b6f62656a783669777a63646f68686379656e6b7964666e726473786d3365326675627876696777377267646d616100856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b82800000000004f2cdf",
+      "hash": "0000077c6d81848362dbfac8086b4c8c0f825446d2da1fb90707c2043c398799",
+      "zero_bits": 21,
+      "check": {
+        "8": true,
+        "21": true,
+        "22": false,
+        "23": false
+      }
+    },
+    {
+      "name": "fast_8",
+      "note": "the first nonce with at least 8 leading zero bits",
+      "counter": 209,
+      "nonce": "00000000000000d1",
+      "preimage": "616e65742d726567706f772f7631006261667972656965336f6b36616a7332713275706476776b326e64726f7561756376706879776c3567376571763579636a6a366d6c347a367871340062616679726569666f756a6a6b6f62656a783669777a63646f68686379656e6b7964666e726473786d3365326675627876696777377267646d616100856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b82800000000000000d1",
+      "hash": "00055cbc0d0c924f5acf4fc8f0a1111fd3b188c847cacb42c3518f2d4ddfd1bc",
+      "zero_bits": 13,
+      "check": {
+        "8": true,
+        "21": false,
+        "22": false,
+        "23": false
+      }
+    }
+  ],
+  "negatives": [
+    {
+      "name": "previous_hour_seed",
+      "note": "pass_22's nonce against the previous hour's seed",
+      "hub_aid": "bafyreie3ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4",
+      "aid": "bafyreifoujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "a7766665b64a8bf2b370d5f87c4190d8ecc2303d9129739688a17e84981e8940",
+      "nonce": "000000000015599d",
+      "hash": "9420fb18f5caf612131c6379124f08984876d3b93cbaacbb672fc00417545e27",
+      "error": ""
+    },
+    {
+      "name": "other_hub",
+      "note": "pass_22's nonce for another hub",
+      "hub_aid": "bafyreihqrc4ndwpqyyfkzgkafc7f4xgrgc2ajubz4dbwraucygctmhmg7i",
+      "aid": "bafyreifoujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+      "nonce": "000000000015599d",
+      "hash": "637bded27460889457d2774e544d76de507798b3cb8bc007f36e1fffe49b4bed",
+      "error": ""
+    },
+    {
+      "name": "empty_nonce",
+      "note": "a nonce is 1 to 32 bytes",
+      "hub_aid": "bafyreie3ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4",
+      "aid": "bafyreifoujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+      "nonce": "",
+      "error": "nonce"
+    },
+    {
+      "name": "nonce_33_bytes",
+      "note": "a nonce is 1 to 32 bytes",
+      "hub_aid": "bafyreie3ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4",
+      "aid": "bafyreifoujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+      "nonce": "000000000000000000000000000000000000000000000000000000000000000000",
+      "error": "nonce"
+    },
+    {
+      "name": "hub_aid_nul",
+      "note": "U+0000 in hub_aid (CORE-E9)",
+      "hub_aid": "bafyreie\u00003ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4",
+      "aid": "bafyreifoujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+      "nonce": "000000000015599d",
+      "error": "nul"
+    },
+    {
+      "name": "aid_nul",
+      "note": "U+0000 in aid (CORE-E9)",
+      "hub_aid": "bafyreie3ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4",
+      "aid": "bafyreif\u0000oujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+      "nonce": "000000000015599d",
+      "error": "nul"
+    },
+    {
+      "name": "boundary_moved",
+      "note": "hub_aid + U+0000 + the start of aid, then the rest of aid: the same hash input bytes as aid_nul with the boundary moved; both refused (CORE-E9)",
+      "hub_aid": "bafyreie3ok6ajs2q2updvwk2ndrouaucvphywl5g7eqv5ycjj6ml4z6xq4\u0000bafyreif",
+      "aid": "oujjkobejx6iwzcdohhcyenkydfnrdsxm3e2fubxvigw7rgdmaa",
+      "seed": "856f891aa78724c9143b43b12a89650e553e9bd4f7f28ac8c7f28371ef74b828",
+      "nonce": "000000000015599d",
+      "error": "nul"
+    }
+  ]
+}

@@ -3,7 +3,6 @@ module github.com/ANetResearch/ANetCore
 go 1.26.6
 
 require (
-	filippo.io/edwards25519 v1.2.0
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/ipfs/go-cid v0.6.2
 	github.com/multiformats/go-multihash v0.2.3

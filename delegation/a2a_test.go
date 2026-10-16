@@ -1,18 +1,15 @@
 package delegation
 
 import (
-	"crypto/ed25519"
-	"crypto/sha256"
 	"errors"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/coredet"
-	"github.com/ANetResearch/ANetCore/evidence"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // Tests for the ANetCore v0.15.0 delegation increments (A2A-DESIGN §3.4): the new optional fields,
@@ -44,10 +41,13 @@ func TestNewFieldKeysAreAssignedAndOptional(t *testing.T) {
 	}{
 		{"ChatMsg.Metadata", &ChatMsg{Kind: "x", Metadata: []byte(`{}`)}, []uint64{1, 10}},
 		{"ChatMsg without metadata", &ChatMsg{Kind: "x"}, []uint64{1}},
-		{"DelegateReq.ContextID", &DelegateReq{ContextID: "ctx"}, []uint64{1, 2, 3, 4, 7}},
-		{"DelegateReq.Metadata", &DelegateReq{Metadata: []byte(`{}`)}, []uint64{1, 2, 3, 4, 8}},
-		{"DelegateReq without new fields", &DelegateReq{}, []uint64{1, 2, 3, 4}},
+		// Keys 3 (the body KEL) and 6 (the prepayment) are retired: no field encodes to them.
+		{"DelegateReq.ContextID", &DelegateReq{ContextID: "ctx"}, []uint64{1, 2, 4, 7}},
+		{"DelegateReq.Metadata", &DelegateReq{Metadata: []byte(`{}`)}, []uint64{1, 2, 4, 8}},
+		{"DelegateReq without new fields", &DelegateReq{}, []uint64{1, 2, 4}},
 		{"ResultResp.Metadata", &ResultResp{Status: StatusDone, Metadata: []byte(`{}`)}, []uint64{1, 5}},
+		// Key 4 (the body KEL) is retired; key 6 is the reply.
+		{"ResultResp.Reply", &ResultResp{Status: StatusDone, Reply: &ReplyMsg{Kind: ChatText, MsgID: "m"}}, []uint64{1, 6}},
 		{"ResultResp without metadata", &ResultResp{Status: StatusDone}, []uint64{1}},
 		{"StatusMsg full", &StatusMsg{State: StateWorking, Text: "t", Metadata: []byte(`{}`), At: 1}, []uint64{1, 2, 3, 4}},
 		// One optional field at a time, so two fields that swap keys are caught here and not only
@@ -76,7 +76,12 @@ func TestNewFieldsRoundTrip(t *testing.T) {
 		t.Errorf("ChatMsg round trip: %+v, %v", cback, err)
 	}
 
-	dr := &DelegateReq{TaskDoc: []byte{0xa0}, InteractionID: "ix", ContextID: "ctx-1", Metadata: meta}
+	alice, err := identitytest.Hub()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dr := signedReq(t, alice, "x")
+	dr.ContextID, dr.Metadata = "ctx-1", meta
 	b, err = dr.Marshal()
 	if err != nil {
 		t.Fatal(err)
@@ -136,33 +141,19 @@ func TestStatusStatesAndCancelKindArePinned(t *testing.T) {
 	}
 }
 
-func marshalKEL(t *testing.T, kel []identity.SignedEvent) []byte {
-	t.Helper()
-	b, err := identity.MarshalKEL(kel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
-func hostKey() ed25519.PublicKey {
-	seed := sha256.Sum256([]byte("anet-test/delegation/host"))
-	return ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-}
-
 func TestVerifyDelegateReqWithKEL(t *testing.T) {
-	alice, err := identity.Incept()
+	alice, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	mallory, err := identity.Incept()
+	mallory, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := signedReq(t, alice, "move the camera") // body KEL = alice's KEL at signing time
+	req := signedReq(t, alice, "move the camera")
 	aliceAtSigning := append([]identity.SignedEvent(nil), alice.KEL()...)
 
-	t.Run("body KEL equal to the resolved KEL", func(t *testing.T) {
+	t.Run("the resolved KEL at signing time", func(t *testing.T) {
 		aid, doc, docBytes, err := VerifyDelegateReqWithKEL(req, aliceAtSigning, 1767225600000)
 		if err != nil {
 			t.Fatalf("a genuine delegation must verify: %v", err)
@@ -172,70 +163,25 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 		}
 	})
 
-	t.Run("no body KEL", func(t *testing.T) {
-		r := *req
-		r.KEL = nil
-		if _, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1767225600000); err != nil {
-			t.Fatalf("an absent body KEL must be accepted: %v", err)
-		}
-	})
-
-	t.Run("body KEL is a prefix of the resolved KEL", func(t *testing.T) {
-		a2, _ := identity.Incept()
+	t.Run("a resolved KEL that extends the signing one", func(t *testing.T) {
+		a2, _ := identitytest.Hub()
 		r := signedReq(t, a2, "x")
-		if err := a2.Delegate(hostKey(), 1000); err != nil {
+		if err := identitytest.Rotate(a2, 1767225601000); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, _, err := VerifyDelegateReqWithKEL(r, a2.KEL(), 1767225600000); err != nil {
-			t.Fatalf("a body KEL that the resolved KEL extends must be accepted: %v", err)
+			t.Fatalf("a signature by a key the resolved KEL still lists at the message time must verify: %v", err)
 		}
 	})
 
-	t.Run("body KEL forks from the resolved KEL", func(t *testing.T) {
-		r := *req
-		r.KEL = marshalKEL(t, mallory.KEL())
-		_, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1767225600000)
-		if !errors.Is(err, ErrBodyKELMismatch) || !errors.Is(err, identity.ErrKELFork) {
-			t.Fatalf("want ErrBodyKELMismatch wrapping ErrKELFork, got %v", err)
-		}
-	})
-
-	t.Run("body KEL runs ahead of the resolved KEL", func(t *testing.T) {
-		a3, _ := identity.Incept()
-		r := signedReq(t, a3, "x")
-		stale := append([]identity.SignedEvent(nil), a3.KEL()...)
-		if err := a3.Delegate(hostKey(), 1000); err != nil {
-			t.Fatal(err)
-		}
-		r.KEL = marshalKEL(t, a3.KEL())
-		_, _, _, err := VerifyDelegateReqWithKEL(r, stale, 1767225600000)
-		if !errors.Is(err, ErrBodyKELMismatch) || !errors.Is(err, identity.ErrKELRollback) {
-			t.Fatalf("want ErrBodyKELMismatch wrapping ErrKELRollback, got %v", err)
-		}
-	})
-
-	t.Run("undecodable body KEL", func(t *testing.T) {
-		r := *req
-		r.KEL = []byte("not a kel")
-		if _, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1); err == nil ||
-			!strings.Contains(err.Error(), "bad body KEL") {
-			t.Fatalf("want bad body KEL, got %v", err)
-		}
-	})
-
-	// The case C4d is about. Mallory signs a TaskDoc as himself and ships his own KEL in the body;
-	// the envelope came from Alice, so the receiver resolved Alice's KEL. The body KEL decides
-	// nothing: with it the request is a mismatch, without it the signature does not verify
-	// against Alice's key history.
+	// The case C4d is about. Mallory signs a TaskDoc as himself; the envelope came from Alice, so
+	// the receiver resolved Alice's KEL, and the signature does not verify against it. There is no
+	// KEL in the body any more for him to offer instead.
 	t.Run("TaskDoc signed by someone other than the resolved sender", func(t *testing.T) {
 		forged := signedReq(t, mallory, "wipe the recordings")
-		if _, _, _, err := VerifyDelegateReqWithKEL(forged, aliceAtSigning, 1767225600000); !errors.Is(err, ErrBodyKELMismatch) {
-			t.Errorf("with Mallory's body KEL: want ErrBodyKELMismatch, got %v", err)
-		}
-		forged.KEL = nil
 		aid, _, _, err := VerifyDelegateReqWithKEL(forged, aliceAtSigning, 1767225600000)
 		if err == nil || !strings.Contains(err.Error(), "signature invalid") {
-			t.Errorf("without a body KEL: want signature invalid, got aid %q err %v", aid, err)
+			t.Errorf("want signature invalid, got aid %q err %v", aid, err)
 		}
 		if aid != "" {
 			t.Errorf("a refused delegation must name nobody, got %s", aid)
@@ -260,18 +206,33 @@ func TestVerifyDelegateReqWithKEL(t *testing.T) {
 			t.Errorf("want missing interaction id, got %v", err)
 		}
 	})
+
+	// A DelegateReq built in memory is held to the decoder's TaskDoc rule: a key no TaskDoc
+	// object assigns, or a second encoding of the same TaskDoc, is refused before the signature
+	// is looked at.
+	t.Run("the TaskDoc rule of the decoder", func(t *testing.T) {
+		for name, edit := range map[string]func([]byte) []byte{
+			"unassigned key": func(b []byte) []byte { return addTopKey(t, b, 5) },
+			"not canonical":  func(b []byte) []byte { return nonCanonical(t, b) },
+		} {
+			r := *req
+			r.TaskDoc = edit(req.TaskDoc)
+			if _, _, _, err := VerifyDelegateReqWithKEL(&r, aliceAtSigning, 1767225600000); !errors.Is(err, ErrBody) {
+				t.Errorf("%s: want ErrBody, got %v", name, err)
+			}
+		}
+	})
 }
 
 // msgTime, not the verifier's clock, drives the revocation gate, and the gate is evaluated on the
-// resolved KEL, not on the shorter KEL the body carried. Bob signs at seq 0 and later rotates at
-// t=5000; his message still carries the pre-rotation KEL.
+// resolved KEL. Bob signs at seq 0 and later rotates at t=5000.
 func TestVerifyDelegateReqWithKELUsesMsgTimeAndResolvedKEL(t *testing.T) {
-	bob, err := identity.Incept()
+	bob, err := identitytest.Hub()
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := signedReq(t, bob, "x") // body KEL = [icp]
-	if err := bob.Rotate(5000); err != nil {
+	req := signedReq(t, bob, "x") // signed at key state 0
+	if err := identitytest.Rotate(bob, 5000); err != nil {
 		t.Fatal(err)
 	}
 	resolved := bob.KEL() // [icp, rot@5000]
@@ -283,162 +244,4 @@ func TestVerifyDelegateReqWithKELUsesMsgTimeAndResolvedKEL(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "REVOKED_KEY") {
 		t.Errorf("message time at the rotation: want REVOKED_KEY, got %v", err)
 	}
-}
-
-func TestVerifyResultWithKEL(t *testing.T) {
-	provider, err := identity.Incept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, err := identity.Incept()
-	if err != nil {
-		t.Fatal(err)
-	}
-	const (
-		ix   = "ix-1"
-		reqA = "did:anet:requester"
-		at   = 1767225600000
-	)
-	deliverable := []byte(`{"answer":42}`)
-	cid, err := anetcid.Sum(deliverable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	receiptBy := func(c *identity.Controller, mutate func(*evidence.Receipt)) []byte {
-		rc := &evidence.Receipt{InteractionID: ix, RequesterAID: reqA, ProviderAID: c.AID(),
-			RequestCID: "bafyrequest", ResultCID: cid, CompletedAt: at}
-		if mutate != nil {
-			mutate(rc)
-		}
-		if err := rc.Sign(c); err != nil {
-			t.Fatal(err)
-		}
-		b, err := rc.Marshal()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return b
-	}
-	pKEL := append([]identity.SignedEvent(nil), provider.KEL()...)
-
-	t.Run("genuine, body KEL equal", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(provider, nil), KEL: marshalKEL(t, pKEL)}
-		rc, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at)
-		if err != nil || rc.ResultCID != cid {
-			t.Fatalf("a genuine completion must verify: %v", err)
-		}
-	})
-
-	// VerifyResult reports this case as ErrUnverifiable, because it had no other KEL. With a resolved
-	// KEL the receipt can be checked, so an absent body KEL is not a reason to give up.
-	t.Run("genuine, no body KEL", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable, Receipt: receiptBy(provider, nil)}
-		if _, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at); err != nil {
-			t.Fatalf("an absent body KEL must be accepted: %v", err)
-		}
-	})
-
-	t.Run("no resolved KEL is unverifiable, not invalid", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(provider, nil), KEL: marshalKEL(t, pKEL)}
-		if _, err := VerifyResultWithKEL(rr, nil, ix, reqA, provider.AID(), at); !errors.Is(err, ErrUnverifiable) {
-			t.Fatalf("want ErrUnverifiable, got %v", err)
-		}
-	})
-
-	t.Run("body KEL forks from the resolved KEL", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(provider, nil), KEL: marshalKEL(t, other.KEL())}
-		_, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at)
-		if !errors.Is(err, ErrBodyKELMismatch) || !errors.Is(err, identity.ErrKELFork) {
-			t.Fatalf("want ErrBodyKELMismatch wrapping ErrKELFork, got %v", err)
-		}
-	})
-
-	// A receipt signed by another identity, with that identity's KEL in the body, while the
-	// envelope came from the provider. The resolved KEL decides.
-	t.Run("receipt by someone other than the resolved sender", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(other, nil)}
-		_, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, "", at)
-		if err == nil || !strings.Contains(err.Error(), "signature invalid") {
-			t.Fatalf("want signature invalid, got %v", err)
-		}
-	})
-
-	t.Run("bindings still apply", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: []byte(`{"answer":0}`),
-			Receipt: receiptBy(provider, nil)}
-		if _, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at); err == nil ||
-			!strings.Contains(err.Error(), "receipt covers") {
-			t.Errorf("swapped deliverable: want receipt covers, got %v", err)
-		}
-		rr = &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(provider, func(r *evidence.Receipt) { r.InteractionID = "ix-99" })}
-		if _, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at); err == nil ||
-			!strings.Contains(err.Error(), "is for interaction") {
-			t.Errorf("recycled receipt: want is for interaction, got %v", err)
-		}
-		if _, err := VerifyResultWithKEL(&ResultResp{Status: StatusDone}, pKEL, ix, reqA, "", at); err == nil ||
-			!strings.Contains(err.Error(), "no receipt") {
-			t.Errorf("no receipt: got %v", err)
-		}
-		// The requester binding is not implied by the resolved KEL: the provider's own key can sign
-		// a receipt that names another requester, and accepting it would credit the wrong party.
-		rr = &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(provider, func(r *evidence.Receipt) { r.RequesterAID = "did:anet:someone-else" })}
-		if _, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at); err == nil ||
-			!strings.Contains(err.Error(), "as requester, not us") {
-			t.Errorf("receipt for another requester: want as requester, not us, got %v", err)
-		}
-		// The provider binding: the KEL resolved for the envelope sender verifies the receipt, but the
-		// interaction was addressed to a different provider. The caller's providerAID decides.
-		rr = &ResultResp{Status: StatusDone, Deliverable: deliverable, Receipt: receiptBy(other, nil)}
-		if _, err := VerifyResultWithKEL(rr, other.KEL(), ix, reqA, provider.AID(), at); err == nil ||
-			!strings.Contains(err.Error(), "the task went to") {
-			t.Errorf("receipt from a provider the task did not go to: want the task went to, got %v", err)
-		}
-	})
-
-	t.Run("body KEL runs ahead of the resolved KEL", func(t *testing.T) {
-		p3, _ := identity.Incept()
-		receipt := receiptBy(p3, nil)
-		stale := append([]identity.SignedEvent(nil), p3.KEL()...)
-		if err := p3.Delegate(hostKey(), 1000); err != nil {
-			t.Fatal(err)
-		}
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable, Receipt: receipt,
-			KEL: marshalKEL(t, p3.KEL())}
-		_, err := VerifyResultWithKEL(rr, stale, ix, reqA, p3.AID(), at)
-		if !errors.Is(err, ErrBodyKELMismatch) || !errors.Is(err, identity.ErrKELRollback) {
-			t.Fatalf("want ErrBodyKELMismatch wrapping ErrKELRollback, got %v", err)
-		}
-	})
-
-	t.Run("undecodable body KEL", func(t *testing.T) {
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable,
-			Receipt: receiptBy(provider, nil), KEL: []byte("not a kel")}
-		if _, err := VerifyResultWithKEL(rr, pKEL, ix, reqA, provider.AID(), at); err == nil ||
-			!strings.Contains(err.Error(), "bad body KEL") {
-			t.Fatalf("want bad body KEL, got %v", err)
-		}
-	})
-
-	t.Run("msgTime and the resolved KEL drive revocation", func(t *testing.T) {
-		p2, _ := identity.Incept()
-		receipt := receiptBy(p2, nil)
-		body := marshalKEL(t, p2.KEL()) // [icp]
-		if err := p2.Rotate(5000); err != nil {
-			t.Fatal(err)
-		}
-		rr := &ResultResp{Status: StatusDone, Deliverable: deliverable, Receipt: receipt, KEL: body}
-		if _, err := VerifyResultWithKEL(rr, p2.KEL(), ix, reqA, p2.AID(), 4999); err != nil {
-			t.Errorf("before the rotation: must verify, got %v", err)
-		}
-		if _, err := VerifyResultWithKEL(rr, p2.KEL(), ix, reqA, p2.AID(), 5000); err == nil ||
-			!strings.Contains(err.Error(), "REVOKED_KEY") {
-			t.Errorf("at the rotation: want REVOKED_KEY, got %v", err)
-		}
-	})
 }

@@ -4,103 +4,59 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ANetResearch/ANetCore/anetcid"
 	"github.com/ANetResearch/ANetCore/identity"
 )
 
-// VerifyInterlock checks that a receipt and a review are two halves of one
-// real interaction.
-//
-// This is the arithmetic behind "the Hub is a relay — it cannot fake a
-// single rating", and it lived inside the Hub, in a package Go forbids
-// anyone else from importing. So the claim was true of the Hub's own code
-// and unavailable to the people it is addressed to: a rating is worth
-// something precisely because a stranger can check it, and no stranger
-// could.
-//
-// Ten checks, and every one of them is a way to manufacture a rating that
-// would otherwise pass:
-//
-//	rating in range                 — a 9-star review
-//	same interaction id             — a review of a different job
-//	reviewer is the requester       — rating work you did not commission
-//	subject is the provider         — praising someone who was not there
-//	review anchored to this receipt — a real receipt paired with a review
-//	                                  that names a different one
-//	request bytes hash to RequestCID  — rating a job that was not asked
-//	deliverable hashes to ResultCID   — rating work that was not delivered
-//	receipt signed by the provider    — a receipt the provider never issued
-//	review signed by the reviewer     — a review the requester never wrote
-//	both signatures under a live key   — a key retired before it signed
-//
-// What it deliberately does NOT check is anything requiring state: that
-// the parties are registered somewhere, or that this interaction has not
-// already been rated. Those are policy a particular Hub enforces against
-// its own store, not facts about the objects. Keeping them out is what
-// lets an auditor with nothing but files reach the same verdict.
-//
-// requestDoc and deliverable are the interaction's actual bytes. Pass nil
-// for either to skip that content binding — an auditor who was given only
-// the signed objects can still confirm everything else, and saying so is
-// better than pretending the content was checked.
-func VerifyInterlock(rc *Receipt, rv *Review, requestDoc, deliverable []byte,
-	providerKEL, reviewerKEL []identity.SignedEvent) error {
-	if rc == nil || rv == nil {
-		return errors.New("evidence: interlock needs both a receipt and a review")
-	}
-	if !rv.ValidRating() {
-		return fmt.Errorf("evidence: rating %d out of range %d..%d", rv.Rating, RatingMin, RatingMax)
-	}
+// ErrNotThisReceipt: the review rates another receipt, or another subject than the receipt's
+// provider.
+var ErrNotThisReceipt = errors.New("evidence: the review is not about this receipt")
 
-	// The two objects must describe the same interaction and agree on who
-	// was involved.
-	if rc.InteractionID != rv.InteractionID {
-		return fmt.Errorf("evidence: receipt is for interaction %s, review for %s",
-			rc.InteractionID, rv.InteractionID)
+// CheckV2 checks that a receipt and a review are two halves of one real task (interlock v2, HPP
+// PAY-K3), and returns their bodies.
+//
+// It is the arithmetic behind "the hub cannot fake a rating", kept in a package anyone can import so
+// an auditor with nothing but the objects reaches the hub's verdict:
+//
+//	the provider signed the receipt     — under its KEL, judged at the start of the receipt's own
+//	                                      completed_day (SI-36): a key the provider retired before
+//	                                      that day signs nothing for it
+//	the review is signed by review_key  — the one-time key the requester put in the TaskDoc and the
+//	                                      provider copied into the receipt; nobody else holds it
+//	the review names this receipt       — review.receipt_cid is the CID of the receipt body
+//	the review rates the provider       — review.subject is receipt.provider
+//
+// What it does not check needs state or a clock: that the uploader is the requester (the hub
+// compares requester_commit with the uploader, HPP PAY-V1 step 6), the review window, and that the
+// task was not rated before. Those are a hub's policy against its own store, not facts about the
+// objects.
+func CheckV2(receipt *ReceiptWire, review *ReviewWire, providerKEL []identity.SignedEvent) (*ReceiptBody, *ReviewBody, error) {
+	if receipt == nil || review == nil {
+		return nil, nil, malformed("an interlock needs both a receipt and a review")
 	}
-	if rv.ReviewerAID != rc.RequesterAID {
-		return errors.New("evidence: the reviewer is not the interaction's requester")
-	}
-	if rv.SubjectAID != rc.ProviderAID {
-		return errors.New("evidence: the review rates someone other than the provider")
-	}
-
-	// And the review must be anchored to THIS receipt, not merely to one.
-	receiptCID, err := rc.CID()
+	rc, err := receipt.Open()
 	if err != nil {
-		return err
+		return nil, nil, err
+	}
+	at, ok := DayStart(rc.CompletedDay)
+	if !ok {
+		return nil, nil, malformed("receipt completed_day %d is not a day", rc.CompletedDay)
+	}
+	if _, err := receipt.Verify(providerKEL, at); err != nil {
+		return nil, nil, err
+	}
+	rv, err := review.Verify(rc.ReviewKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	receiptCID, err := receipt.CID()
+	if err != nil {
+		return nil, nil, err
 	}
 	if rv.ReceiptCID != receiptCID {
-		return fmt.Errorf("evidence: review references receipt %s, not %s", rv.ReceiptCID, receiptCID)
+		return nil, nil, fmt.Errorf("%w: the review names receipt %s, this receipt is %s", ErrNotThisReceipt, rv.ReceiptCID, receiptCID)
 	}
-
-	// Content binding: what is shown must be what was signed for.
-	if requestDoc != nil {
-		cid, err := anetcid.Sum(requestDoc)
-		if err != nil {
-			return err
-		}
-		if cid != rc.RequestCID {
-			return fmt.Errorf("evidence: request bytes hash to %s, receipt says %s", cid, rc.RequestCID)
-		}
+	if rv.Subject != rc.Provider {
+		return nil, nil, fmt.Errorf("%w: the review rates %s, the receipt's provider is %s", ErrNotThisReceipt, rv.Subject, rc.Provider)
 	}
-	if deliverable != nil {
-		cid, err := anetcid.Sum(deliverable)
-		if err != nil {
-			return err
-		}
-		if cid != rc.ResultCID {
-			return fmt.Errorf("evidence: deliverable hashes to %s, receipt says %s", cid, rc.ResultCID)
-		}
-	}
-
-	// Signatures last: they are the expensive part, and an object that
-	// fails the cheap structural checks is not worth a curve operation.
-	if err := rc.Verify(providerKEL, rc.CompletedAt); err != nil {
-		return fmt.Errorf("evidence: receipt signature invalid: %w", err)
-	}
-	if err := rv.Verify(reviewerKEL, rv.CreatedAt); err != nil {
-		return fmt.Errorf("evidence: review signature invalid: %w", err)
-	}
-	return nil
+	return rc, rv, nil
 }

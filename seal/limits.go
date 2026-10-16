@@ -4,7 +4,8 @@ package seal
 // share that unit so they can be added to wire fields without conversion.
 const (
 	minuteMS uint64 = 60 * 1000
-	dayMS    uint64 = 24 * 60 * minuteMS
+	hourMS   uint64 = 60 * minuteMS
+	dayMS    uint64 = 24 * hourMS
 )
 
 const (
@@ -14,42 +15,48 @@ const (
 	// (§3.6 step 5).
 	ClockSkewMS = 5 * minuteMS
 
-	// MaxKeyValidityMS bounds not_after - not_before of one EncKey (§3.1).
-	MaxKeyValidityMS = 30 * dayMS
+	// EpochMS is the length E of one encryption epoch. Epoch e is the UTC
+	// day floor(t / EpochMS); its key is valid in [e·E, (e+1)·E), so every
+	// node changes keys at the same instant and the change says nothing
+	// about the node.
+	EpochMS = dayMS
 
-	// KeyRotationIntervalMS, KeyLifetimeMS and KeyRetentionMS are the key
-	// ring policy of §3.1 and the "encryption key" row of §2: a new key every
-	// 7 days, each valid for 14, its private half kept 15 days past
-	// not_after so that messages still queued at a hub can be opened.
-	//
-	// These numbers set the forward-secrecy bound stated in §21 item 2. A
-	// message sent at time t is sealed to a key valid at t, whose not_after
-	// is therefore at most t + KeyLifetimeMS; the private half exists until
-	// not_after + KeyRetentionMS. A party that obtains the recipient's disk
-	// can thus open the message for at most KeyLifetimeMS + KeyRetentionMS
-	// = 29 days after it was sent. Shortening the retention narrows that
-	// window and loses messages that wait in a mailbox longer than the
-	// retention. The bound holds for a recipient that follows this policy;
-	// the wire rule (MaxKeyValidityMS) lets a recipient publish keys valid
-	// for up to 30 days, which widens its own window accordingly.
-	KeyRotationIntervalMS = 7 * dayMS
-	KeyLifetimeMS         = 14 * dayMS
-	KeyRetentionMS        = 15 * dayMS
+	// PublishAheadMS is how far ahead H a recipient publishes epoch keys:
+	// its key set holds the keys of the current epoch and of the
+	// PublishAheadMS / EpochMS epochs after it, so a sender with a cached set
+	// can seal to it for that long without asking the hub again.
+	PublishAheadMS = 14 * dayMS
 
-	// ForwardSecrecyWindowMS is the bound derived above (§21 item 2).
-	ForwardSecrecyWindowMS = KeyLifetimeMS + KeyRetentionMS
+	// DeliveryDeadlineMS is the delivery deadline D: a hub accepts an
+	// envelope sealed to a key until that key's not_after plus D, and the
+	// sender seals again to a current key after that. Hub and daemon use the
+	// same value. Together with the hub's mailbox lifetime it bounds when the
+	// last envelope for a key can arrive, which is what lets the recipient
+	// delete the key's private half.
+	DeliveryDeadlineMS = hourMS
+
+	// MaxKeyValidityMS bounds not_after - not_before of one EncKey. An epoch
+	// key spans one epoch; the bound leaves room for a publisher whose epoch
+	// boundaries are not exactly on the UTC day, but not for a long-lived
+	// key, which would hold the forward-secrecy window open for as long as it
+	// is valid.
+	MaxKeyValidityMS = 2 * dayMS
 
 	// MaxMessageLifetimeMS bounds exp - ts of one inner message (§3.6 step
-	// 5). It does not exceed KeyRetentionMS: a message sent at t under a key
-	// valid at t expires by t + 15 days, while that key's private half is
-	// kept until not_after + 15 days > t + 15 days. A message inside its
-	// lifetime therefore never arrives after its key was discarded.
+	// 5). It is also the hard deletion bound L of an epoch key's private
+	// half: by not_after + L every honest hub has dropped every envelope
+	// sealed to the key (it accepts one until not_after +
+	// DeliveryDeadlineMS and keeps it for at most its mailbox lifetime), so
+	// the key can go whatever the hub says. When to delete a private key is
+	// the holder's policy; this package does not keep one.
 	MaxMessageLifetimeMS = 15 * dayMS
 )
 
 const (
-	// MaxKeysPerSet is the upper bound of EncKeySet.keys (§3.1 "[1*4 EncKey]").
-	MaxKeysPerSet = 4
+	// MaxKeysPerSet is the upper bound of EncKeySet.keys: the previous, the
+	// current and PublishAheadMS / EpochMS future epoch keys fit with room to
+	// spare.
+	MaxKeysPerSet = 32
 
 	// MaxKELEvents and MaxKELBytes cap the sender KEL carried in every inner
 	// message (§3.3 key 10). A KEL is replayed on every receive, one Ed25519

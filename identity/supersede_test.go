@@ -1,58 +1,19 @@
 package identity
 
 import (
-	"crypto/ed25519"
-	"crypto/sha256"
 	"errors"
 	"testing"
-
-	"github.com/ANetResearch/ANetCore/anetcid"
 )
 
-// Replay post-pass (A2A-DESIGN §3.6, review item C4a).
-//
-// A key is retired by the first rot or dip after the state that introduced it, whatever ixn or drt
-// events sit in between. The earlier post-pass compared each state only with the event directly
-// after it, so in icp → drt → rot the icp state stayed active: a signature by the retired key,
-// declaring key_state_seq 0, verified at any msgTime. These tests pin the per-state result of
-// Replay and the accept/reject outcome of VerifyObject on both sides of the retirement time.
-
-// fixedHostKey is a deterministic delegated key so the drt event does not depend on the run.
-func fixedHostKey() ed25519.PublicKey {
-	seed := sha256.Sum256([]byte("anet-test/supersede/host"))
-	return ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
-}
-
-// appendIxn appends an ixn event signed by the current key. Controller has no method for ixn;
-// this builds the event the way Delegate builds drt, carrying the pre-rotation commitment forward
-// so a later Rotate still passes the pre-rotation gate.
-func appendIxn(t *testing.T, c *Controller, ts uint64) {
-	t.Helper()
-	last := c.kel[len(c.kel)-1]
-	ixn := KeyEvent{
-		AID:        c.aid,
-		Seq:        last.Event.Seq + 1,
-		Prev:       last.EventID,
-		Type:       Interaction,
-		Keys:       [][]byte{c.cur.Public().(ed25519.PublicKey)},
-		NextDigest: nextDigest(c.nxt.Public().(ed25519.PublicKey)),
-		Threshold:  1,
-		Timestamp:  ts,
-	}
-	pre, err := preimage(ixn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := anetcid.Sum(pre)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.kel = append(c.kel, SignedEvent{Event: ixn, Sig: ed25519.Sign(c.cur, pre), EventID: id})
-}
+// Replay post-pass (KEL C-2). In KEL v2 every event after the icp is a rot or a dip, so state i is
+// retired by event i+1 at that event's ts, urgently when the event is an emergency rot or a dip.
+// These tests pin the per-state result of Replay and the accept/reject outcome of VerifyObject on
+// both sides of the retirement time.
 
 type wantState struct {
 	status       string
 	supersededAt uint64
+	urgent       bool
 }
 
 func checkStates(t *testing.T, kel []SignedEvent, want []wantState) {
@@ -65,9 +26,10 @@ func checkStates(t *testing.T, kel []SignedEvent, want []wantState) {
 		t.Fatalf("states = %d, want %d", len(states), len(want))
 	}
 	for i, w := range want {
-		if states[i].Status != w.status || states[i].SupersededAt != w.supersededAt {
-			t.Errorf("state %d = {%s, SupersededAt %d}, want {%s, SupersededAt %d}",
-				i, states[i].Status, states[i].SupersededAt, w.status, w.supersededAt)
+		s := states[i]
+		if s.Status != w.status || s.SupersededAt != w.supersededAt || s.RetiredUrgently != w.urgent {
+			t.Errorf("state %d = {%s, SupersededAt %d, urgent %v}, want {%s, %d, %v}",
+				i, s.Status, s.SupersededAt, s.RetiredUrgently, w.status, w.supersededAt, w.urgent)
 		}
 	}
 }
@@ -102,113 +64,73 @@ func expectRevoked(t *testing.T, c *Controller, o signedAt, msgTime uint64) {
 	}
 }
 
-func TestReplaySupersededIcpDrtRot(t *testing.T) {
+func TestReplaySupersededRotRot(t *testing.T) {
+	const t0 = SuiteInceptionTS
 	c := SuiteController()
 	o0 := signNow(c, "seq 0")
-	if err := c.Delegate(fixedHostKey(), 1000); err != nil {
+	if err := testRotate(c, t0+5000); err != nil {
 		t.Fatal(err)
 	}
 	o1 := signNow(c, "seq 1")
-	if err := c.Rotate(5000); err != nil {
+	if err := testRotate(c, t0+9000); err != nil {
 		t.Fatal(err)
 	}
 	o2 := signNow(c, "seq 2")
-
-	// SupersededAt is the rot's timestamp for both earlier states, not the drt's.
 	checkStates(t, c.KEL(), []wantState{
-		{StatusRotated, 5000},
-		{StatusRotated, 5000},
-		{StatusActive, 0},
+		{StatusRotated, t0 + 5000, false},
+		{StatusRotated, t0 + 9000, false},
+		{StatusActive, 0, false},
 	})
-	for _, o := range []signedAt{o0, o1} {
-		expectAccept(t, c, o, 1)
-		expectAccept(t, c, o, 4999)
-		expectRevoked(t, c, o, 5000)
-		expectRevoked(t, c, o, 6000)
-		// msgTime 0 keeps the documented conservative fallback: only the terminal dip seq is refused.
-		expectAccept(t, c, o, 0)
-	}
-	expectAccept(t, c, o2, 6000)
+	expectAccept(t, c, o0, 1)
+	expectAccept(t, c, o0, t0+4999)
+	expectRevoked(t, c, o0, t0+5000)
+	expectRevoked(t, c, o0, t0+6000)
+	// msgTime 0: the object's time is unknown, so it cannot be shown to predate the rotation.
+	expectRevoked(t, c, o0, 0)
+	expectAccept(t, c, o1, t0+8999)
+	expectRevoked(t, c, o1, t0+9000)
+	expectRevoked(t, c, o1, 0)
+	expectAccept(t, c, o2, 0)
+	expectAccept(t, c, o2, t0+10000)
 }
 
-func TestReplaySupersededIcpDrtDip(t *testing.T) {
+func TestReplaySupersededRotDip(t *testing.T) {
+	const t0 = SuiteInceptionTS
 	c := SuiteController()
 	o0 := signNow(c, "seq 0")
-	if err := c.Delegate(fixedHostKey(), 1000); err != nil {
+	if err := testRotate(c, t0+1000); err != nil {
 		t.Fatal(err)
 	}
 	o1 := signNow(c, "seq 1")
-	if err := c.Deactivate(8000); err != nil {
+	if err := testDeactivate(c, t0+8000); err != nil {
 		t.Fatal(err)
 	}
-	// An object claiming the dip's own seq. The key is the same, so the signature is valid; the
-	// revocation gate is what refuses it.
-	pre := []byte("object signed after deactivation")
-	oDip := signedAt{seq: 2, pre: pre, sig: ed25519.Sign(c.cur, pre)}
+	// An object claiming the dip's own seq: the dip state holds no key, so it is refused before
+	// any signature is looked at.
+	oDip := signedAt{seq: 2, pre: o1.pre, sig: o1.sig}
 
 	checkStates(t, c.KEL(), []wantState{
-		{StatusRotated, 8000},
-		{StatusRotated, 8000},
-		{StatusDeactivated, 0},
+		{StatusRotated, t0 + 1000, false},
+		{StatusRotated, t0 + 8000, true},
+		{StatusDeactivated, 0, false},
 	})
-	for _, o := range []signedAt{o0, o1} {
-		expectAccept(t, c, o, 7999)
-		expectRevoked(t, c, o, 8000)
-		expectRevoked(t, c, o, 9000)
-	}
-	expectRevoked(t, c, oDip, 7999)
-	expectRevoked(t, c, oDip, 9000)
-	if err := VerifyObject(c.KEL(), c.AID(), oDip.seq, 0, oDip.pre, oDip.sig); err == nil {
-		t.Error("the terminal dip seq must be refused at msgTime 0 as well")
+	expectAccept(t, c, o0, t0+999)
+	expectRevoked(t, c, o0, t0+1000)
+	expectAccept(t, c, o1, t0+7999)
+	expectRevoked(t, c, o1, t0+8000)
+	expectRevoked(t, c, o1, t0+9000)
+	for _, at := range []uint64{0, t0 + 7999, t0 + 9000} {
+		expectRevoked(t, c, oDip, at)
 	}
 }
 
-// ixn and drt between a state and its retiring rot are both skipped, and each state is retired by
-// the nearest rot after it, not by a later one.
-func TestReplaySupersededSkipsIxnAndDrtAcrossTwoRotations(t *testing.T) {
-	c := SuiteController()
-	appendIxn(t, c, 500)                                     // seq 1
-	if err := c.Delegate(fixedHostKey(), 1000); err != nil { // seq 2
-		t.Fatal(err)
-	}
-	if err := c.Rotate(5000); err != nil { // seq 3
-		t.Fatal(err)
-	}
-	appendIxn(t, c, 6000)                  // seq 4
-	if err := c.Rotate(9000); err != nil { // seq 5
-		t.Fatal(err)
-	}
-	appendIxn(t, c, 9500) // seq 6
-	checkStates(t, c.KEL(), []wantState{
-		{StatusRotated, 5000},
-		{StatusRotated, 5000},
-		{StatusRotated, 5000},
-		{StatusRotated, 9000},
-		{StatusRotated, 9000},
-		{StatusActive, 0},
-		{StatusActive, 0},
+// An emergency rot retires the state before it urgently; a planned rot does not.
+func TestReplaySupersededEmergencyRot(t *testing.T) {
+	kel := kel2A()
+	checkStates(t, kel, []wantState{
+		{StatusRotated, hubT0 + minute, false},
+		{StatusRotated, hubT0 + 2*minute, true},
+		{StatusRotated, hubDipTS, true},
+		{StatusDeactivated, 0, false},
 	})
-}
-
-// A retiring event without a timestamp still retires the key. No grace window can be established,
-// so every timed object claiming a retired seq is refused.
-func TestReplaySupersededUntimestampedRotStillRetires(t *testing.T) {
-	c := SuiteController()
-	o0 := signNow(c, "seq 0")
-	if err := c.Delegate(fixedHostKey(), 1000); err != nil {
-		t.Fatal(err)
-	}
-	o1 := signNow(c, "seq 1")
-	if err := c.Rotate(0); err != nil {
-		t.Fatal(err)
-	}
-	checkStates(t, c.KEL(), []wantState{
-		{StatusRotated, 0},
-		{StatusRotated, 0},
-		{StatusActive, 0},
-	})
-	for _, o := range []signedAt{o0, o1} {
-		expectRevoked(t, c, o, 1)
-		expectRevoked(t, c, o, 999)
-	}
 }

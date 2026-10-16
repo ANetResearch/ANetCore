@@ -6,11 +6,10 @@ import (
 	"github.com/ANetResearch/ANetCore/identity"
 )
 
-// JWKS returns the JSON Web Key Set (RFC 7517) for an AID: one OKP/Ed25519 key (RFC 8037) per
-// current key state, in seq order, each with kid did:anet:<AID>#<seq>, alg EdDSA and use sig.
-// Current is defined as in CurrentKey, so a kid listed here is exactly a kid Verify accepts;
-// several entries share one key when ixn or drt events follow the last rotation. A deactivated
-// AID yields {"keys":[]}.
+// JWKS returns the JSON Web Key Set (RFC 7517) for an AID: one OKP/Ed25519 key (RFC 8037) for
+// the current key state, with kid did:anet:<AID>#<seq>, alg EdDSA and use sig. Current is
+// defined as in CurrentKey (the head of the KEL), so a kid listed here is exactly a kid Verify
+// accepts. A deactivated AID yields {"keys":[]}.
 //
 // The output is RFC 8785 canonical JSON, so a hub serves identical bytes for an unchanged KEL
 // and can derive an ETag from them.

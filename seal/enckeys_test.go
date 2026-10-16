@@ -7,6 +7,7 @@ import (
 
 	"github.com/ANetResearch/ANetCore/coredet"
 	"github.com/ANetResearch/ANetCore/identity"
+	"github.com/ANetResearch/ANetCore/identity/identitytest"
 )
 
 // signRaw signs arbitrary set bytes, bypassing SignEncKeySet's refusal of
@@ -65,7 +66,7 @@ func TestVerifyEncKeySetRecipientSubstitution(t *testing.T) {
 	wantReason(t, err, ReasonAIDMismatch)
 
 	// A set that names A, signed by B, with B's KEL.
-	claim := EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: t0, Keys: []EncKey{b.kp.Public}, IssuedAt: t0}
+	claim := EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: t0, Keys: []EncKey{b.kp.Public}, IssuedAt: t0, Mbox: b.mbox}
 	forged := signRaw(t, b.c, claim)
 	_, err = VerifyEncKeySet(forged, a.aid(), b.c.KEL(), t0)
 	wantReason(t, err, ReasonAIDMismatch)
@@ -82,18 +83,9 @@ func TestVerifyEncKeySetRecipientSubstitution(t *testing.T) {
 // §3.1 rule 2: only the key in force at the KEL head signs a key set; no
 // rotation grace.
 func TestVerifyEncKeySetKeyState(t *testing.T) {
-	t.Run("ixn-like events keep the key", func(t *testing.T) {
-		a := newParty(t) // signed at seq 0
-		if err := a.c.Delegate(make([]byte, 32), t0); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := VerifyEncKeySet(a.signed, a.aid(), a.c.KEL(), t0); err != nil {
-			t.Fatalf("a drt does not change the signing key: %v", err)
-		}
-	})
 	t.Run("rotated away", func(t *testing.T) {
 		a := newParty(t)
-		if err := a.c.Rotate(t0 - 1); err != nil {
+		if err := identitytest.Rotate(a.c, t0-1); err != nil {
 			t.Fatal(err)
 		}
 		_, err := VerifyEncKeySet(a.signed, a.aid(), a.c.KEL(), t0)
@@ -103,12 +95,9 @@ func TestVerifyEncKeySetKeyState(t *testing.T) {
 			t.Fatalf("re-signed after rotation: %v", err)
 		}
 	})
-	t.Run("rotated away through a drt", func(t *testing.T) {
+	t.Run("rotated away after now", func(t *testing.T) {
 		a := newParty(t) // signed at seq 0
-		if err := a.c.Delegate(make([]byte, 32), t0); err != nil {
-			t.Fatal(err)
-		}
-		if err := a.c.Rotate(t0 + 1); err != nil {
+		if err := identitytest.Rotate(a.c, t0+1); err != nil {
 			t.Fatal(err)
 		}
 		// Signed before the rotation. VerifyObject alone would accept it
@@ -118,7 +107,7 @@ func TestVerifyEncKeySetKeyState(t *testing.T) {
 	})
 	t.Run("deactivated", func(t *testing.T) {
 		a := newParty(t)
-		if err := a.c.Deactivate(t0 + 1); err != nil {
+		if err := identitytest.Deactivate(a.c, t0+1); err != nil {
 			t.Fatal(err)
 		}
 		_, err := VerifyEncKeySet(a.signed, a.aid(), a.c.KEL(), t0)
@@ -151,7 +140,8 @@ func TestVerifyEncKeySetKeyState(t *testing.T) {
 	})
 }
 
-// §3.1 rule 3.
+// The structure rules of a key set, by fixture; TestEncKeySetV2Rejects goes
+// through the v0.3.0 classes one by one.
 func TestVerifyEncKeySetStructure(t *testing.T) {
 	a := newParty(t)
 	good := a.kp.Public
@@ -162,10 +152,10 @@ func TestVerifyEncKeySetStructure(t *testing.T) {
 		}
 		return kp.Public
 	}
-	k1 := key(t0-10*dayMS, t0+4*dayMS)
-	k2 := key(t0-3*dayMS, t0+11*dayMS)
+	k1 := key(t0-2*dayMS+hourMS, t0+hourMS)
+	k2 := key(t0-dayMS+hourMS, t0+dayMS)
 	set := func(keys ...EncKey) EncKeySet {
-		return EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: t0, Keys: keys, IssuedAt: t0}
+		return EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: t0, Keys: keys, IssuedAt: t0, Mbox: a.mbox}
 	}
 	badKID := good
 	badKID.KID = bytes.Repeat([]byte{1}, KIDLen)
@@ -189,7 +179,7 @@ func TestVerifyEncKeySetStructure(t *testing.T) {
 	xwingNoPub := NewEncKey(SuiteXWing, nil, t0-1, t0+dayMS)
 
 	wrongType := set(good)
-	wrongType.Type = "anet.enckeys/2"
+	wrongType.Type = "anet.enckeys/1"
 	noAID := set(good)
 	noAID.AID = ""
 
@@ -199,13 +189,14 @@ func TestVerifyEncKeySetStructure(t *testing.T) {
 		reason string
 	}{
 		{"one key", set(good), ""},
-		{"four keys ascending", set(k1, k2, good, key(t0, t0+dayMS)), ""},
+		{"four keys ascending", set(k1, good, k2, key(t0, t0+dayMS)), ""},
+		{"32 keys", set(append([]EncKey{good}, epochKeys(t, t0, 31)...)...), ""},
 		{"equal not_before", set(good, key(good.NotBefore, t0+dayMS)), ""},
-		{"validity at 30 days", set(atLimit), ""},
+		{"validity at the limit", set(atLimit), ""},
 		{"only key starts within skew", set(nearFuture), ""},
 		{"reserved suite listed", set(good, xwing), ""},
 		{"no keys", set(), ReasonBadKeySet},
-		{"five keys", set(k1, k2, good, key(t0, t0+dayMS), key(t0+1, t0+dayMS)), ReasonBadKeySet},
+		{"33 keys", set(append([]EncKey{good}, epochKeys(t, t0, 32)...)...), ReasonBadKeySet},
 		{"descending", set(k2, k1), ReasonBadKeySet},
 		{"duplicate kid", set(good, good), ReasonBadKeySet},
 		{"kid mismatch", set(badKID), ReasonBadKeySet},
@@ -213,7 +204,7 @@ func TestVerifyEncKeySetStructure(t *testing.T) {
 		{"pub 31 bytes", set(shortPub), ReasonBadKeySet},
 		{"not_after before not_before", set(inverted), ReasonBadKeySet},
 		{"not_after equals not_before", set(good, empty), ReasonBadKeySet},
-		{"validity over 30 days", set(tooLong), ReasonBadKeySet},
+		{"validity over the limit", set(tooLong), ReasonBadKeySet},
 		{"suite 0", set(suite0), ReasonBadKeySet},
 		{"reserved suite with empty pub", set(good, xwingNoPub), ReasonBadKeySet},
 		{"all expired", set(expired), ReasonBadKeySet},
@@ -222,7 +213,7 @@ func TestVerifyEncKeySetStructure(t *testing.T) {
 		{"empty aid", noAID, ReasonAIDMismatch},
 		{"unknown field", struct {
 			EncKeySet
-			X string `cbor:"5,keyasint"`
+			X string `cbor:"6,keyasint"`
 		}{set(good), "x"}, ReasonBadKeySet},
 	}
 	for _, tc := range cases {
@@ -269,14 +260,26 @@ func TestVerifyEncKeySetStructure(t *testing.T) {
 	}
 }
 
+// The signer refuses a set every verifier would refuse with the verifier's
+// reason, and its own misuse (nil arguments, a signer that misbehaves) as
+// invalid input.
 func TestSignEncKeySetRefusesInvalidSet(t *testing.T) {
 	a := newParty(t)
-	s := EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: t0, IssuedAt: t0}
+	s := EncKeySet{Type: EncKeySetType, AID: a.aid(), Seq: t0, IssuedAt: t0, Mbox: a.mbox}
 	_, err := SignEncKeySet(&s, a.c.Sign)
-	wantReason(t, err, ReasonInvalidInput)
+	wantReason(t, err, ReasonBadKeySet)
 	s.Keys = []EncKey{a.kp.Public}
 	_, err = SignEncKeySet(&s, func([]byte) ([]byte, uint64) { return make([]byte, 10), 0 })
 	wantReason(t, err, ReasonInvalidInput)
+	_, err = SignEncKeySet(nil, a.c.Sign)
+	wantReason(t, err, ReasonInvalidInput)
+	_, err = SignEncKeySet(&s, nil)
+	wantReason(t, err, ReasonInvalidInput)
+	// The time rule is judged at issued_at: the same keys issued a day after
+	// they expire are refused.
+	s.IssuedAt = a.kp.Public.NotAfter + dayMS
+	_, err = SignEncKeySet(&s, a.c.Sign)
+	wantReason(t, err, ReasonBadKeySet)
 }
 
 func TestSelectKey(t *testing.T) {
@@ -290,12 +293,12 @@ func TestSelectKey(t *testing.T) {
 		}
 		return kp.Public
 	}
-	old := mk(SuiteX25519, t0-10*dayMS, t0+4*dayMS)
-	cur := mk(SuiteX25519, t0-3*dayMS, t0+11*dayMS)
-	next := mk(SuiteX25519, t0+dayMS, t0+15*dayMS)
-	soon := mk(SuiteX25519, t0+2*minuteMS, t0+14*dayMS)
-	soon2 := mk(SuiteX25519, t0+3*minuteMS, t0+14*dayMS)
-	xwing := mk(SuiteXWing, t0-dayMS, t0+13*dayMS)
+	old := mk(SuiteX25519, t0-2*dayMS+hourMS, t0+hourMS)
+	cur := mk(SuiteX25519, t0-hourMS, t0+dayMS)
+	next := mk(SuiteX25519, t0+dayMS, t0+2*dayMS)
+	soon := mk(SuiteX25519, t0+2*minuteMS, t0+dayMS)
+	soon2 := mk(SuiteX25519, t0+3*minuteMS, t0+dayMS)
+	xwing := mk(SuiteXWing, t0-dayMS, t0+dayMS)
 
 	cases := []struct {
 		name string
@@ -342,8 +345,8 @@ func TestNextSeq(t *testing.T) {
 	}
 }
 
-func TestKeyPairAndRetention(t *testing.T) {
-	kp, err := GenerateKeyPair(SuiteX25519, t0, t0+KeyLifetimeMS)
+func TestKeyPair(t *testing.T) {
+	kp, err := GenerateKeyPair(SuiteX25519, t0, t0+EpochMS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,14 +354,11 @@ func TestKeyPairAndRetention(t *testing.T) {
 		t.Fatalf("key pair %+v", kp.Public)
 	}
 	k := kp.Public
-	if !k.ValidAt(t0) || k.ValidAt(t0-1) || k.ValidAt(t0+KeyLifetimeMS) {
+	if !k.ValidAt(t0) || k.ValidAt(t0-1) || k.ValidAt(t0+EpochMS) {
 		t.Fatal("ValidAt bounds")
 	}
-	if !k.Retained(t0+KeyLifetimeMS+KeyRetentionMS-1) || k.Retained(t0+KeyLifetimeMS+KeyRetentionMS) {
-		t.Fatal("Retained bounds")
-	}
-	if ForwardSecrecyWindowMS != 29*dayMS {
-		t.Fatalf("forward-secrecy window %d ms, §21 states 29 days", ForwardSecrecyWindowMS)
+	if _, err := GenerateKeyPair(SuiteX25519, t0, t0+MaxKeyValidityMS); err != nil {
+		t.Fatalf("validity at the limit: %v", err)
 	}
 	if _, err := GenerateKeyPair(SuiteX25519, t0, t0+MaxKeyValidityMS+1); ReasonOf(err) != ReasonInvalidInput {
 		t.Fatalf("over-long validity: %v", err)
@@ -378,7 +378,7 @@ func TestKeyPairAndRetention(t *testing.T) {
 	}
 }
 
-// The integer keys of §3.1 and §3.3, read back from the encodings. The
+// The integer keys of §3.1 and of the envelope (core §2.1-§2.3, §3.3), read back from the encodings. The
 // golden vector pins them too; this test names the object and key when one
 // moves.
 func TestWireKeyNumbers(t *testing.T) {
@@ -410,7 +410,12 @@ func TestWireKeyNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	same("EncKeySet", keysOf(setBytes), 0, 1, 2, 3, 4)
+	same("EncKeySet", keysOf(setBytes), 0, 1, 2, 3, 4, 5)
+	mboxBytes, err := coredet.Marshal(a.set.Mbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same("Mbox", keysOf(mboxBytes), 1, 2)
 	keyBytes, err := coredet.Marshal(a.kp.Public)
 	if err != nil {
 		t.Fatal(err)
@@ -423,16 +428,19 @@ func TestWireKeyNumbers(t *testing.T) {
 	same("SignedEncKeySet", keysOf(signedBytes), 1, 2, 3)
 
 	b := newParty(t)
-	env := mustSeal(t, innerFrom(t, a, b, t0), &b.kp.Public, a.c.Sign)
-	same("SealedEnvelope", keysOf(env), 1, 2, 3, 4, 5, 6)
-	same("SealedInner", keysOf(mustMarshalFields(t, decryptFields(t, env, b.kp))), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 20, 21)
+	in := innerFrom(t, a, b, t0)
+	in.Grant, in.RK = testGrant, &RK{Suite: SuiteX25519, Pub: make([]byte, 32)}
+	env := mustSeal(t, in, &b.kp.Public, a.c.Sign)
+	same("SealedEnvelope", keysOf(env), 1, 2, 3, 4, 5, 6, 7)
+	same("Wrap", keysOf(openLayer1(t, env, b.kp)), 3, 21)
+	same("SealedInner", keysOf(mustMarshalFields(t, decryptFields(t, env, b.kp))), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 20)
 	info, err := HPKEInfo(b.aid(), SuiteX25519, b.kp.Public.KID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	same("HPKE info", keysOf(info), 1, 2, 3, 4)
 	o := mustOpen(t, env, b)
-	same("signature preimage", keysOf(o.Preimage), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 30, 31, 32)
+	same("signature preimage", keysOf(o.Preimage), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 30, 31, 32, 33, 34)
 }
 
 func mustMarshalFields(t *testing.T, m fieldMap) []byte {

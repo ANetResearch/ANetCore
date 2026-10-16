@@ -66,6 +66,8 @@ const (
 var ErrMalformed = errors.New("MALFORMED")
 
 // Predicate is one node of the closed grammar (tsir-spec §2.4). Exactly one shape is set.
+//
+//anet:wire Predicate
 type Predicate struct {
 	Op       int              `cbor:"1,keyasint"`
 	Children []*Predicate     `cbor:"2,keyasint,omitempty"` // AND/OR/NOT
@@ -75,6 +77,7 @@ type Predicate struct {
 	Scope    *ScopeClause     `cbor:"13,keyasint,omitempty"`
 }
 
+//anet:wire ArtifactClause
 type ArtifactClause struct {
 	PathGlob     string   `cbor:"1,keyasint"`
 	Exists       *bool    `cbor:"2,keyasint,omitempty"`
@@ -83,17 +86,20 @@ type ArtifactClause struct {
 	Contains     []string `cbor:"5,keyasint,omitempty"`
 }
 
+//anet:wire TestClause
 type TestClause struct {
 	TestID string `cbor:"1,keyasint"`
 	Expect int    `cbor:"2,keyasint"` // 1 pass / 2 fail
 }
 
+//anet:wire ThresholdClause
 type ThresholdClause struct {
 	Metric string  `cbor:"1,keyasint"`
 	Op     int     `cbor:"2,keyasint"`
 	Value  float64 `cbor:"3,keyasint"`
 }
 
+//anet:wire ScopeClause
 type ScopeClause struct {
 	Verb       int           `cbor:"1,keyasint"`
 	Kind       int           `cbor:"2,keyasint"`
@@ -101,6 +107,7 @@ type ScopeClause struct {
 	MergeClass *int          `cbor:"4,keyasint,omitempty"` // tsir-spec design-fix: on scope-clause
 }
 
+//anet:wire ResourceMatch
 type ResourceMatch struct {
 	Kind int    `cbor:"1,keyasint"` // 1 glob / 2 set / 3 prefix
 	Val  string `cbor:"2,keyasint"`
@@ -108,6 +115,7 @@ type ResourceMatch struct {
 
 // ---- EffectRecord: the typed evaluation domain (tsir-spec §3.3a) ----
 
+//anet:wire EffectRecord
 type EffectRecord struct {
 	Artifacts []Artifact         `cbor:"1,keyasint,omitempty"`
 	Tests     []TestResult       `cbor:"2,keyasint,omitempty"`
@@ -116,6 +124,7 @@ type EffectRecord struct {
 	Effects   []EffectRef        `cbor:"5,keyasint,omitempty"`
 }
 
+//anet:wire Artifact
 type Artifact struct {
 	Path       string `cbor:"1,keyasint"`
 	SizeBytes  uint64 `cbor:"2,keyasint"`
@@ -123,17 +132,20 @@ type Artifact struct {
 	MediaType  string `cbor:"4,keyasint,omitempty"`
 }
 
+//anet:wire TestResult
 type TestResult struct {
 	ID     string `cbor:"1,keyasint"`
 	Status int    `cbor:"2,keyasint"`
 }
 
+//anet:wire ResourceRef
 type ResourceRef struct {
 	Kind       int    `cbor:"1,keyasint"`
 	ID         string `cbor:"2,keyasint"`
 	MergeClass int    `cbor:"3,keyasint"` // absent ⇒ 0 (none)
 }
 
+//anet:wire EffectRef
 type EffectRef struct {
 	Verb     int         `cbor:"1,keyasint"`
 	Resource ResourceRef `cbor:"2,keyasint"`
@@ -145,7 +157,7 @@ func (p *Predicate) Validate() error { return p.validate(0) }
 
 func (p *Predicate) validate(depth int) error {
 	// A nil node is a CBOR null in a children array (or a nil receiver): not a predicate.
-	// Without the check the switch below dereferenced it (ANet docs/notes/0033).
+	// Without the check the switch below dereferenced it (ANet an internal note).
 	if p == nil || depth > MaxPredicateDepth {
 		return ErrMalformed
 	}
@@ -303,7 +315,7 @@ func matchResource(m ResourceMatch, id string) bool {
 // The match runs the tokens over the set of positions in s reachable so far, so it takes
 // O(len(pat) * len(s)) steps whatever the pattern. The recursive matcher it replaces tried
 // every split point at every star and took exponential time on patterns with several
-// stars (ANet docs/notes/0033, found by FuzzGlobMatch).
+// stars (ANet an internal note, found by FuzzGlobMatch).
 func globMatch(pat, s string) bool {
 	n := len(s)
 	cur := make([]bool, n+1)

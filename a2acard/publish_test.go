@@ -284,7 +284,7 @@ func TestCheckPublishFormRejections(t *testing.T) {
 				t.Fatalf("error %q does not name %s", err, tc.path)
 			}
 			// Sign refuses the same card and signs nothing.
-			out, serr := SignWithController(cj, c, "")
+			out, serr := SignWithSnapshot(cj, c, "")
 			if out != nil || !IsCode(serr, tc.code) {
 				t.Fatalf("Sign: out %q err %v, want %s", out, serr, tc.code)
 			}
@@ -432,7 +432,7 @@ func TestVerifyRawFallback(t *testing.T) {
 
 	// VerifySignatureForm reports the same form for a trusted key.
 	sigs := signaturesOf(t, raw)
-	if _, form, err := VerifySignatureForm(raw, sigs[0], c.CurrentPrivateKey().Public().(ed25519.PublicKey)); err != nil || form != FormRaw {
+	if _, form, err := VerifySignatureForm(raw, sigs[0], privateKeyOf(c).Public().(ed25519.PublicKey)); err != nil || form != FormRaw {
 		t.Fatalf("VerifySignatureForm: %q %v", form, err)
 	}
 }

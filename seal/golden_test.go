@@ -1,227 +1,486 @@
 package seal
 
+// The seal v2 golden vectors of core §5.2. golden/py/gen_v016.py writes them from public
+// seeds with an independent implementation (CORE-G3); the HPKE ephemeral key of each
+// envelope is DeriveKeyPair(seed), which Go's crypto/hpke cannot fix, so Go opens the bytes
+// and reproduces every value that does not depend on that key (CORE-G2).
+//
+//	SEALED-2A  seal/testdata/vec-sealed-2a.json  one valid single-layer envelope
+//	SEALED-2B  seal/testdata/vec-sealed-2b.json  one valid two-layer envelope (sealed2b_test.go)
+//	SEALED-2C  seal/testdata/vec-sealed-2c.json  negatives, each with its seal reason
+
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/ANetResearch/ANetCore/identity"
 )
 
-// VEC-SEALED-1: one envelope from the frozen conformance identity to a
-// recipient whose key is derived from a published ikm (§17).
-//
-// Sealing is randomized (the HPKE sender key comes from the system source),
-// so the vector is on the opening side: the envelope bytes were produced
-// once and are pinned in testdata; this test opens them with the derived
-// key and checks every step. A second implementation reproduces the
-// recipient key and the sender identity from the seeds below and must open
-// the same bytes to the same fields, the same HPKE info and the same
-// signature preimage.
-//
-// The HPKE info and the preimage are pinned separately from the envelope.
-// A failure then says which layer moved: info is a function of the header
-// constants only; the preimage also depends on the decrypted fields.
-//
-// Seeds:
-//
-//	sender identity   identity.SuiteController()
-//	sender enc key    DeriveKeyPair(suite 1, SHA-256("anet-seal-golden-v1/sender-enc"))
-//	recipient enc key DeriveKeyPair(suite 1, SHA-256("anet-seal-golden-v1/recipient-enc"))
-//	mid               SHA-256("anet-seal-golden-v1/mid")[:16]
 const (
-	goldenFile         = "testdata/vec-sealed-1.json"
-	goldenRecipientAID = "bafyreigoldenrecipient"
-	goldenSenderAID    = "bafyreicg3paeuo2nt4n575adgnovtr2y7aizti7643fxhk6zbmiaaa7q7y"
-	goldenTS           = t0
-	goldenNow          = t0 + minuteMS
-	goldenBody         = "anet seal golden vector 1"
-	goldenIX           = "ix-golden-1"
+	fileSealed2A = "testdata/vec-sealed-2a.json"
+	fileSealed2C = "testdata/vec-sealed-2c.json"
 )
 
-type goldenVector struct {
-	Description  string `json:"description"`
-	RecipientPub string `json:"recipient_pub"`
-	RecipientKID string `json:"recipient_kid"`
-	HPKEInfo     string `json:"hpke_info"`
-	SigPreimage  string `json:"sig_preimage"`
-	Envelope     string `json:"envelope"`
-}
-
-func seed(label string) []byte {
-	h := sha256.Sum256([]byte("anet-seal-golden-v1/" + label))
+// goldenSeed is the published seed rule of the vectors (CORE-G5).
+func goldenSeed(vid, role string) []byte {
+	h := sha256.Sum256([]byte("anet-golden/v016/" + vid + "/" + role))
 	return h[:]
 }
 
-func goldenKeys(t *testing.T) (sender, recipient *KeyPair) {
-	t.Helper()
-	var err error
-	sender, err = DeriveKeyPair(SuiteX25519, seed("sender-enc"), goldenTS-dayMS, goldenTS+13*dayMS)
-	if err != nil {
-		t.Fatal(err)
+type hexBytes []byte
+
+func (h *hexBytes) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
 	}
-	recipient, err = DeriveKeyPair(SuiteX25519, seed("recipient-enc"), goldenTS-dayMS, goldenTS+13*dayMS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sender, recipient
+	v, err := hex.DecodeString(s)
+	*h = v
+	return err
 }
 
-// goldenInner is the inner before signing. Everything in it is a function of
-// the seeds; Ed25519 signatures are deterministic, so the key set bytes are
-// too.
-func goldenInner(t *testing.T) *SealedInner {
+// vecParties is the part both vectors share.
+type vecParties struct {
+	Recipient struct {
+		AID string   `json:"aid"`
+		SK  hexBytes `json:"sk"`
+		Pub hexBytes `json:"pub"`
+		KID hexBytes `json:"kid"`
+	} `json:"recipient"`
+	Sender struct {
+		AID         string   `json:"aid"`
+		KeyStateSeq uint64   `json:"key_state_seq"`
+		Pub         hexBytes `json:"pub"`
+		KEL         hexBytes `json:"kel"`
+	} `json:"sender"`
+	Witness struct {
+		AID string   `json:"aid"`
+		Pub hexBytes `json:"pub"`
+		KEL hexBytes `json:"kel"`
+	} `json:"witness"`
+}
+
+// keys reproduces the recipient's epoch key and the sender's key from the seeds of vid and
+// checks them against the file.
+func (p *vecParties) keys(t *testing.T, vid string) (*KeyPair, ed25519.PublicKey) {
 	t.Helper()
-	c := identity.SuiteController()
-	senderKP, _ := goldenKeys(t)
-	set := &EncKeySet{Type: EncKeySetType, AID: c.AID(), Seq: goldenTS, Keys: []EncKey{senderKP.Public}, IssuedAt: goldenTS}
-	signed, err := SignEncKeySet(set, c.Sign)
+	kp, err := DeriveKeyPair(SuiteX25519, goldenSeed(vid, "recipient-enc"), 0, dayMS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	keys, err := signed.Marshal()
-	if err != nil {
-		t.Fatal(err)
+	if !bytes.Equal(kp.Public.Pub, p.Recipient.Pub) || !bytes.Equal(kp.Public.KID, p.Recipient.KID) {
+		t.Fatalf("%s: the recipient key from the seed is not the file's", vid)
 	}
-	kel, err := identity.MarshalKEL(c.KEL())
-	if err != nil {
-		t.Fatal(err)
+	// The file gives sk as RFC 9180 DeriveKeyPair outputs it; crypto/hpke returns the clamped
+	// form of the same X25519 scalar. Both have the file's public key.
+	sk, err := params(SuiteX25519).kem.NewPrivateKey(p.Recipient.SK)
+	if err != nil || !bytes.Equal(sk.PublicKey().Bytes(), p.Recipient.Pub) {
+		t.Fatalf("%s: the file's sk is not the key of its pub (%v)", vid, err)
 	}
-	return &SealedInner{
-		From: c.AID(), KeyStateSeq: c.CurrentSeq(), To: goldenRecipientAID,
-		Type: TypeMessage, IX: goldenIX, MID: seed("mid")[:MIDLen],
-		TS: goldenTS, Exp: goldenTS + dayMS, Body: []byte(goldenBody),
-		KEL: kel, Keys: keys,
+	pub := ed25519.NewKeyFromSeed(goldenSeed(vid, "k1")).Public().(ed25519.PublicKey)
+	if !bytes.Equal(pub, p.Sender.Pub) {
+		t.Fatalf("%s: the sender key from the seed is not the file's", vid)
+	}
+	return kp, pub
+}
+
+func readVector(tb testing.TB, path string, v any) {
+	tb.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, v); err != nil {
+		tb.Fatalf("%s: %v", path, err)
 	}
 }
 
-func readGolden(t *testing.T) (goldenVector, map[string][]byte) {
-	t.Helper()
-	raw, err := os.ReadFile(goldenFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v goldenVector
-	if err := json.Unmarshal(raw, &v); err != nil {
-		t.Fatal(err)
-	}
-	out := map[string][]byte{}
-	for name, s := range map[string]string{
-		"recipient_pub": v.RecipientPub, "recipient_kid": v.RecipientKID,
-		"hpke_info": v.HPKEInfo, "sig_preimage": v.SigPreimage, "envelope": v.Envelope,
-	} {
-		b, err := hex.DecodeString(s)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		out[name] = b
-	}
-	return v, out
+type vecSealed2A struct {
+	vecParties
+	HPKEInfo hexBytes `json:"hpke_info"`
+	Inner    struct {
+		From        string     `json:"from"`
+		KeyStateSeq uint64     `json:"key_state_seq"`
+		To          string     `json:"to"`
+		Type        string     `json:"type"`
+		IX          string     `json:"ix"`
+		MID         hexBytes   `json:"mid"`
+		TS          uint64     `json:"ts"`
+		Exp         uint64     `json:"exp"`
+		Body        hexBytes   `json:"body"`
+		KEL         hexBytes   `json:"kel"`
+		Notice      []hexBytes `json:"notice"`
+		Keys        hexBytes   `json:"keys"`
+		Grant       hexBytes   `json:"grant"`
+		RK          struct {
+			Suite Suite    `json:"suite"`
+			Pub   hexBytes `json:"pub"`
+		} `json:"rk"`
+		Sig hexBytes `json:"sig"`
+	} `json:"inner"`
+	InnerCBOR   hexBytes `json:"inner_cbor"`
+	SigPreimage hexBytes `json:"sig_preimage"`
+	Wrap        hexBytes `json:"wrap"`
+	PadLen      int      `json:"pad_len"`
+	Enc         hexBytes `json:"enc"`
+	Sealed      hexBytes `json:"sealed"`
+	Access      hexBytes `json:"access"`
+	Envelope    hexBytes `json:"envelope"`
+	EnvDigest   hexBytes `json:"env_digest"`
+	AckKey      hexBytes `json:"ack_key"`
+	Handle      hexBytes `json:"handle"`
+	Tok1        hexBytes `json:"tok1"`
+	Tok2        hexBytes `json:"tok2"`
+	Negatives   []struct {
+		Name     string   `json:"name"`
+		Envelope hexBytes `json:"envelope"`
+		Reason   string   `json:"reason"`
+	} `json:"negatives"`
 }
 
-func TestVEC_SEALED_1(t *testing.T) {
-	_, g := readGolden(t)
+// hmac16 is the first 16 bytes of HMAC-SHA256(key, msg): the form of handle and tok (L12,
+// L13). seal/dack.go (RC-1) owns the token functions; the vector pins the values here.
+func hmac16(key, msg []byte) []byte {
+	m := hmac.New(sha256.New, key)
+	m.Write(msg)
+	return m.Sum(nil)[:16]
+}
 
-	if aid := identity.SuiteController().AID(); aid != goldenSenderAID {
-		t.Fatalf("the conformance identity moved: %s", aid)
-	}
-	_, rk := goldenKeys(t)
-	if !bytes.Equal(rk.Public.Pub, g["recipient_pub"]) {
-		t.Fatalf("recipient public key\n got  %x\n want %x", rk.Public.Pub, g["recipient_pub"])
-	}
-	if !bytes.Equal(rk.Public.KID, g["recipient_kid"]) {
-		t.Fatalf("recipient kid\n got  %x\n want %x", rk.Public.KID, g["recipient_kid"])
-	}
+func TestSEALED_2A(t *testing.T) {
+	var v vecSealed2A
+	readVector(t, fileSealed2A, &v)
+	kp, senderPub := v.keys(t, "SEALED-2A")
 
-	// HPKE info from the header constants alone. It is deterministic, so it
-	// is pinned here as well as in the file: regenerating the file cannot
-	// move it unnoticed.
-	const wantInfo = "a4016d616e65742d72656c61792f7631027662616679726569676f6c64656e726563697069656e7403010450841e6e853cc8d0ae17192d52e54d4f84"
-	info, err := HPKEInfo(goldenRecipientAID, SuiteX25519, rk.Public.KID)
-	if err != nil {
-		t.Fatal(err)
+	info, err := HPKEInfo(v.Recipient.AID, SuiteX25519, kp.Public.KID)
+	if err != nil || !bytes.Equal(info, v.HPKEInfo) {
+		t.Fatalf("hpke info %x, file %x (%v)", info, v.HPKEInfo, err)
 	}
-	if hex.EncodeToString(info) != wantInfo || !bytes.Equal(info, g["hpke_info"]) {
-		t.Fatalf("HPKE info\n got  %x\n want %s\n file %x", info, wantInfo, g["hpke_info"])
-	}
-
-	o, err := Open(g["envelope"], goldenRecipientAID, StaticKeyRing{rk})
+	o, err := Open(v.Envelope, v.Recipient.AID, StaticKeyRing{kp}, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if !bytes.Equal(o.Preimage, g["sig_preimage"]) {
-		t.Fatalf("signature preimage\n got  %x\n want %x", o.Preimage, g["sig_preimage"])
-	}
 
-	// The opened fields are the ones the seeds determine.
-	want := goldenInner(t)
-	got := o.Inner
-	if got.From != want.From || got.KeyStateSeq != want.KeyStateSeq || got.To != want.To ||
-		got.Type != want.Type || got.IX != want.IX || !bytes.Equal(got.MID, want.MID) ||
-		got.TS != want.TS || got.Exp != want.Exp || !bytes.Equal(got.Body, want.Body) ||
-		!bytes.Equal(got.KEL, want.KEL) || !bytes.Equal(got.Keys, want.Keys) || len(got.Ext) != 0 {
-		t.Fatalf("opened inner differs from the seeds:\n got  %+v\n want %+v", got, *want)
-	}
-	if Padme(len(o.Outer.CT)-16) != len(o.Outer.CT)-16 {
-		t.Fatalf("inner length %d is not a Padmé length", len(o.Outer.CT)-16)
-	}
-
-	if err := CheckTime(&o.Inner, goldenNow); err != nil {
-		t.Fatalf("time: %v", err)
-	}
-	if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, goldenNow, DefaultRotationGrace); err != nil {
-		t.Fatalf("signature: %v", err)
-	}
-	if _, _, err := VerifyInnerKeys(&o.Inner, o.KEL, goldenNow); err != nil {
-		t.Fatalf("attached key set: %v", err)
-	}
-
-	// The pinned preimage is what the signature is over: one changed byte
-	// in it fails.
-	bad := append([]byte(nil), g["sig_preimage"]...)
-	bad[len(bad)-1] ^= 1
-	wantReason(t, VerifyInnerSig(&o.Inner, bad, o.KEL, goldenNow, DefaultRotationGrace), ReasonBadSig)
+	t.Run("outer", func(t *testing.T) {
+		if o.Outer.V != 2 || o.Outer.To != v.Recipient.AID || o.Outer.Suite != SuiteX25519 ||
+			!bytes.Equal(o.Outer.KID, kp.Public.KID) || !bytes.Equal(o.Outer.Enc, v.Enc) ||
+			o.Outer.Access == nil || o.Outer.Access.Kind != AccessKindSession || o.Outer.Exp != nil || o.Layers != 1 {
+			t.Fatalf("outer %+v layers %d", o.Outer, o.Layers)
+		}
+		// Seal's form (no key 7) plus the access is the envelope, and the
+		// access does not enter env_digest.
+		a, err := decodeAccess(v.Access)
+		if err != nil {
+			t.Fatal(err)
+		}
+		env, err := SetAccess(v.Sealed, a)
+		if err != nil || !bytes.Equal(env, v.Envelope) {
+			t.Fatalf("SetAccess(sealed, access) is not the envelope (%v)", err)
+		}
+		for _, b := range [][]byte{v.Envelope, v.Sealed} {
+			d, err := EnvDigest(b)
+			if err != nil || !bytes.Equal(d[:], v.EnvDigest) {
+				t.Fatalf("env_digest %x, file %x (%v)", d, v.EnvDigest, err)
+			}
+		}
+	})
+	t.Run("wrap", func(t *testing.T) {
+		wrap := openLayer1(t, v.Envelope, kp)
+		if !bytes.Equal(wrap, v.Wrap) {
+			t.Fatal("layer-1 plaintext is not the file's Wrap")
+		}
+		if Padme(len(wrap)) != len(wrap) {
+			t.Fatalf("Wrap is %d bytes, not a Padmé length", len(wrap))
+		}
+		// The Go padding of the same inner gives the same Wrap.
+		if got := wrapOf(t, v.InnerCBOR); !bytes.Equal(got, v.Wrap) {
+			t.Fatalf("Go pads the inner to %d bytes, the file to %d", len(got), len(v.Wrap))
+		}
+		w, err := decodeWrap(wrap)
+		if err != nil || w.ikid != nil || !bytes.Equal(w.body, v.InnerCBOR) {
+			t.Fatalf("wrap body (%v)", err)
+		}
+	})
+	t.Run("inner", func(t *testing.T) {
+		in, want := o.Inner, v.Inner
+		if in.From != want.From || in.From != v.Sender.AID || in.KeyStateSeq != want.KeyStateSeq || in.To != want.To ||
+			in.Type != want.Type || in.IX != want.IX || !bytes.Equal(in.MID, want.MID) || in.TS != want.TS ||
+			in.Exp != want.Exp || !bytes.Equal(in.Body, want.Body) || !bytes.Equal(in.KEL, want.KEL) ||
+			!bytes.Equal(in.KEL, v.Sender.KEL) || len(in.Notices) != 1 || len(want.Notice) != 1 ||
+			!bytes.Equal(in.Notices[0], want.Notice[0]) || !bytes.Equal(in.Keys, want.Keys) ||
+			!bytes.Equal(in.Grant, want.Grant) || in.RK == nil || in.RK.Suite != want.RK.Suite ||
+			!bytes.Equal(in.RK.Pub, want.RK.Pub) || !bytes.Equal(in.Sig, want.Sig) || in.Ext != nil {
+			t.Fatalf("opened inner %+v\nfile %+v", in, want)
+		}
+		if len(o.KEL) != 2 {
+			t.Fatalf("KEL of %d events, want 2", len(o.KEL))
+		}
+		if o.RK != in.RK || len(o.Notices) != 1 || !bytes.Equal(o.Notices[0], want.Notice[0]) ||
+			!bytes.Equal(o.Grant, want.Grant) || o.Access != o.Outer.Access {
+			t.Fatal("Opened.RK, Notices, Grant or Access is not the opened inner's (CORE-A2)")
+		}
+		// Go encodes the same fields to the same inner bytes.
+		g := in
+		g.Sig = nil
+		fields, err := g.fieldMap()
+		if err != nil {
+			t.Fatal(err)
+		}
+		fields[keySig] = enc(t, want.Sig)
+		if !bytes.Equal(mustMarshalFields(t, fields), v.InnerCBOR) {
+			t.Fatal("Go encodes the inner differently")
+		}
+	})
+	t.Run("preimage and signature", func(t *testing.T) {
+		if !bytes.Equal(o.Preimage, v.SigPreimage) {
+			t.Fatalf("preimage\n got  %x\n file %x", o.Preimage, v.SigPreimage)
+		}
+		fields, err := decodeFields(v.InnerCBOR)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(designPreimage(t, fields, v.Enc, kp.Public.KID, 1, nil, nil), v.SigPreimage) {
+			t.Fatal("the file's preimage does not follow core §3.3")
+		}
+		if !ed25519.Verify(senderPub, o.Preimage, o.Inner.Sig) {
+			t.Fatal("the signature does not verify under the sender's current key")
+		}
+	})
+	t.Run("ack_key, handle, tok", func(t *testing.T) {
+		if !bytes.Equal(o.AckKey[:], v.AckKey) {
+			t.Fatalf("ack_key %x, file %x", o.AckKey, v.AckKey)
+		}
+		if !bytes.Equal(hmac16(o.AckKey[:], []byte("anet-dack-handle/v1")), v.Handle) ||
+			!bytes.Equal(hmac16(o.AckKey[:], []byte("anet-dack-tok/v1\x01")), v.Tok1) ||
+			!bytes.Equal(hmac16(o.AckKey[:], []byte("anet-dack-tok/v1\x02")), v.Tok2) {
+			t.Fatal("handle or tok differs from the file")
+		}
+	})
+	t.Run("signature under the KEL", func(t *testing.T) {
+		if err := VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, v.Inner.TS+minuteMS); err != nil {
+			t.Fatal(err)
+		}
+	})
+	// The objects inside the inner pass their own checks, so a change of their layout turns this
+	// vector red here (core §5.2): key 12 under VerifyEncKeySet, key 14 under CheckGrant, key 11 under
+	// CheckNotice.
+	mbox := ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "mbox"))
+	var set *EncKeySet
+	t.Run("key set under the KEL", func(t *testing.T) {
+		signed, err := UnmarshalSignedEncKeySet(o.Inner.Keys)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if set, err = VerifyEncKeySet(signed, o.Inner.From, o.KEL, v.Inner.TS+minuteMS); err != nil {
+			t.Fatal(err)
+		}
+		if signed.KeyStateSeq != v.Sender.KeyStateSeq || set.AID != v.Sender.AID || len(set.Keys) != 1 ||
+			set.Mbox.Epoch != 1 || !bytes.Equal(set.Mbox.Pub, mbox.Public().(ed25519.PublicKey)) {
+			t.Fatalf("key set %+v signed at %d", set, signed.KeyStateSeq)
+		}
+		re, err := set.Marshal()
+		if err != nil || !bytes.Equal(re, signed.Set) {
+			t.Fatalf("Go encodes the key set differently (%v)", err)
+		}
+	})
+	t.Run("grant", func(t *testing.T) {
+		if set == nil {
+			t.Fatal("the key set the grant is checked against did not verify")
+		}
+		g, body, err := CheckGrant(&o.Inner, set, v.Inner.TS+minuteMS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		holder := ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "holder"))
+		want := CapBody{Type: CapType, Owner: v.Sender.AID, Epoch: 1, CapID: goldenSeed("SEALED-2A", "cap-id")[:CapIDLen],
+			Class: CapClassContact, CapExp: v.Inner.TS + 30*dayMS, Holder: holder.Public().(ed25519.PublicKey)}
+		if !reflect.DeepEqual(*body, want) || !bytes.Equal(g.HolderSeed, holder.Seed()) || g.Home != v.Witness.AID ||
+			g.IX != nil || g.P2P != nil || g.Pay != nil {
+			t.Fatalf("grant %+v, cap body %+v", g, body)
+		}
+		// Go issues the same grant: the same capability bytes and signature, the same grant bytes.
+		c, err := SignCap(mbox, &want)
+		if err != nil || !reflect.DeepEqual(*c, g.Cap) {
+			t.Fatalf("SignCap gives %+v (%v)", c, err)
+		}
+		b, err := (&Grant{Cap: *c, HolderSeed: holder.Seed(), Home: v.Witness.AID}).Marshal()
+		if err != nil || !bytes.Equal(b, v.Inner.Grant) {
+			t.Fatalf("Go encodes the grant differently (%v)", err)
+		}
+	})
+	// Key 11 under CheckNotice: the witness W's notice for the tip of the sender's KEL, fresh a
+	// minute after the message's ts, under W's KEL (core §5.2, KEL C-55).
+	t.Run("notice under the witness KEL", func(t *testing.T) {
+		wkel, err := identity.UnmarshalKEL(v.Witness.KEL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hubs := func(aid string) ([]identity.SignedEvent, bool) { return wkel, aid == v.Witness.AID }
+		if err := CheckNotice(&o.Inner, o.KEL, hubs, v.Inner.TS+minuteMS); err != nil {
+			t.Fatal(err)
+		}
+		body, env, err := identity.DecodeNotice(o.Notices[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		tip := o.KEL[len(o.KEL)-1]
+		if body.AID != v.Sender.AID || body.Seq != v.Sender.KeyStateSeq || body.Head != tip.EventID ||
+			body.Witness != v.Witness.AID || body.ObservedAt != v.Inner.TS-3*minuteMS || env.SignerAID != v.Witness.AID ||
+			env.KeyStateSeq != 0 {
+			t.Fatalf("notice %+v signed %+v", body, env)
+		}
+		// Go signs the same notice as W, whose key is seed "witness-k0".
+		w := &fixedSigner{aid: v.Witness.AID, kel: wkel, key: ed25519.NewKeyFromSeed(goldenSeed("SEALED-2A", "witness-k0"))}
+		if !bytes.Equal(pubOfKey(w.key), v.Witness.Pub) {
+			t.Fatal("the witness key from the seed is not the file's")
+		}
+		n, err := identity.SignNotice(w, identity.NoticeBody{AID: body.AID, Seq: body.Seq, Head: body.Head, ObservedAt: body.ObservedAt})
+		if err != nil || !bytes.Equal(n, o.Notices[0]) {
+			t.Fatalf("SignNotice gives %x (%v)", n, err)
+		}
+	})
+	t.Run("negatives", func(t *testing.T) {
+		if len(v.Negatives) != 3 {
+			t.Fatalf("%d negatives, want 3", len(v.Negatives))
+		}
+		for _, n := range v.Negatives {
+			_, err := Open(n.Envelope, v.Recipient.AID, StaticKeyRing{kp}, nil)
+			if ReasonOf(err) != n.Reason {
+				t.Errorf("%s: %v, want %s", n.Name, err, n.Reason)
+			}
+			if _, ok := AckKeyOf(err); ok {
+				t.Errorf("%s: an ack_key before layer 1 opened", n.Name)
+			}
+		}
+	})
 }
 
-// TestWriteVEC_SEALED_1 regenerates the vector file. It runs only with
-// SEAL_WRITE_GOLDEN=1 and is for a deliberate format change: the new file
-// is a new vector, and every other implementation has to be updated to it.
-// A failing TestVEC_SEALED_1 is not a reason to run it.
-func TestWriteVEC_SEALED_1(t *testing.T) {
-	if os.Getenv("SEAL_WRITE_GOLDEN") != "1" {
-		t.Skip("set SEAL_WRITE_GOLDEN=1 to regenerate " + goldenFile)
+type vecSealed2C struct {
+	vecParties
+	RecipientIX vecIX `json:"recipient_ix"`
+	Cases       []struct {
+		Name        string   `json:"name"`
+		Stage       string   `json:"stage"`
+		Reason      string   `json:"reason"`
+		Envelope    hexBytes `json:"envelope"`
+		SigPreimage hexBytes `json:"sig_preimage"`
+		ReceiptBody hexBytes `json:"receipt_body"`
+	} `json:"cases"`
+}
+
+// Each negative fails at its step with its reason, and with an ack_key exactly when layer 1
+// opened; the valid cases open and verify.
+func TestSEALED_2C(t *testing.T) {
+	var v vecSealed2C
+	readVector(t, fileSealed2C, &v)
+	kp, senderPub := v.keys(t, "SEALED-2C")
+	ring := StaticKeyRing{kp}
+	// The recipient holds its interaction key in the base interaction (the second-layer cases).
+	ixKey := v.RecipientIX.key(t, "SEALED-2C", v.Sender.AID)
+	look := ixKeys{ixKey}
+	seen := map[string]bool{}
+	for _, c := range v.Cases {
+		seen[c.Reason] = true
+		t.Run(c.Name, func(t *testing.T) {
+			_, perr := ParseOuter(c.Envelope)
+			o, err := Open(c.Envelope, v.Recipient.AID, ring, look)
+			switch c.Stage {
+			case "parse":
+				wantOpenFails(t, perr, c.Reason, false)
+				wantOpenFails(t, err, c.Reason, false)
+			case "open":
+				if perr != nil {
+					t.Fatalf("ParseOuter: %v", perr)
+				}
+				wantOpenFails(t, err, c.Reason, true)
+			case "sig":
+				if err != nil {
+					t.Fatalf("open: %v", err)
+				}
+				if !bytes.Equal(o.Preimage, c.SigPreimage) {
+					t.Fatal("preimage differs from the file")
+				}
+				var fields fieldMap
+				var ikid, enc2 []byte
+				if o.Layers == 2 {
+					w, inner := openBoth(t, c.Envelope, kp, ixKey)
+					ikid, enc2 = w.ikid, w.enc2
+					if fields, err = decodeFields(inner); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					fields = decryptFields(t, c.Envelope, kp)
+				}
+				if !bytes.Equal(designPreimage(t, fields, o.Outer.Enc, o.Outer.KID, 1, ikid, enc2), c.SigPreimage) {
+					t.Fatal("the file's preimage does not follow core §3.3")
+				}
+				ok := ed25519.Verify(senderPub, o.Preimage, o.Inner.Sig)
+				if ok != (c.Reason == "") {
+					t.Fatalf("signature verifies: %v, want reason %q", ok, c.Reason)
+				}
+				if c.ReceiptBody != nil {
+					// SI-81: a real signature by the same key, over a
+					// ReceiptBody, does not pass as the inner's.
+					if !ed25519.Verify(senderPub, c.ReceiptBody, o.Inner.Sig) {
+						t.Fatal("the case's signature is not the sender's over the ReceiptBody")
+					}
+				}
+			default:
+				t.Fatalf("stage %q", c.Stage)
+			}
+		})
 	}
-	c := identity.SuiteController()
-	_, rk := goldenKeys(t)
-	env, err := Seal(goldenInner(t), &rk.Public, c.Sign)
-	if err != nil {
-		t.Fatal(err)
+	for _, r := range []string{"", ReasonBadVersion, ReasonUnknownField, ReasonAccessInvalid, ReasonBadWrap,
+		ReasonExpMismatch, ReasonBadInner, ReasonBadKEL, ReasonBadSig, ReasonSealedToClosedInteraction,
+		ReasonDecrypt, ReasonIKeyMismatch, ReasonBadRK} {
+		if !seen[r] {
+			t.Errorf("no case with reason %q", r)
+		}
 	}
-	info, err := HPKEInfo(goldenRecipientAID, SuiteX25519, rk.Public.KID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	o, err := Open(env, goldenRecipientAID, StaticKeyRing{rk})
-	if err != nil {
-		t.Fatal(err)
-	}
-	v := goldenVector{
-		Description: "VEC-SEALED-1: SealedEnvelope from identity.SuiteController() to " + goldenRecipientAID +
-			"; see seal/golden_test.go for the seeds. Opening side only.",
-		RecipientPub: hex.EncodeToString(rk.Public.Pub),
-		RecipientKID: hex.EncodeToString(rk.Public.KID),
-		HPKEInfo:     hex.EncodeToString(info),
-		SigPreimage:  hex.EncodeToString(o.Preimage),
-		Envelope:     hex.EncodeToString(env),
-	}
-	out, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(goldenFile, append(out, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// The second layer's cases (FS §7.1): stripped, sealed again and added each keep the layer-1
+	// header of "ok, two layers", so the signature fails on the layering alone (CORE-L6, SI-31).
+	t.Run("layering", func(t *testing.T) {
+		byName := map[string][]byte{}
+		for _, c := range v.Cases {
+			byName[c.Name] = c.Envelope
+		}
+		okEnv := byName["ok, two layers"]
+		if okEnv == nil {
+			t.Fatal("no two-layer case")
+		}
+		ok, err := Open(okEnv, v.Recipient.AID, ring, look)
+		if err != nil || ok.Layers != 2 {
+			t.Fatalf("ok, two layers: %v", err)
+		}
+		for name, layers := range map[string]int{"second layer stripped": 1, "enc2 replaced": 2, "one layer moved under a second": 2} {
+			o, err := Open(byName[name], v.Recipient.AID, ring, look)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if o.Layers != layers || !bytes.Equal(o.Outer.Enc, ok.Outer.Enc) {
+				t.Fatalf("%s: %d layers, same layer-1 enc %v", name, o.Layers, bytes.Equal(o.Outer.Enc, ok.Outer.Enc))
+			}
+		}
+	})
+	t.Run("bad-sig under the KEL", func(t *testing.T) {
+		for _, c := range v.Cases {
+			if c.Stage != "sig" {
+				continue
+			}
+			o, err := Open(c.Envelope, v.Recipient.AID, ring, look)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = VerifyInnerSig(&o.Inner, o.Preimage, o.KEL, o.Inner.TS+minuteMS)
+			if ReasonOf(err) != c.Reason {
+				t.Errorf("%s: %v, want %q", c.Name, err, c.Reason)
+			}
+		}
+	})
 }

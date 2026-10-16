@@ -11,14 +11,28 @@ package coredet
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/fxamacker/cbor/v2"
 )
 
 var (
-	encMode cbor.EncMode
-	decMode cbor.DecMode
+	encMode       cbor.EncMode
+	decMode       cbor.DecMode
+	strictDecMode cbor.DecMode
 )
+
+// strictDecOptions are the decoder options of UnmarshalStrict: the CoreDet profile's own (no tags,
+// duplicate map keys rejected) plus an error for a map key the destination struct does not name.
+// ANetLink pins a copy of these options in its own C1 decoder; a test here fixes them field by
+// field so the two cannot drift apart unnoticed.
+func strictDecOptions() cbor.DecOptions {
+	return cbor.DecOptions{
+		TagsMd:            cbor.TagsForbidden,
+		DupMapKey:         cbor.DupMapKeyEnforcedAPF,
+		ExtraReturnErrors: cbor.ExtraDecErrorUnknownField,
+	}
+}
 
 func init() {
 	opts := cbor.CoreDetEncOptions()        // RFC 8949 §4.2
@@ -37,6 +51,11 @@ func init() {
 		panic(fmt.Sprintf("coredet: invalid dec options: %v", err))
 	}
 	decMode = dm
+	sm, err := strictDecOptions().DecMode()
+	if err != nil {
+		panic(fmt.Sprintf("coredet: invalid strict dec options: %v", err))
+	}
+	strictDecMode = sm
 }
 
 // Marshal encodes v as CoreDet-CBOR. It returns an error if v contains NaN or
@@ -78,4 +97,28 @@ func Marshal(v any) ([]byte, error) {
 // (it is an encode property); re-encoding the result with Marshal reproduces canonical bytes.
 func Unmarshal(b []byte, v any) error {
 	return decMode.Unmarshal(b, v)
+}
+
+// UnmarshalStrict decodes CoreDet-CBOR bytes into v like Unmarshal, and also fails when a map
+// carries a key that the destination struct has no field for, at any depth that decodes into a
+// struct. Every object that has a closed key space decodes with it, so a key the reader does not
+// know is refused instead of silently dropped: dropping one is how a writer and a reader end up
+// agreeing on bytes and disagreeing on meaning.
+//
+// It also refuses (NullError, CORE-E4 revision 7) a CBOR undefined anywhere, and a CBOR null
+// wherever the value would go into anything but a pointer, an interface or a cbor.RawMessage: a
+// struct, an array, a slice, a map, a string, a byte string, a number or a bool. The decoder alone
+// takes both into the zero value without a word — `81 f7` decodes into a list of one empty entry —
+// and neither is how a canonical encoder writes any value. A type with its own UnmarshalCBOR is
+// given its bytes as they are, null included, and answers for itself.
+//
+// Fields typed any or cbor.RawMessage still take whatever else they are given, and a map takes
+// any key it can hold; a caller that wants those checked decodes them again into a struct. On
+// error v may be partly filled and must not be used.
+func UnmarshalStrict(b []byte, v any) error {
+	if err := strictDecMode.Unmarshal(b, v); err != nil {
+		return err
+	}
+	// The decoder accepted v: it is a non-nil pointer, and what b holds goes into its element.
+	return refuseNulls(b, reflect.TypeOf(v).Elem())
 }

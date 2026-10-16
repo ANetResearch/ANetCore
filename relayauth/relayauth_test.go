@@ -2,102 +2,42 @@ package relayauth
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 // The preimage is a shared constant between two repos.
 //
-// The daemon builds these bytes and signs them; the hub builds them again
-// and verifies. They are not exchanged, only recomputed — so a change on
-// either side that looks harmless (a separator, a field order, an action
-// name) locks every node out of its own mailbox, and the symptom at the
-// hub is an invalid signature from a key that is perfectly valid.
-//
-// Pinning the exact bytes is the point. A test that only compared
-// Preimage to itself would pass through any such change.
-func TestPreimageBytesArePinned(t *testing.T) {
-	const aid = "bafyreihnnooeomsi5widaw5oc2xiisivmuipzalyxxb7mybqwu4uj7ipay"
-	got := string(Preimage(ActionPoll, aid, 1767225600000))
-	want := "anet-relay/poll/" + aid + "/1767225600000"
-	if got != want {
-		t.Fatalf("the signed bytes moved:\n got %s\nwant %s\n"+
-			"Every node signing the old form is now locked out of its mailbox.", got, want)
-	}
-}
-
-// A signature authorises one action, for one AID, at one time. Anything
-// less and a captured signature becomes a capability someone else holds.
-func TestASignatureAuthorisesOnlyWhatItSays(t *testing.T) {
-	const alice = "did:anet:alice"
-	const bob = "did:anet:bob"
-	base := string(Preimage(ActionPoll, alice, 1000))
-
-	// Reading someone's mailbox and rewriting their public profile are not
-	// the same permission. If the action were outside the preimage, a
-	// captured poll signature would be a profile-overwrite signature.
-	for _, action := range []string{ActionAck, ActionRegister, ActionProfile} {
-		if other := string(Preimage(action, alice, 1000)); other == base {
-			t.Errorf("%q and %q produce the same challenge — one signature would authorise both",
-				ActionPoll, action)
-		}
-	}
-	if other := string(Preimage(ActionPoll, bob, 1000)); other == base {
-		t.Error("two AIDs share a challenge — Alice's signature would open Bob's mailbox")
-	}
-	if other := string(Preimage(ActionPoll, alice, 1001)); other == base {
-		t.Error("the timestamp is not in the challenge — a captured signature would never expire")
-	}
-}
-
-// Every action constant must be distinct, and distinct after being placed
-// in the preimage. Adding a new action is the moment this can break, and
-// adding one is a two-line change nobody reviews closely.
-func TestEveryActionIsDistinct(t *testing.T) {
-	actions := []string{ActionPoll, ActionAck, ActionRegister, ActionProfile}
-	seen := map[string]string{}
-	for _, a := range actions {
-		p := string(Preimage(a, "did:anet:x", 1))
-		if prev, dup := seen[p]; dup {
-			t.Errorf("actions %q and %q produce the same challenge", prev, a)
-		}
-		seen[p] = a
-	}
-	if len(seen) != len(actions) {
-		t.Errorf("%d actions collapsed to %d challenges", len(actions), len(seen))
-	}
-}
-
-// The replay window has to be short enough to matter and long enough to
-// survive ordinary clock drift. Five minutes is the number both repos
-// enforce; pinning it here means changing one side alone fails a test
-// rather than silently widening the window on the other.
-func TestReplayWindowIsFiveMinutes(t *testing.T) {
-	if MaxSkewMillis != 5*60*1000 {
-		t.Fatalf("replay window = %dms, want 300000ms — the hub enforces this number too",
-			MaxSkewMillis)
-	}
-}
+// The daemon builds these bytes and signs them; the hub builds them again and verifies. They are
+// not exchanged, only recomputed — so a change on either side that looks harmless (a separator, a
+// field order, an action name) locks every node out of its own mailbox, and the symptom at the
+// hub is an invalid signature from a key that is perfectly valid. Pinning the exact bytes is the
+// point (TestPreimageV2BytesArePinned, and golden/relayauth_v3_test.go for every action).
 
 // The separator only separates because no field contains it.
 //
-// "anet-relay/" + action + "/" + aid + "/" + ts is unambiguous exactly
-// while action and aid are slash-free: Preimage("poll", "a/1", 2) and
-// Preimage("poll/a", "1", 2) are the same bytes. Actions are the four
-// constants above and AIDs are CIDs, so neither can carry a slash today —
-// the ambiguity is a property of the inputs, not of the format.
+// "anet-relay/v2/" + action + "/" + aid + "/" + hubAID + "/" + ts + "/" + digest is unambiguous
+// exactly while action, aid and hubAID are slash-free: an AID "a/1" signed for "poll" and an AID
+// "1" signed for "poll/a" are the same bytes. Actions are the constants below and AIDs are CIDs,
+// so neither can carry a slash today — the ambiguity is a property of the inputs, not of the
+// format.
 //
-// Written down because that is the kind of precondition a later change
-// walks into. The day this function is asked to sign for a human-chosen
-// name instead of a CID, this test is the one that has to be read.
+// Written down because that is the kind of precondition a later change walks into. The day this
+// function is asked to sign for a human-chosen name instead of a CID, this test is the one that
+// has to be read.
 func TestTheFormatIsUnambiguousOnlyForSlashFreeFields(t *testing.T) {
-	for _, a := range []string{ActionPoll, ActionAck, ActionRegister, ActionProfile} {
+	for _, a := range allActions {
 		if strings.Contains(a, "/") {
 			t.Errorf("action %q contains the separator: it can pose as a different action+aid pair", a)
 		}
 	}
 	// The collision the constraint rules out, stated so it is visible.
-	if string(Preimage("poll", "a/1", 2)) != string(Preimage("poll/a", "1", 2)) {
+	if string(PreimageV2("poll", "a/1", "h", 2, "POST", "/", nil)) != string(PreimageV2("poll/a", "1", "h", 2, "POST", "/", nil)) {
 		t.Fatal("expected the documented ambiguity; the format changed, so re-derive the precondition")
 	}
 }
@@ -106,8 +46,10 @@ func TestTheFormatIsUnambiguousOnlyForSlashFreeFields(t *testing.T) {
 // distinctness and separator checks below, so the list is the place to extend first.
 var allActions = []string{
 	ActionPoll, ActionAck, ActionRegister, ActionProfile,
-	ActionSend, ActionVisibility, ActionDeregister, ActionP2P,
+	ActionVisibility, ActionDeregister,
 	ActionBalance, ActionLedger, ActionRedemptions, ActionKeys,
+	ActionSession, ActionRevoke, ActionReview, ActionLiabProof,
+	ActionFedForward, ActionFedBucket, ActionFedStatus, ActionFedCards, ActionFedSettle, ActionFedReviews, ActionFedClear,
 }
 
 // The v2 action strings are wire constants: the hub rebuilds the preimage from its own copy of the
@@ -115,8 +57,13 @@ var allActions = []string{
 func TestV2ActionNamesArePinned(t *testing.T) {
 	want := []string{
 		"poll", "ack", "register", "profile",
-		"send", "visibility", "deregister", "p2p",
+		"visibility", "deregister",
 		"balance", "ledger", "redemptions", "keys",
+		"session", "revoke", "review", "liab_proof",
+		"fed_forward", "fed_bucket", "fed_status", "fed_cards", "fed_settle", "fed_reviews", "fed_clear",
+	}
+	if len(allActions) != len(want) {
+		t.Fatalf("%d actions, want %d", len(allActions), len(want))
 	}
 	for i, a := range allActions {
 		if a != want[i] {
@@ -138,9 +85,9 @@ func TestPreimageV2BytesArePinned(t *testing.T) {
 		want                 string
 	}{
 		{
-			name: "POST with a body", action: ActionSend, method: "POST", path: "/relay/send",
-			body: []byte(`{"to_aid":"x","envelope":"AA"}`),
-			want: "anet-relay/v2/send/" + aid + "/" + hub + "/1767225600000/bzvqHocrRgGjbbYhXuGbxxXVfd3nQnvjuhvgduVcy6w",
+			name: "POST with a body", action: ActionSession, method: "POST", path: "/relay/session",
+			body: []byte(`{"epk":"AA"}`),
+			want: "anet-relay/v2/session/" + aid + "/" + hub + "/1767225600000/BCb8Ngf3B7fnOm4sYvp76V6r8NYlJs75bmoBS45lxLE",
 		},
 		{
 			// The digest contains "-", which is where the URL-safe alphabet differs from the standard one.
@@ -171,15 +118,15 @@ func TestPreimageV2BindsEveryInput(t *testing.T) {
 	p := func(x in) string {
 		return string(PreimageV2(x.action, x.aid, x.hub, x.ts, x.method, x.path, []byte(x.body)))
 	}
-	base := in{ActionSend, "did:anet:alice", "did:anet:hub-a", 1000, "POST", "/relay/send", `{"to_aid":"bob"}`}
+	base := in{ActionRevoke, "did:anet:alice", "did:anet:hub-a", 1000, "POST", "/mailbox/revoke", `{"cap_ids":["bob"]}`}
 	variants := map[string]in{
 		"another action":             {ActionPoll, base.aid, base.hub, base.ts, base.method, base.path, base.body},
 		"another sender":             {base.action, "did:anet:mallory", base.hub, base.ts, base.method, base.path, base.body},
 		"another hub":                {base.action, base.aid, "did:anet:hub-b", base.ts, base.method, base.path, base.body},
 		"another time":               {base.action, base.aid, base.hub, 1001, base.method, base.path, base.body},
 		"another method":             {base.action, base.aid, base.hub, base.ts, "PUT", base.path, base.body},
-		"another target":             {base.action, base.aid, base.hub, base.ts, base.method, "/relay/send?x=1", base.body},
-		"another body":               {base.action, base.aid, base.hub, base.ts, base.method, base.path, `{"to_aid":"eve"}`},
+		"another target":             {base.action, base.aid, base.hub, base.ts, base.method, "/mailbox/revoke?x=1", base.body},
+		"another body":               {base.action, base.aid, base.hub, base.ts, base.method, base.path, `{"cap_ids":["eve"]}`},
 		"body bytes moved to target": {base.action, base.aid, base.hub, base.ts, base.method, base.path + base.body[:1], base.body[1:]},
 		"target bytes moved to method": {base.action, base.aid, base.hub, base.ts, base.method + base.path[:1],
 			base.path[1:], base.body},
@@ -203,6 +150,16 @@ func TestV2ActionsAreDistinctAndSlashFree(t *testing.T) {
 			t.Errorf("actions %q and %q produce the same v2 challenge", prev, a)
 		}
 		seen[pv] = a
+	}
+}
+
+// The replay window has to be short enough to matter and long enough to survive ordinary clock
+// drift. Five minutes is the number the hub enforces on a signed request's X-ANet-TS (and on a
+// session send's); pinning it here means changing it fails a test rather than silently widening
+// the window for every hub that reads the constant.
+func TestReplayWindowIsFiveMinutes(t *testing.T) {
+	if MaxSkewMillis != 5*60*1000 {
+		t.Fatalf("replay window = %dms, want 300000ms — the hub enforces this number too", MaxSkewMillis)
 	}
 }
 
@@ -253,5 +210,66 @@ func TestSigHeaderEncoding(t *testing.T) {
 	alt := enc[:len(enc)-1] + string(last+1)
 	if _, err := DecodeSig(alt); !errors.Is(err, ErrBadSig) {
 		t.Errorf("a spelling with non-zero trailing bits must be rejected, got %v", err)
+	}
+}
+
+// A retired action is not an action: "send" and "p2p" (relay v2's sender-authenticated send and
+// the hub rendezvous) and "fedkeys" (the federated key lookup) are gone in 0.3.0 and their names
+// are never assigned again. Nothing may sign for them and no hub accepts them.
+func TestRetiredActionsAreNotValid(t *testing.T) {
+	for _, a := range []string{"send", "p2p", "fedkeys", "", "Poll", "poll ", "task.create", "anet-relay"} {
+		if ValidAction(a) {
+			t.Errorf("ValidAction(%q) = true", a)
+		}
+	}
+	for _, a := range allActions {
+		if !ValidAction(a) {
+			t.Errorf("ValidAction(%q) = false for a defined action", a)
+		}
+	}
+	if len(validActions) != len(allActions) {
+		t.Errorf("validActions has %d entries, allActions %d", len(validActions), len(allActions))
+	}
+}
+
+// Every Action* constant of this package is in validActions, read from the source so that a
+// constant added without its entry fails here rather than being refused by every hub.
+func TestEveryActionConstantIsValid(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, p := range pkgs {
+		for _, f := range p.Files {
+			for _, d := range f.Decls {
+				gd, ok := d.(*ast.GenDecl)
+				if !ok || gd.Tok != token.CONST {
+					continue
+				}
+				for _, sp := range gd.Specs {
+					vs := sp.(*ast.ValueSpec)
+					for i, id := range vs.Names {
+						if !strings.HasPrefix(id.Name, "Action") || i >= len(vs.Values) {
+							continue
+						}
+						lit, ok := vs.Values[i].(*ast.BasicLit)
+						if !ok || lit.Kind != token.STRING {
+							t.Errorf("%s is not a string literal", id.Name)
+							continue
+						}
+						v, _ := strconv.Unquote(lit.Value)
+						n++
+						if !ValidAction(v) {
+							t.Errorf("%s = %q is not in validActions", id.Name, v)
+						}
+					}
+				}
+			}
+		}
+	}
+	if n != len(validActions) {
+		t.Errorf("%d Action* constants, %d valid actions", n, len(validActions))
 	}
 }

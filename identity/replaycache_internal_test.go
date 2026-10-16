@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"crypto/ed25519"
 	"reflect"
 	"testing"
 )
@@ -16,36 +15,31 @@ func withReplayCache(t *testing.T, c *ReplayCache) {
 // testKELs are KELs of each shape Replay handles, and one that does not replay.
 func testKELs(t *testing.T) map[string][]SignedEvent {
 	t.Helper()
-	host, _, _ := ed25519.GenerateKey(nil)
-	mk := func(steps ...func(c *Controller) error) []SignedEvent {
-		c, err := Incept()
+	mk := func(steps ...func(c *Controller, ts uint64) error) []SignedEvent {
+		c, err := testIncept()
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, s := range steps {
-			if err := s(c); err != nil {
+		for i, s := range steps {
+			if err := s(c, uint64(i+1)*1000); err != nil {
 				t.Fatal(err)
 			}
 		}
 		return c.KEL()
 	}
-	drt := func(c *Controller) error { return c.Delegate(host, 1000) }
-	rot := func(c *Controller) error { return c.Rotate(2000) }
-	dip := func(c *Controller) error { return c.Deactivate(3000) }
-	many := make([]func(c *Controller) error, 40)
+	rot := func(c *Controller, ts uint64) error { return testRotate(c, ts) }
+	dip := func(c *Controller, ts uint64) error { return testDeactivate(c, ts) }
+	many := make([]func(c *Controller, ts uint64) error, 40)
 	for i := range many {
-		many[i] = drt
-		if i%7 == 3 {
-			many[i] = rot
-		}
+		many[i] = rot
 	}
-	broken := mk(drt, rot)
+	broken := mk(rot, rot)
 	broken = append([]SignedEvent(nil), broken...)
 	broken[1].Sig = append([]byte(nil), broken[1].Sig...)
 	broken[1].Sig[0] ^= 1
 	return map[string][]SignedEvent{
-		"icp": mk(), "icp drt rot drt": mk(drt, rot, drt), "icp rot dip": mk(rot, dip),
-		"40 drt and rot": mk(many...), "a drt signature flipped": broken,
+		"icp": mk(), "icp rot rot": mk(rot, rot), "icp rot dip": mk(rot, dip),
+		"40 rot": mk(many...), "a rot signature flipped": broken,
 	}
 }
 
@@ -76,11 +70,11 @@ func TestAReplayCacheAnswersAsReplay(t *testing.T) {
 // answered with the other's states.
 func TestAReplayCacheIsNotFooledByAKELThatDiffers(t *testing.T) {
 	withReplayCache(t, NewReplayCache(1<<20))
-	c, err := Incept()
+	c, err := testIncept()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Rotate(2000); err != nil {
+	if err := testRotate(c, 2000); err != nil {
 		t.Fatal(err)
 	}
 	genuine := c.KEL()
@@ -99,30 +93,26 @@ func TestAReplayCacheIsNotFooledByAKELThatDiffers(t *testing.T) {
 		t.Fatal("a KEL with an altered rot replayed from the cache of the genuine one")
 	}
 	// The event id is not in any preimage; a KEL that carries another one
-	// is another key, and replays on its own.
+	// is another key, and is refused on its own (the id must be the
+	// event's CID).
 	otherID := append([]SignedEvent(nil), genuine...)
 	otherID[1].EventID = "not-the-id"
-	got, err := Replay(otherID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, _ := replay(otherID)
-	if !reflect.DeepEqual(got, want) {
-		t.Fatal("a KEL with another event id was answered with states it does not replay to")
+	if _, err := Replay(otherID); err == nil {
+		t.Fatal("a KEL with another event id replayed from the cache of the genuine one")
 	}
 }
 
-// What Replay returns from the cache is the caller's: changing a state, or
-// appending to its delegated keys, changes nothing the next caller sees.
+// What Replay returns from the cache is the caller's: changing a state
+// changes nothing the next caller sees.
 func TestAReplayCacheHandsOutCopies(t *testing.T) {
 	withReplayCache(t, NewReplayCache(1<<20))
-	kel := testKELs(t)["icp drt rot drt"]
+	kel := testKELs(t)["icp rot rot"]
 	want, _ := replay(kel)
 	first, _ := Replay(kel)
 	second, _ := Replay(kel)
 	second[0].Status = StatusDeactivated
-	second[1].DelegatedKeys = append(second[1].DelegatedKeys, []byte("x"))
-	second[3].CurrentKeys = nil
+	second[1].Witness = "x"
+	second[2].CurrentKeys = nil
 	third, _ := Replay(kel)
 	if !reflect.DeepEqual(third, want) || !reflect.DeepEqual(first, want) {
 		t.Fatal("a caller's change to its states reached the cache")
@@ -130,11 +120,10 @@ func TestAReplayCacheHandsOutCopies(t *testing.T) {
 }
 
 // The cache stays under its bound, forgets the least recently used KEL
-// first, and holds a KEL of many delegations in space linear in its length
-// (Replay's own result is quadratic in it).
+// first, and holds a long KEL in space linear in its length.
 func TestAReplayCacheIsBounded(t *testing.T) {
 	kels := testKELs(t)
-	long := kels["40 drt and rot"]
+	long := kels["40 rot"]
 	states, _ := replay(long)
 	_, cost, ok := compactStates(states)
 	if !ok {
@@ -148,12 +137,12 @@ func TestAReplayCacheIsBounded(t *testing.T) {
 	withReplayCache(t, c)
 	var three [][]SignedEvent
 	for i := 0; i < 3; i++ {
-		k, err := Incept()
+		k, err := testIncept()
 		if err != nil {
 			t.Fatal(err)
 		}
 		for j := 0; j < 40; j++ {
-			if err := k.Rotate(uint64(j + 1)); err != nil {
+			if err := testRotate(k, uint64(j+2)); err != nil {
 				t.Fatal(err)
 			}
 		}
