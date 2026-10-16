@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The seal field decoder accepts only the canonical encoding.** The outer
+  envelope, the access credential and every other field map read through it
+  were taken in any spelling the CBOR decoder understood: an
+  indefinite-length map, keys in another order, a longer-than-needed integer
+  head. The first two left `EnvDigest` unchanged, so a third party could
+  re-spell a sealed message without breaking its proof. `ParseOuter`,
+  `EnvDigest` and `Open` now re-encode the fields and refuse a difference
+  (bad-outer).
+- **A KEL key of small order is refused.** An `icp`, `rot` or `dip` whose
+  key is one of the 14 small-order Ed25519 encodings no longer replays;
+  under such a key anyone can sign for the AID. The list moved to
+  `identity.SmallOrderKey`; `seal` uses it for mailbox and holder keys as
+  before.
+- **`payment.ParseAmount` reads canonical decimal only, up to
+  `math.MaxInt64`.** A leading zero or a value the ledger cannot hold is an
+  error, so a caller can no longer forget the range check.
+- **`relayauth.PreimageV2` percent-escapes `/` and `%` in action, aid and
+  hub AID.** Valid values are unchanged; a caller that breaks the
+  precondition can no longer shift a byte between two fields.
+
+### Known limit
+
+- **Evidence objects are judged at their own time.** `identity.VerifyObject`
+  and `evidence.CheckV2` check a receipt against the key state in force on
+  `completed_day`. Whoever holds a retired key can sign a receipt, and
+  through its review key a review, for a past day, even after the key was
+  rotated away (an emergency rotation included). The core has no
+  arrival-time anchor for receipts. A consumer that relies on a receipt
+  must anchor it to the time it first stored it, and refuse one whose
+  `completed_day` falls before a key-state change it already knew of.
+
 ## v0.16.0-rc.4 — 2026-10-16
 
 The fourth release candidate of the kernel of anet 0.3.0 and hub wire 3.

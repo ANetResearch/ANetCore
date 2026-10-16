@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"strconv"
+	"strings"
 )
 
 // Auth actions (part of the signed preimage so a signature for one action cannot be reused for
@@ -131,7 +132,9 @@ const (
 //
 // Fields and their preconditions:
 //   - action is one of the Action* constants; aid and hubAID are CIDs. None contains "/", which is
-//     what keeps the "/"-separated prefix unambiguous. The digest alphabet ("A–Z a–z 0–9 - _") has
+//     what keeps the "/"-separated prefix unambiguous. A caller that passes one anyway gets
+//     "/" and "%" percent-escaped ("%2F", "%25") in these three fields, so no two different
+//     triples give the same bytes; a valid value is unchanged. The digest alphabet ("A–Z a–z 0–9 - _") has
 //     no "/" either.
 //   - hubAID is the AID of the hub the request is addressed to, so a signature captured by one hub
 //     cannot be presented to another.
@@ -152,8 +155,19 @@ func PreimageV2(action, aid, hubAID string, ts uint64, method, pathAndQuery stri
 	h.Write([]byte{0})
 	h.Write(body)
 	digest := base64.RawURLEncoding.EncodeToString(h.Sum(nil))
-	return []byte("anet-relay/v2/" + action + "/" + aid + "/" + hubAID + "/" +
+	return []byte("anet-relay/v2/" + escapeField(action) + "/" + escapeField(aid) + "/" + escapeField(hubAID) + "/" +
 		strconv.FormatUint(ts, 10) + "/" + digest)
+}
+
+// escapeField keeps the "/"-separated preimage unambiguous even for a caller that breaks the
+// precondition: "/" and "%" are percent-escaped, so two different (action, aid, hubAID) triples
+// never give the same bytes. A valid value (an Action* constant or a CID) has neither character
+// and is unchanged.
+func escapeField(s string) string {
+	if !strings.ContainsAny(s, "/%") {
+		return s
+	}
+	return strings.NewReplacer("%", "%25", "/", "%2F").Replace(s)
 }
 
 // sigEncoding is the HeaderSig value encoding: URL-safe base64 without padding, strict (non-zero

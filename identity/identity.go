@@ -349,6 +349,11 @@ func checkShape(e KeyEvent) error {
 	if len(e.Keys) != 1 || len(e.Keys[0]) != ed25519.PublicKeySize {
 		return fmt.Errorf("identity: %s needs exactly one 32-byte Ed25519 key", e.Type)
 	}
+	// A key of small order lets anyone forge a signature that verifies under it, so the AID's
+	// signatures would be universally forgeable and its owner could repudiate any of them.
+	if SmallOrderKey(e.Keys[0]) {
+		return fmt.Errorf("identity: %s key is a point of small order", e.Type)
+	}
 	if e.Timestamp == 0 {
 		return errors.New("identity: event ts must be greater than 0")
 	}
