@@ -2233,6 +2233,9 @@ per entry; public card only; never fetches an extended card.
 | `anet.delivery` | local (local only) | string: pending, confirmed, unconfirmed | active | — |
 | `anet.delivery_detail` | local (local only) | string: not_sent, sent, queued_at_hub | active | only with pending or unconfirmed |
 | `anet.delivery_wait` | local (local only) | string | active | a waiting hub code, session_unavailable, rotation_pending, notice_stale or credential_refused |
+| `anet.delivery_since` | local (local only) | string | active | Task only: when the latest queued message was queued (RFC 3339); for the CLI delivery line (DLV-L-2) |
+| `anet.delivery_ends_at` | local (local only) | string | active | Task only, with pending: when the task gives up on the message (RFC 3339, UX-R11) |
+| `anet.delivery_ordered` | local (local only) | bool | active | Task only, with pending and not_sent: true when it waits for the task's previous message (DLV-W-21d) |
 | `anet.content_expires_at` | local (local only) | string | active | RFC 3339, Task |
 | `anet.payment_note` | local (local only) | string | active | one sentence, Task |
 | `anet.spend_check` | local (local only) | object | active | {who, amount, reason, reason_tier?, reason_limit?}; reason_tier auto, agent or manual |
