@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.16.1 - 2026-10-17
+
+### Changed
+
+- **The wire registry lists the reason codes of coding-agent registration.**
+  `wire/registry.json` (user reasons) gains 22 codes with the prefix `wire_`,
+  used by `anet agents wire` and `anet agents unwire` (for example
+  `wire_unknown_tool`, `wire_conflict`, `wire_io_failed`). Release 0.3.3 of
+  ANet and ANetHub requires them. `docs/wire-keys.md` is regenerated.
+- **The `coredet` source comments are in English.** No behaviour change.
+
 ## v0.16.0 - 2026-10-16
 
 ### Changed
