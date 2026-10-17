@@ -67,14 +67,20 @@ func init() {
 // requires. Without the check this package can emit a preimage it cannot read
 // back, and the writer is told it succeeded.
 //
-// 位置 coredet.Marshal; 行为 编码器接受非法 UTF-8 的 Go string, 解码器拒绝;
-// 影响 写入成功、数据落盘, 失败推迟到下一次读取 —— 往往是另一个进程、另一天;
-// 发现方式 anet daemon 把一条含 0xa2 字节的命令回显写进证据账本, 两天后重启时
-// 账本读不动, 节点在 systemd 下每 5 秒崩溃重启, 只能手工编辑账本才能恢复。
+// Where: coredet.Marshal. Behaviour: the encoder accepted a Go string that is
+// not valid UTF-8 and the decoder refused it. Effect: the write succeeded and
+// the data reached disk, and the failure was deferred to the next read, often
+// in another process on another day. Found when the anet daemon wrote a
+// command echo containing a 0xa2 byte into the evidence ledger; two days later
+// the ledger could not be read on restart, the node crashed and restarted
+// every 5 seconds under systemd, and only editing the ledger by hand
+// recovered it.
 //
-// 修在这里而不是各调用点: 本包是全栈唯一的 preimage 编码器, 在这里立住
-// "能编码即能解码", 这类缺陷对所有调用方一次消失。代价是每次 Marshal 多一次
-// 解码; 若将来证明它在热路径上要紧, 那时再拿基准数据来换写法。
+// The fix is here rather than at each call site: this package is the only
+// preimage encoder in the stack, so establishing "what encodes also decodes"
+// here removes the defect for every caller at once. The cost is one extra
+// decode per Marshal; if that ever matters on a hot path, change the approach
+// then, with benchmark data.
 func Marshal(v any) ([]byte, error) {
 	b, err := encMode.Marshal(v)
 	if err != nil {
