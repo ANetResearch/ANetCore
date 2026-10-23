@@ -2397,6 +2397,7 @@
     {"key": "anet.receipt", "where": ["local"], "value_type": "object", "status": "active", "owner": "-", "note": "the provider's signed receipt and its check"},
     {"key": "anet.cancel_requested", "where": ["local"], "value_type": "bool", "status": "active", "owner": "-"},
     {"key": "anet.trusted", "where": ["local"], "value_type": "bool", "status": "active", "owner": "-", "note": "tells a provider-side backend whether the peer is trusted"},
+    {"key": "anet.admitted", "where": ["local"], "value_type": "bool", "status": "active", "owner": "-", "note": "tells a provider-side backend that the local service admitted the peer (inbound.admit)"},
     {"key": "anet.payment.accept", "where": ["local"], "value_type": "object", "status": "active", "owner": "-", "note": "the payment option a local client chose"},
     {"key": "anet.quote_expires_at", "where": ["local"], "value_type": "uint", "status": "active", "owner": "-", "note": "unix ms"},
     {"key": "anet.unverified_receipts", "where": ["local"], "value_type": "array", "status": "active", "owner": "-"},
@@ -2810,7 +2811,19 @@
       {"code": "wire_a2a_not_started"},
       {"code": "wire_a2a_addr_invalid"},
       {"code": "wire_a2a_token_invalid"},
-      {"code": "wire_a2a_port_foreign"}
+      {"code": "wire_a2a_port_foreign"},
+      {"code": "not_agent_tool"},
+      {"code": "runner_unsupported"},
+      {"code": "runner_agent_not_allowed"},
+      {"code": "runner_job_invalid"},
+      {"code": "model_proxy_unauthorized"},
+      {"code": "model_budget_spent"},
+      {"code": "turn_unauthorized"},
+      {"code": "turn_tool_unknown"},
+      {"code": "turn_call_invalid"},
+      {"code": "turn_calls_spent"},
+      {"code": "turn_service_failed"},
+      {"code": "turn_tools_none"}
     ],
     "hub_operator": [
       {"code": "hub_flag_removed"},
