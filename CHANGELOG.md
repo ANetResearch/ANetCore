@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.16.2 - 2026-10-23
+
+### Changed
+
+- **The wire registry lists the additions of ANet 0.3.9.** `wire/registry.json`
+  gains the local metadata key `anet.admitted` (a provider-side backend learns
+  that the node's service admitted the peer) and 12 user reasons:
+  `not_agent_tool`, `runner_unsupported`, `runner_agent_not_allowed`,
+  `runner_job_invalid`, `model_proxy_unauthorized`, `model_budget_spent`,
+  `turn_unauthorized`, `turn_tool_unknown`, `turn_call_invalid`,
+  `turn_calls_spent`, `turn_service_failed` and `turn_tools_none`. Release 0.3.9
+  of ANet requires them. `docs/wire-keys.md` is regenerated.
+
 ## v0.16.1 - 2026-10-17
 
 ### Changed
